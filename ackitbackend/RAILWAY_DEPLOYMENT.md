@@ -11,6 +11,7 @@ This guide will walk you through deploying your ACKit backend to Railway.
 ## Step 1: Prepare Your Repository
 
 Your backend is already configured for Railway with:
+
 - ✅ `nixpacks.toml` - Railway build configuration
 - ✅ Database connection using `DATABASE_URL` (Railway provides this automatically)
 - ✅ Port configuration using `PORT` environment variable
@@ -21,6 +22,7 @@ Your backend is already configured for Railway with:
 ### Option A: Deploy from GitHub (Recommended)
 
 1. **Connect Railway to GitHub:**
+
    - Go to [railway.app](https://railway.app)
    - Click "New Project"
    - Select "Deploy from GitHub repo"
@@ -28,15 +30,18 @@ Your backend is already configured for Railway with:
    - Select your repository (`ackitfull`)
 
 2. **Configure the Service:**
+
    - Railway will detect your `nixpacks.toml` automatically
    - Set the **Root Directory** to `ackitbackend`:
      - Go to your service settings
      - Under "Settings" → "Source", set Root Directory to `ackitbackend`
 
 3. **Add PostgreSQL Database:**
+
    - In your Railway project, click "+ New"
    - Select "Database" → "Add PostgreSQL"
    - Railway will automatically create a `DATABASE_URL` environment variable
+   - **📖 For detailed database setup, see [RAILWAY_DATABASE_SETUP.md](./RAILWAY_DATABASE_SETUP.md)**
 
 4. **Set Environment Variables:**
    - Go to your service → "Variables" tab
@@ -72,6 +77,7 @@ RAILWAY_PUBLIC_DOMAIN=your-custom-domain.com
 ```
 
 **Note:** Railway automatically provides:
+
 - `PORT` - The port your app should listen on
 - `DATABASE_URL` - PostgreSQL connection string
 - `RAILWAY_PUBLIC_DOMAIN` - Your Railway domain (if using Railway's domain)
@@ -79,27 +85,32 @@ RAILWAY_PUBLIC_DOMAIN=your-custom-domain.com
 ### Option B: Deploy using Railway CLI
 
 1. **Install Railway CLI:**
+
    ```bash
    npm i -g @railway/cli
    ```
 
 2. **Login to Railway:**
+
    ```bash
    railway login
    ```
 
 3. **Initialize Railway in your project:**
+
    ```bash
    cd ackitbackend
    railway init
    ```
 
 4. **Add PostgreSQL Database:**
+
    ```bash
    railway add postgresql
    ```
 
 5. **Set Environment Variables:**
+
    ```bash
    railway variables set NODE_ENV=production
    railway variables set JWT_SECRET=your-secret-key
@@ -131,6 +142,7 @@ Your app already reads `PORT` from environment variables, which Railway provides
 If you need to run database migrations:
 
 1. **Using Railway CLI:**
+
    ```bash
    cd ackitbackend
    railway run npm run migrate  # if you have a migrate script
@@ -143,11 +155,13 @@ If you need to run database migrations:
 ## Step 4: Verify Deployment
 
 1. **Check Build Logs:**
+
    - Go to your service → "Deployments" tab
    - Click on the latest deployment
    - Check for any build errors
 
 2. **Check Application Logs:**
+
    - Go to your service → "Logs" tab
    - Look for: `🚀 ACKit Backend Server running on 0.0.0.0:PORT`
    - Check for database connection success: `✅ Database connection established successfully.`
@@ -192,21 +206,21 @@ After deployment, update your frontend to point to the Railway backend:
 
 ## Environment Variables Reference
 
-| Variable | Required | Description | Railway Auto-Provided |
-|----------|----------|-------------|----------------------|
-| `NODE_ENV` | Yes | Set to `production` | No |
-| `PORT` | Yes | Server port | ✅ Yes |
-| `DATABASE_URL` | Yes | PostgreSQL connection string | ✅ Yes (if PostgreSQL added) |
-| `JWT_SECRET` | Yes | Secret for JWT tokens | No |
-| `SESSION_SECRET` | Yes | Secret for sessions | No |
-| `EMAIL_HOST` | Yes | SMTP server host | No |
-| `EMAIL_PORT` | Yes | SMTP server port | No |
-| `EMAIL_USER` | Yes | SMTP username | No |
-| `EMAIL_PASS` | Yes | SMTP password | No |
-| `EMAIL_FROM` | Yes | Email sender address | No |
-| `IOTIFY_NOTIFICATION_EMAIL` | Yes | Notification recipient email | No |
-| `FRONTEND_URL` | Recommended | Frontend URL for CORS | No |
-| `RAILWAY_PUBLIC_DOMAIN` | Optional | Custom domain | ✅ Yes (if using Railway domain) |
+| Variable                    | Required    | Description                  | Railway Auto-Provided            |
+| --------------------------- | ----------- | ---------------------------- | -------------------------------- |
+| `NODE_ENV`                  | Yes         | Set to `production`          | No                               |
+| `PORT`                      | Yes         | Server port                  | ✅ Yes                           |
+| `DATABASE_URL`              | Yes         | PostgreSQL connection string | ✅ Yes (if PostgreSQL added)     |
+| `JWT_SECRET`                | Yes         | Secret for JWT tokens        | No                               |
+| `SESSION_SECRET`            | Yes         | Secret for sessions          | No                               |
+| `EMAIL_HOST`                | Yes         | SMTP server host             | No                               |
+| `EMAIL_PORT`                | Yes         | SMTP server port             | No                               |
+| `EMAIL_USER`                | Yes         | SMTP username                | No                               |
+| `EMAIL_PASS`                | Yes         | SMTP password                | No                               |
+| `EMAIL_FROM`                | Yes         | Email sender address         | No                               |
+| `IOTIFY_NOTIFICATION_EMAIL` | Yes         | Notification recipient email | No                               |
+| `FRONTEND_URL`              | Recommended | Frontend URL for CORS        | No                               |
+| `RAILWAY_PUBLIC_DOMAIN`     | Optional    | Custom domain                | ✅ Yes (if using Railway domain) |
 
 ## Additional Notes
 
@@ -217,6 +231,7 @@ After deployment, update your frontend to point to the Railway backend:
 ## Support
 
 If you encounter issues:
+
 1. Check Railway logs first
 2. Verify all environment variables are set
 3. Ensure Root Directory is correctly configured
@@ -225,4 +240,3 @@ If you encounter issues:
 ---
 
 **Happy Deploying! 🚀**
-

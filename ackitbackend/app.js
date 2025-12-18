@@ -6,7 +6,11 @@ const session = require("express-session");
 const pgSession = require("connect-pg-simple")(session);
 const MemoryStore = require("memorystore")(session);
 const path = require("path");
-require("dotenv").config({ path: "./config/environment/.env" }); // specify custom path
+
+// Load .env file only in non-production environments (Railway uses environment variables directly)
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config({ path: "./config/environment/.env" });
+}
 
 // Import database connection
 require("./config/database/postgresql");

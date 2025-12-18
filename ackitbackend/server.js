@@ -3,9 +3,12 @@ const path = require("path");
 const http = require("http");
 const os = require("os");
 
-require("dotenv").config({
-  path: path.resolve(__dirname, "../environment/.env"),
-});
+// Load .env file only in non-production environments (Railway uses environment variables directly)
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config({
+    path: path.resolve(__dirname, "../environment/.env"),
+  });
+}
 
 // Initialize timezone utilities
 const timezoneUtils = require("./utils/timezone");
