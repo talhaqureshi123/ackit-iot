@@ -72,11 +72,18 @@ const CORS_ORIGINS = [
   "http://localhost:3000", // ✅ Local development
   "http://localhost:5173", // ✅ Vite default port
   `http://localhost:${PORT}`, // ✅ Backend port (for direct access)
+  // Railway frontend URLs (will be set via environment variable)
+  process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
   // Allow any localhost with any port (for development)
   /^http:\/\/localhost:\d+$/,
   // Allow any IP from same network (for network access)
   new RegExp(`^http://${SERVER_IP.replace(/\./g, "\\.")}:\\d+$`),
+  // Allow Railway domains
+  /^https:\/\/.*\.railway\.app$/,
+  /^https:\/\/.*\.up\.railway\.app$/,
 ].filter((value, index, self) => {
+  // Remove null/undefined values
+  if (!value) return false;
   // Remove duplicates for strings
   if (typeof value === "string") {
     return self.indexOf(value) === index;

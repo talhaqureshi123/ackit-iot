@@ -104,10 +104,10 @@ app.use(
     saveUninitialized: false, // Don't save uninitialized sessions
     rolling: true, // Reset expiration on each request
     cookie: {
-      secure: false, // Allow HTTP in development
+      secure: process.env.NODE_ENV === "production", // HTTPS in production, HTTP in development
       httpOnly: true, // Prevent XSS
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: "lax", // Allow same-site requests
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Allow cross-site in production
       path: "/", // Ensure cookie is sent for all paths
       // Don't set domain in development - allows cookie to work with proxy
       domain: undefined,

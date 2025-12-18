@@ -44,7 +44,12 @@ const getEnvVar = (key, defaultValue) => {
   return defaultValue;
 };
 
-export const BACKEND_IP = getEnvVar("VITE_BACKEND_IP", "192.168.1.105");
+// ============================================
+// Railway Production URL Support
+// ============================================
+// Priority: Railway Backend URL > Environment Variable > Local IP
+const RAILWAY_BACKEND_URL = getEnvVar("VITE_RAILWAY_BACKEND_URL", null);
+const BACKEND_IP = getEnvVar("VITE_BACKEND_IP", "192.168.1.105");
 
 // ============================================
 // Port Configuration
@@ -67,8 +72,8 @@ export const VITE_PORT = "5173";
 // ============================================
 // URL Configuration
 // ============================================
-// Backend base URL (without /api) - uses network IP
-export const BACKEND_BASE_URL = `http://${BACKEND_IP}:${BACKEND_PORT}`;
+// Backend base URL (without /api) - uses Railway URL in production, local IP in development
+export const BACKEND_BASE_URL = RAILWAY_BACKEND_URL || `http://${BACKEND_IP}:${BACKEND_PORT}`;
 
 // API base URL (with /api)
 export const API_BASE_URL = `${BACKEND_BASE_URL}/api`;
