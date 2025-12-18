@@ -16,11 +16,28 @@ console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL);
 let sequelize;
 if (process.env.DATABASE_URL) {
   // Railway provides DATABASE_URL in format: postgresql://user:password@host:port/database
+  // Clean DATABASE_URL - remove any leading '=' or whitespace
+  let databaseUrl = process.env.DATABASE_URL.trim();
+  
+  // Remove leading '=' if present (Railway sometimes adds this)
+  if (databaseUrl.startsWith('=')) {
+    databaseUrl = databaseUrl.substring(1).trim();
+    console.log("⚠️ Removed leading '=' from DATABASE_URL");
+  }
+  
+  // Validate URL format
+  if (!databaseUrl.startsWith('postgresql://') && !databaseUrl.startsWith('postgres://')) {
+    console.error("❌ ERROR: DATABASE_URL must start with 'postgresql://' or 'postgres://'");
+    console.error("Current DATABASE_URL:", databaseUrl.substring(0, 50) + "...");
+    process.exit(1);
+  }
+  
   console.log("✅ Using DATABASE_URL from Railway");
   // Mask password in logs for security
-  const maskedUrl = process.env.DATABASE_URL.replace(/:[^:@]+@/, ":****@");
+  const maskedUrl = databaseUrl.replace(/:[^:@]+@/, ":****@");
   console.log("DATABASE_URL:", maskedUrl);
-  sequelize = new Sequelize(process.env.DATABASE_URL, {
+  
+  sequelize = new Sequelize(databaseUrl, {
     dialect: "postgres",
     logging: process.env.NODE_ENV === "development" ? console.log : false,
     pool: { max: 5, min: 0, acquire: 30000, idle: 10000 },
@@ -41,11 +58,15 @@ if (process.env.DATABASE_URL) {
   if (process.env.NODE_ENV === "production") {
     console.error("❌ ERROR: DATABASE_URL is required in production!");
     console.error("Please set DATABASE_URL in Railway Variables tab.");
-    console.error("Go to: Railway Dashboard → Your Service → Variables → Add DATABASE_URL");
+    console.error(
+      "Go to: Railway Dashboard → Your Service → Variables → Add DATABASE_URL"
+    );
     process.exit(1);
   }
 
-  console.log("⚠️ DATABASE_URL not found, using individual DB credentials (local development)");
+  console.log(
+    "⚠️ DATABASE_URL not found, using individual DB credentials (local development)"
+  );
   console.log("DB_NAME:", process.env.DB_NAME);
   console.log("DB_USER:", process.env.DB_USER);
   console.log("DB_HOST:", process.env.DB_HOST || "localhost (default)");
@@ -54,7 +75,11 @@ if (process.env.DATABASE_URL) {
     process.env.DB_PASSWORD ? "✅ Loaded" : "❌ Missing"
   );
 
-  if (!process.env.DB_NAME || !process.env.DB_USER || !process.env.DB_PASSWORD) {
+  if (
+    !process.env.DB_NAME ||
+    !process.env.DB_USER ||
+    !process.env.DB_PASSWORD
+  ) {
     console.error("❌ ERROR: Missing database credentials!");
     console.error("Required: DB_NAME, DB_USER, DB_PASSWORD");
     process.exit(1);
