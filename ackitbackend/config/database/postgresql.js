@@ -18,25 +18,33 @@ if (process.env.DATABASE_URL) {
   // Railway provides DATABASE_URL in format: postgresql://user:password@host:port/database
   // Clean DATABASE_URL - remove any leading '=' or whitespace
   let databaseUrl = process.env.DATABASE_URL.trim();
-  
+
   // Remove leading '=' if present (Railway sometimes adds this)
-  if (databaseUrl.startsWith('=')) {
+  if (databaseUrl.startsWith("=")) {
     databaseUrl = databaseUrl.substring(1).trim();
     console.log("⚠️ Removed leading '=' from DATABASE_URL");
   }
-  
+
   // Validate URL format
-  if (!databaseUrl.startsWith('postgresql://') && !databaseUrl.startsWith('postgres://')) {
-    console.error("❌ ERROR: DATABASE_URL must start with 'postgresql://' or 'postgres://'");
-    console.error("Current DATABASE_URL:", databaseUrl.substring(0, 50) + "...");
+  if (
+    !databaseUrl.startsWith("postgresql://") &&
+    !databaseUrl.startsWith("postgres://")
+  ) {
+    console.error(
+      "❌ ERROR: DATABASE_URL must start with 'postgresql://' or 'postgres://'"
+    );
+    console.error(
+      "Current DATABASE_URL:",
+      databaseUrl.substring(0, 50) + "..."
+    );
     process.exit(1);
   }
-  
+
   console.log("✅ Using DATABASE_URL from Railway");
   // Mask password in logs for security
   const maskedUrl = databaseUrl.replace(/:[^:@]+@/, ":****@");
   console.log("DATABASE_URL:", maskedUrl);
-  
+
   sequelize = new Sequelize(databaseUrl, {
     dialect: "postgres",
     logging: process.env.NODE_ENV === "development" ? console.log : false,
