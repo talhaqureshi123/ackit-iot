@@ -11,13 +11,17 @@ if (process.env.NODE_ENV !== "production") {
 console.log("🔍 Checking env values...");
 console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL);
+console.log("DATABASE_PUBLIC_URL exists:", !!process.env.DATABASE_PUBLIC_URL);
 
 // Support Railway DATABASE_URL or individual DB credentials
+// Prefer DATABASE_PUBLIC_URL over DATABASE_URL (for Railway internal DNS issues)
 let sequelize;
-if (process.env.DATABASE_URL) {
+const databaseUrlEnv = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
+
+if (databaseUrlEnv) {
   // Railway provides DATABASE_URL in format: postgresql://user:password@host:port/database
   // Clean DATABASE_URL - remove any leading '=' or whitespace
-  let databaseUrl = process.env.DATABASE_URL.trim();
+  let databaseUrl = databaseUrlEnv.trim();
 
   // Remove leading '=' if present (Railway sometimes adds this)
   if (databaseUrl.startsWith("=")) {
@@ -40,10 +44,11 @@ if (process.env.DATABASE_URL) {
     process.exit(1);
   }
 
-  console.log("✅ Using DATABASE_URL from Railway");
+  const urlSource = process.env.DATABASE_PUBLIC_URL ? "DATABASE_PUBLIC_URL" : "DATABASE_URL";
+  console.log(`✅ Using ${urlSource} from Railway`);
   // Mask password in logs for security
   const maskedUrl = databaseUrl.replace(/:[^:@]+@/, ":****@");
-  console.log("DATABASE_URL:", maskedUrl);
+  console.log("Database URL:", maskedUrl);
 
   sequelize = new Sequelize(databaseUrl, {
     dialect: "postgres",
