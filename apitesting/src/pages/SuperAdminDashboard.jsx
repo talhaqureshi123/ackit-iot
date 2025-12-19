@@ -129,9 +129,27 @@ const SuperAdminDashboard = () => {
         console.log('📊 SuperAdmin Dashboard - localStorage user:', localStorage.getItem('user'));
         console.log('📊 SuperAdmin Dashboard - localStorage role:', localStorage.getItem('role'));
         
+        // Check if cookie exists
+        const cookies = document.cookie;
+        console.log('🍪 SuperAdmin Dashboard - Browser cookies:', cookies);
+        console.log('🍪 SuperAdmin Dashboard - Has ackit.sid:', cookies.includes('ackit.sid'));
+        
         if (user && user.role === 'superadmin') {
-          // Small delay to ensure session cookie is set after login
-          await new Promise(resolve => setTimeout(resolve, 300));
+          // Longer delay to ensure session cookie is set after login
+          // Also check if cookie exists before making requests
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Check cookie again after delay
+          const cookiesAfterDelay = document.cookie;
+          console.log('🍪 SuperAdmin Dashboard - Cookies after delay:', cookiesAfterDelay);
+          console.log('🍪 SuperAdmin Dashboard - Has ackit.sid after delay:', cookiesAfterDelay.includes('ackit.sid'));
+          
+          if (!cookiesAfterDelay.includes('ackit.sid')) {
+            console.error('❌ No session cookie found! Login might have failed to set cookie.');
+            toast.error('Session cookie not found. Please login again.');
+            return;
+          }
+          
           await loadData();
         } else {
           console.warn('⚠️ SuperAdmin Dashboard - User not authenticated or wrong role');
@@ -149,6 +167,10 @@ const SuperAdminDashboard = () => {
           toast.error('Failed to load dashboard data');
         } else {
           console.warn('⚠️ 401 error on dashboard load - session might not be ready yet');
+          // Check cookie again
+          const cookies = document.cookie;
+          console.warn('⚠️ Current cookies:', cookies);
+          console.warn('⚠️ Has ackit.sid:', cookies.includes('ackit.sid'));
         }
       }
     };
