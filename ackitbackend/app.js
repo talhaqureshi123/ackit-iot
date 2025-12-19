@@ -81,9 +81,10 @@ app.use(morgan("combined"));
 let sessionStore;
 try {
   // Use DATABASE_PUBLIC_URL if available (for Railway), otherwise DATABASE_URL or individual credentials
-  const databaseUrl = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
+  const databaseUrl =
+    process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
   let conString;
-  
+
   if (databaseUrl) {
     // Clean DATABASE_URL - remove any leading '=' or whitespace
     let cleanUrl = databaseUrl.trim();
@@ -97,7 +98,7 @@ try {
     conString = `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
     console.log("✅ Using individual DB credentials for session store");
   }
-  
+
   sessionStore = new pgSession({
     conString: conString,
     tableName: "session", // Use 'session' table
@@ -126,12 +127,14 @@ app.use(
     saveUninitialized: false, // Don't save uninitialized sessions
     rolling: true, // Reset expiration on each request
     cookie: {
+      // In production (Railway), use secure cookies with sameSite: "none" for cross-origin
+      // In development, use lax for same-origin
       secure: process.env.NODE_ENV === "production", // HTTPS in production, HTTP in development
       httpOnly: true, // Prevent XSS
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Allow cross-site in production
       path: "/", // Ensure cookie is sent for all paths
-      // Don't set domain in development - allows cookie to work with proxy
+      // Don't set domain - allows cookie to work with proxy and cross-origin
       domain: undefined,
     },
     name: "ackit.sid", // Custom session name
@@ -155,6 +158,39 @@ app.get("/health", (req, res) => {
     success: true,
     message: "ACKit Backend Server is running",
     timestamp: new Date().toISOString(),
+  });
+});
+
+// ----------------------
+// 🍪 Session test endpoint (for debugging)
+// ----------------------
+app.get("/api/test-session", (req, res) => {
+  console.log("🔍 Session Test - Request received");
+  console.log("🔍 Session Test - Session exists:", !!req.session);
+  console.log("🔍 Session Test - Session ID:", req.sessionID);
+  console.log("🔍 Session Test - Session data:", req.session);
+  console.log("🔍 Session Test - Cookies:", req.cookies);
+  console.log("🔍 Session Test - Headers:", {
+    cookie: req.headers.cookie,
+    origin: req.headers.origin,
+    referer: req.headers.referer,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Session test endpoint",
+    session: {
+      exists: !!req.session,
+      sessionID: req.sessionID,
+      sessionId: req.session?.sessionId,
+      user: req.session?.user,
+      cookie: req.session?.cookie,
+    },
+    cookies: req.cookies,
+    headers: {
+      origin: req.headers.origin,
+      referer: req.headers.referer,
+    },
   });
 });
 
