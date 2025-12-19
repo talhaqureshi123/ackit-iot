@@ -56,14 +56,20 @@ export default defineConfig({
             const cookies = req.headers.cookie;
             if (cookies) {
               console.log("🍪 Proxy - Sending cookies to backend:", cookies);
-              console.log("🍪 Proxy - Has ackit.sid:", cookies.includes("ackit.sid"));
+              console.log(
+                "🍪 Proxy - Has ackit.sid:",
+                cookies.includes("ackit.sid")
+              );
             } else {
               console.log("⚠️ Proxy - No cookies being sent to backend");
               console.log("⚠️ Proxy - Request URL:", req.url);
-              console.log("⚠️ Proxy - Request headers:", Object.keys(req.headers));
+              console.log(
+                "⚠️ Proxy - Request headers:",
+                Object.keys(req.headers)
+              );
             }
           });
-          
+
           // Handle cookies coming FROM backend
           proxy.on("proxyRes", (proxyRes, req, res) => {
             // Ensure cookies are properly forwarded
@@ -73,9 +79,18 @@ export default defineConfig({
                 "🍪 Proxy - Received cookies from backend:",
                 setCookieHeaders
               );
+              console.log(
+                "🍪 Proxy - Response URL:",
+                req.url,
+                "Status:",
+                proxyRes.statusCode
+              );
+              
               // Modify cookie attributes for local development with Railway HTTPS backend
               proxyRes.headers["set-cookie"] = setCookieHeaders.map(
                 (cookie) => {
+                  console.log("🍪 Proxy - Original cookie:", cookie);
+                  
                   // For local development with Railway backend (HTTPS -> HTTP proxy):
                   // - Remove Secure flag (since localhost is HTTP)
                   // - Change SameSite from "none" to "Lax" for local development
@@ -93,7 +108,7 @@ export default defineConfig({
                     })
                     .join("; ");
 
-                  // Add SameSite=Lax for local development
+                  // Add SameSite=Lax for local development (required for localhost)
                   modifiedCookie += "; SameSite=Lax";
 
                   console.log("🍪 Proxy - Modified cookie:", modifiedCookie);
@@ -103,6 +118,14 @@ export default defineConfig({
             } else {
               console.log("⚠️ Proxy - No cookies received from backend");
               console.log("⚠️ Proxy - Response status:", proxyRes.statusCode);
+              console.log("⚠️ Proxy - Response URL:", req.url);
+              console.log("⚠️ Proxy - Response headers:", Object.keys(proxyRes.headers));
+              
+              // Check if this is a login response
+              if (req.url && req.url.includes("/login")) {
+                console.log("⚠️ Proxy - This is a login request but no cookies received!");
+                console.log("⚠️ Proxy - Check backend logs for session creation");
+              }
             }
           });
         },

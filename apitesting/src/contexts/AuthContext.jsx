@@ -104,6 +104,9 @@ export const AuthProvider = ({ children }) => {
       console.log('📥 Login response.data:', response.data);
       console.log('📥 Login response.status:', response.status);
       console.log('📥 Login response.headers:', response.headers);
+      console.log('📥 Login response.headers.set-cookie:', response.headers['set-cookie']);
+      console.log('🍪 Browser cookies after login:', document.cookie);
+      console.log('🍪 Has ackit.sid after login:', document.cookie.includes('ackit.sid'));
       
       if (response.data && response.data.success) {
         // Handle different response structures
