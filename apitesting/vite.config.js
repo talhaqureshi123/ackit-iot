@@ -51,42 +51,58 @@ export default defineConfig({
         timeout: 30000, // Increase timeout to 30 seconds
         proxyTimeout: 30000, // Increase proxy timeout
         configure: (proxy, _options) => {
+          // Log cookies being sent TO backend
+          proxy.on("proxyReq", (proxyReq, req, res) => {
+            const cookies = req.headers.cookie;
+            if (cookies) {
+              console.log("🍪 Proxy - Sending cookies to backend:", cookies);
+              console.log("🍪 Proxy - Has ackit.sid:", cookies.includes("ackit.sid"));
+            } else {
+              console.log("⚠️ Proxy - No cookies being sent to backend");
+              console.log("⚠️ Proxy - Request URL:", req.url);
+              console.log("⚠️ Proxy - Request headers:", Object.keys(req.headers));
+            }
+          });
+          
+          // Handle cookies coming FROM backend
           proxy.on("proxyRes", (proxyRes, req, res) => {
             // Ensure cookies are properly forwarded
             const setCookieHeaders = proxyRes.headers["set-cookie"];
             if (setCookieHeaders) {
-              console.log("🍪 Proxy - Received cookies from backend:", setCookieHeaders);
-              // Modify cookie attributes for local development
+              console.log(
+                "🍪 Proxy - Received cookies from backend:",
+                setCookieHeaders
+              );
+              // Modify cookie attributes for local development with Railway HTTPS backend
               proxyRes.headers["set-cookie"] = setCookieHeaders.map(
                 (cookie) => {
-                  // For local development with Railway backend:
+                  // For local development with Railway backend (HTTPS -> HTTP proxy):
                   // - Remove Secure flag (since localhost is HTTP)
-                  // - Change SameSite to Lax for local development
+                  // - Change SameSite from "none" to "Lax" for local development
                   // - Remove domain attribute
                   let modifiedCookie = cookie
                     .split(";")
-                    .filter(
-                      (part) => {
-                        const trimmed = part.trim().toLowerCase();
-                        return (
-                          !trimmed.startsWith("domain") &&
-                          !trimmed.startsWith("secure")
-                        );
-                      }
-                    )
-                    .join(";");
-                  
-                  // Add SameSite=Lax for local development (if not already present)
-                  if (!modifiedCookie.toLowerCase().includes("samesite")) {
-                    modifiedCookie += "; SameSite=Lax";
-                  }
-                  
+                    .map((part) => part.trim())
+                    .filter((part) => {
+                      const lower = part.toLowerCase();
+                      return (
+                        !lower.startsWith("domain") &&
+                        !lower.startsWith("secure") &&
+                        !lower.startsWith("samesite")
+                      );
+                    })
+                    .join("; ");
+
+                  // Add SameSite=Lax for local development
+                  modifiedCookie += "; SameSite=Lax";
+
                   console.log("🍪 Proxy - Modified cookie:", modifiedCookie);
                   return modifiedCookie;
                 }
               );
             } else {
               console.log("⚠️ Proxy - No cookies received from backend");
+              console.log("⚠️ Proxy - Response status:", proxyRes.statusCode);
             }
           });
         },
