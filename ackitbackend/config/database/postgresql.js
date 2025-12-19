@@ -170,29 +170,10 @@ if (databaseUrlEnv) {
   }
 })();
 
-// Handle connection errors gracefully
-// Note: Pool might not be initialized immediately, so we check if it exists and has event methods
-try {
-  const pool = sequelize.connectionManager.pool;
-  if (pool && typeof pool.on === "function") {
-    pool.on("error", (err) => {
-      console.error("❌ Database pool error:", err);
-    });
-
-    // Reconnect on connection loss
-    pool.on("connect", () => {
-      console.log("✅ Database pool connection established");
-    });
-
-    pool.on("remove", () => {
-      console.log("⚠️ Database pool connection removed");
-    });
-  } else {
-    console.log("⚠️ Database pool not yet initialized, event listeners skipped");
-  }
-} catch (error) {
-  console.log("⚠️ Could not attach pool event listeners:", error.message);
-  // This is not critical, continue without pool event listeners
-}
+// Note: Pool event listeners removed - Sequelize handles connection errors internally
+// Connection errors are already handled by:
+// 1. The authenticate() call with retry logic above
+// 2. Sequelize's built-in error handling
+// 3. The hooks (beforeConnect/afterConnect) defined in the Sequelize config
 
 module.exports = sequelize;
