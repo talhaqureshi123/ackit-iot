@@ -123,8 +123,8 @@ app.use(
     store: sessionStore,
     secret:
       process.env.SESSION_SECRET || "AADFDDDDDDDDDDDDDDD342332436737WQWEWQASDD",
-    resave: false, // Don't save session if not modified (prevents race conditions)
-    saveUninitialized: false, // Don't save uninitialized sessions
+    resave: true, // Save session even if not modified (needed for cross-origin cookie setting)
+    saveUninitialized: true, // Save uninitialized sessions (needed for login to set cookie)
     rolling: true, // Reset expiration on each request
     cookie: {
       // In production (Railway), use secure cookies with sameSite: "none" for cross-origin
