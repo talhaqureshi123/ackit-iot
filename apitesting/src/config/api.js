@@ -49,7 +49,7 @@ const getEnvVar = (key, defaultValue) => {
 // ============================================
 // Priority: Railway Backend URL > Environment Variable > Local IP
 const RAILWAY_BACKEND_URL = getEnvVar("VITE_RAILWAY_BACKEND_URL", null);
-const BACKEND_IP = getEnvVar("VITE_BACKEND_IP", "192.168.1.105");
+export const BACKEND_IP = getEnvVar("VITE_BACKEND_IP", "192.168.1.105");
 
 // ============================================
 // Port Configuration
