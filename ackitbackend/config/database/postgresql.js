@@ -142,7 +142,7 @@ if (databaseUrlEnv) {
 (async () => {
   const maxRetries = 3;
   let retries = 0;
-  
+
   while (retries < maxRetries) {
     try {
       await sequelize.authenticate();
@@ -150,31 +150,49 @@ if (databaseUrlEnv) {
       break;
     } catch (error) {
       retries++;
-      console.error(`❌ Database connection attempt ${retries}/${maxRetries} failed:`, error.message);
-      
+      console.error(
+        `❌ Database connection attempt ${retries}/${maxRetries} failed:`,
+        error.message
+      );
+
       if (retries >= maxRetries) {
-        console.error("❌ Unable to connect to the database after", maxRetries, "attempts");
+        console.error(
+          "❌ Unable to connect to the database after",
+          maxRetries,
+          "attempts"
+        );
         console.error("Full error:", error);
       } else {
         console.log(`⏳ Retrying in 2 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
   }
 })();
 
 // Handle connection errors gracefully
-sequelize.connectionManager.pool.on('error', (err) => {
-  console.error('❌ Database pool error:', err);
-});
+// Note: Pool might not be initialized immediately, so we check if it exists and has event methods
+try {
+  const pool = sequelize.connectionManager.pool;
+  if (pool && typeof pool.on === "function") {
+    pool.on("error", (err) => {
+      console.error("❌ Database pool error:", err);
+    });
 
-// Reconnect on connection loss
-sequelize.connectionManager.pool.on('connect', () => {
-  console.log('✅ Database pool connection established');
-});
+    // Reconnect on connection loss
+    pool.on("connect", () => {
+      console.log("✅ Database pool connection established");
+    });
 
-sequelize.connectionManager.pool.on('remove', () => {
-  console.log('⚠️ Database pool connection removed');
-});
+    pool.on("remove", () => {
+      console.log("⚠️ Database pool connection removed");
+    });
+  } else {
+    console.log("⚠️ Database pool not yet initialized, event listeners skipped");
+  }
+} catch (error) {
+  console.log("⚠️ Could not attach pool event listeners:", error.message);
+  // This is not critical, continue without pool event listeners
+}
 
 module.exports = sequelize;
