@@ -40,11 +40,19 @@ export const AuthProvider = ({ children }) => {
               console.log('✅ User restored from localStorage');
             } else {
               console.warn('⚠️ Invalid user data in localStorage, clearing...');
-              logout();
+              // Clear invalid data directly
+              localStorage.removeItem('user');
+              localStorage.removeItem('role');
+              localStorage.removeItem('sessionId');
+              setUser(null);
             }
           } catch (parseError) {
             console.error('❌ Failed to parse user data from localStorage:', parseError);
-            logout();
+            // Clear corrupted data directly
+            localStorage.removeItem('user');
+            localStorage.removeItem('role');
+            localStorage.removeItem('sessionId');
+            setUser(null);
           }
         } else {
           console.log('ℹ️ No stored user data found');
@@ -57,6 +65,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (email, password, role) => {
