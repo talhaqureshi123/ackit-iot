@@ -260,6 +260,24 @@ class SuperAdminAuth {
         });
       }
 
+      // Mark session as modified to ensure it gets saved
+      req.session.sessionId = sessionId;
+      req.session.user = {
+        id: superAdmin.id,
+        name: superAdmin.name,
+        email: superAdmin.email,
+        role: "superadmin",
+      };
+      
+      // Force session to be saved
+      req.session.save((err) => {
+        if (err) {
+          console.error("❌ Error saving session before response:", err);
+        } else {
+          console.log("✅ Session saved before response");
+        }
+      });
+
       // Ensure session is saved one more time before response
       await new Promise((resolve, reject) => {
         req.session.save((err) => {
@@ -268,6 +286,8 @@ class SuperAdminAuth {
             reject(err);
           } else {
             console.log("✅ Final SuperAdmin session save completed before response");
+            console.log("✅ Session ID after save:", req.sessionID);
+            console.log("✅ Session data after save:", req.session);
             resolve();
           }
         });
@@ -283,8 +303,16 @@ class SuperAdminAuth {
       console.log("🔐 Login response - Session data:", req.session);
       console.log("🔐 Login response - Session cookie settings:", req.session.cookie);
       
-      // Ensure session cookie is set in response
-      // Express-session automatically sets the cookie, but we log it for debugging
+      // Manually ensure cookie is set in response headers
+      // This is a workaround for cross-origin cookie issues
+      const cookieValue = req.sessionID;
+      const cookieOptions = req.session.cookie;
+      const cookieString = `ackit.sid=${cookieValue}; Path=${cookieOptions.path || '/'}; Max-Age=${Math.floor(cookieOptions.maxAge / 1000)}; HttpOnly; ${cookieOptions.secure ? 'Secure;' : ''} SameSite=${cookieOptions.sameSite || 'Lax'}`;
+      
+      console.log("🔐 Login response - Setting cookie manually:", cookieString);
+      res.setHeader('Set-Cookie', cookieString);
+      
+      // Also let express-session set it (will override if needed)
       console.log("🔐 Login response - Response headers (before send):", {
         'set-cookie': res.getHeader('set-cookie'),
         'all-headers': Object.keys(res.getHeaders())
