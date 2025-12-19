@@ -105,6 +105,13 @@ export const AuthProvider = ({ children }) => {
       console.log('📥 Login response.status:', response.status);
       console.log('📥 Login response.headers:', response.headers);
       console.log('📥 Login response.headers.set-cookie:', response.headers['set-cookie']);
+      console.log('📥 Login response.headers["set-cookie"]:', response.headers['set-cookie']);
+      
+      // Check if cookie was set in browser
+      const cookiesAfterLogin = document.cookie;
+      console.log('🍪 Cookies in browser after login:', cookiesAfterLogin);
+      console.log('🍪 Has ackit.sid after login:', cookiesAfterLogin.includes('ackit.sid'));
+      console.log('📥 Login response.headers.set-cookie:', response.headers['set-cookie']);
       console.log('🍪 Browser cookies after login:', document.cookie);
       console.log('🍪 Has ackit.sid after login:', document.cookie.includes('ackit.sid'));
       

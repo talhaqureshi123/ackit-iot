@@ -129,6 +129,8 @@ app.use(
     cookie: {
       // In production (Railway), use secure cookies with sameSite: "none" for cross-origin
       // In development, use lax for same-origin
+      // Note: When frontend is on localhost (HTTP) and backend is on Railway (HTTPS),
+      // the cookie will be modified by Vite proxy to remove Secure flag
       secure: process.env.NODE_ENV === "production", // HTTPS in production, HTTP in development
       httpOnly: true, // Prevent XSS
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
@@ -136,6 +138,12 @@ app.use(
       path: "/", // Ensure cookie is sent for all paths
       // Don't set domain - allows cookie to work with proxy and cross-origin
       domain: undefined,
+    },
+    // Force session to be saved even if not modified (helps with cross-origin)
+    genid: (req) => {
+      const sessionId = require("uuid").v4();
+      console.log("🔐 Generated session ID:", sessionId);
+      return sessionId;
     },
     name: "ackit.sid", // Custom session name
   })

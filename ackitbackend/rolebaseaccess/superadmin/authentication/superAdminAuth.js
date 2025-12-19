@@ -281,6 +281,14 @@ class SuperAdminAuth {
       console.log("🔐 Login response - Session ID:", sessionId);
       console.log("🔐 Login response - Session cookie:", req.sessionID);
       console.log("🔐 Login response - Session data:", req.session);
+      console.log("🔐 Login response - Session cookie settings:", req.session.cookie);
+      
+      // Ensure session cookie is set in response
+      // Express-session automatically sets the cookie, but we log it for debugging
+      console.log("🔐 Login response - Response headers (before send):", {
+        'set-cookie': res.getHeader('set-cookie'),
+        'all-headers': Object.keys(res.getHeaders())
+      });
 
       res.status(200).json({
         success: true,
@@ -296,6 +304,9 @@ class SuperAdminAuth {
           sessionId: sessionId, // Only for debugging, not used by frontend
         },
       });
+      
+      // Log after response is sent
+      console.log("🔐 Login response - Response sent, cookie should be set");
     } catch (error) {
       res.status(500).json({
         success: false,
