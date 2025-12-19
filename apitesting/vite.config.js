@@ -55,18 +55,38 @@ export default defineConfig({
             // Ensure cookies are properly forwarded
             const setCookieHeaders = proxyRes.headers["set-cookie"];
             if (setCookieHeaders) {
-              // Modify cookie attributes if needed (remove domain restriction)
+              console.log("🍪 Proxy - Received cookies from backend:", setCookieHeaders);
+              // Modify cookie attributes for local development
               proxyRes.headers["set-cookie"] = setCookieHeaders.map(
                 (cookie) => {
-                  // Remove domain attribute to allow cookie on any domain
-                  return cookie
+                  // For local development with Railway backend:
+                  // - Remove Secure flag (since localhost is HTTP)
+                  // - Change SameSite to Lax for local development
+                  // - Remove domain attribute
+                  let modifiedCookie = cookie
                     .split(";")
                     .filter(
-                      (part) => !part.trim().toLowerCase().startsWith("domain")
+                      (part) => {
+                        const trimmed = part.trim().toLowerCase();
+                        return (
+                          !trimmed.startsWith("domain") &&
+                          !trimmed.startsWith("secure")
+                        );
+                      }
                     )
                     .join(";");
+                  
+                  // Add SameSite=Lax for local development (if not already present)
+                  if (!modifiedCookie.toLowerCase().includes("samesite")) {
+                    modifiedCookie += "; SameSite=Lax";
+                  }
+                  
+                  console.log("🍪 Proxy - Modified cookie:", modifiedCookie);
+                  return modifiedCookie;
                 }
               );
+            } else {
+              console.log("⚠️ Proxy - No cookies received from backend");
             }
           });
         },
