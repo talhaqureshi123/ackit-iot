@@ -303,17 +303,36 @@ class SuperAdminAuth {
       console.log("🔐 Login response - Session data:", req.session);
       console.log("🔐 Login response - Session cookie settings:", req.session.cookie);
       
-      // Express-session should automatically set the cookie when session is saved
-      // But we log to verify it's being set
+      // Ensure cookie is set - express-session should do this automatically
+      // but we verify it's in the response headers
+      const cookieName = req.session.cookie.name || 'ackit.sid';
+      console.log("🔐 Login response - Cookie name:", cookieName);
       console.log("🔐 Login response - Session ID for cookie:", req.sessionID);
-      console.log("🔐 Login response - Cookie will be set by express-session");
-      console.log("🔐 Login response - Cookie name:", req.session.cookie.name || 'ackit.sid');
       
-      // Also let express-session set it (will override if needed)
-      console.log("🔐 Login response - Response headers (before send):", {
-        'set-cookie': res.getHeader('set-cookie'),
-        'all-headers': Object.keys(res.getHeaders())
-      });
+      // Check if cookie header is already set
+      const existingCookie = res.getHeader('set-cookie');
+      console.log("🔐 Login response - Existing Set-Cookie header:", existingCookie);
+      
+      // If cookie is not set, manually set it (fallback for cross-origin issues)
+      if (!existingCookie || !Array.isArray(existingCookie) || !existingCookie.some(c => c.includes(cookieName))) {
+        console.log("⚠️ Cookie not set by express-session, setting manually...");
+        const cookieOptions = req.session.cookie;
+        const maxAge = Math.floor(cookieOptions.maxAge / 1000);
+        let cookieString = `${cookieName}=${req.sessionID}; Path=${cookieOptions.path || '/'}; Max-Age=${maxAge}; HttpOnly`;
+        
+        // For production (Railway HTTPS), we need Secure and SameSite=None
+        // But Vite proxy will modify it for localhost
+        if (process.env.NODE_ENV === "production") {
+          cookieString += "; Secure; SameSite=None";
+        } else {
+          cookieString += "; SameSite=Lax";
+        }
+        
+        console.log("🔐 Login response - Manually setting cookie:", cookieString);
+        res.setHeader('Set-Cookie', cookieString);
+      } else {
+        console.log("✅ Cookie already set by express-session");
+      }
 
       res.status(200).json({
         success: true,
@@ -331,7 +350,8 @@ class SuperAdminAuth {
       });
       
       // Log after response is sent
-      console.log("🔐 Login response - Response sent, cookie should be set");
+      console.log("🔐 Login response - Response sent");
+      console.log("🔐 Login response - Final Set-Cookie header:", res.getHeader('set-cookie'));
     } catch (error) {
       res.status(500).json({
         success: false,
