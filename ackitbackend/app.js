@@ -80,23 +80,41 @@ app.use(morgan("combined"));
 // Try PostgreSQL session store, fallback to memory store
 let sessionStore;
 try {
+  // Use DATABASE_PUBLIC_URL if available (for Railway), otherwise DATABASE_URL or individual credentials
+  const databaseUrl = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
+  let conString;
+  
+  if (databaseUrl) {
+    // Clean DATABASE_URL - remove any leading '=' or whitespace
+    let cleanUrl = databaseUrl.trim();
+    if (cleanUrl.startsWith("=")) {
+      cleanUrl = cleanUrl.substring(1).trim();
+    }
+    conString = cleanUrl;
+    console.log("✅ Using DATABASE_URL for session store");
+  } else {
+    // Fallback to individual credentials
+    conString = `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
+    console.log("✅ Using individual DB credentials for session store");
+  }
+  
   sessionStore = new pgSession({
-    conString:
-      process.env.DATABASE_URL ||
-      `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
+    conString: conString,
     tableName: "session", // Use 'session' table
     createTableIfMissing: true, // Create table if it doesn't exist
     pruneSessionInterval: 60, // Clean up expired sessions every 60 seconds
   });
   console.log("✅ Using PostgreSQL session store");
 } catch (error) {
-  console.log(
+  console.error(
     "⚠️ PostgreSQL session store failed, using memory store:",
     error.message
   );
+  console.error("⚠️ Session store error details:", error);
   sessionStore = new MemoryStore({
     checkPeriod: 86400000, // prune expired entries every 24h
   });
+  console.log("✅ Using memory session store (fallback)");
 }
 
 app.use(
