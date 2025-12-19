@@ -46,10 +46,26 @@ const LoginPage = () => {
           return;
         }
         
-        // Small delay to ensure state propagation
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Longer delay to ensure state propagation and AuthContext update
+        console.log('⏳ LoginPage - Waiting for state to propagate...');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Double-check before navigating
+        const finalCheck = {
+          user: localStorage.getItem('user'),
+          role: localStorage.getItem('role'),
+          loginTime: localStorage.getItem('loginTime')
+        };
+        console.log('✅ LoginPage - Final check before navigation:', finalCheck);
+        
+        if (!finalCheck.user || !finalCheck.role) {
+          console.error('❌ LoginPage - Data lost before navigation!');
+          toast.error('Session not saved properly. Please try again.');
+          return;
+        }
         
         // Navigate based on role
+        console.log('🚀 LoginPage - Navigating to dashboard for role:', formData.role);
         switch (formData.role) {
           case 'superadmin':
             navigate('/superadmin');

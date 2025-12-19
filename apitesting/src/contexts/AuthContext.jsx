@@ -142,12 +142,20 @@ export const AuthProvider = ({ children }) => {
           localStorage.setItem('sessionId', sessionId);
         }
         
-        // Set user state immediately
+        // Set user state immediately - use functional update to ensure it's set
+        setUser((prevUser) => {
+          console.log('🔄 Setting user state - Previous:', prevUser, 'New:', userDataToStore);
+          return userDataToStore;
+        });
+        
+        // Force a re-render by updating state again (ensures React picks up the change)
+        await new Promise(resolve => setTimeout(resolve, 50));
         setUser(userDataToStore);
         
         console.log('✅ User set in context:', userDataToStore);
         console.log('✅ User stored in localStorage:', JSON.parse(localStorage.getItem('user')));
         console.log('✅ Role stored:', localStorage.getItem('role'));
+        console.log('✅ Login time stored:', localStorage.getItem('loginTime'));
         
         // Mark login time for grace period (prevents immediate logout on 401 errors)
         if (role === 'admin') {
@@ -162,9 +170,15 @@ export const AuthProvider = ({ children }) => {
         // Verify state was set correctly
         const verifyUser = localStorage.getItem('user');
         const verifyRole = localStorage.getItem('role');
+        const verifyLoginTime = localStorage.getItem('loginTime');
         console.log('✅ Verification - User in localStorage:', verifyUser ? 'Present' : 'Missing');
         console.log('✅ Verification - Role in localStorage:', verifyRole || 'Missing');
+        console.log('✅ Verification - Login time:', verifyLoginTime || 'Missing');
         console.log('✅ Verification - Current user state:', userDataToStore);
+        
+        // Double-check user state
+        const currentStateUser = JSON.parse(localStorage.getItem('user') || 'null');
+        console.log('✅ Final verification - Current state user:', currentStateUser);
         
         // Force a state update to ensure React knows about the change
         setUser(userDataToStore);
