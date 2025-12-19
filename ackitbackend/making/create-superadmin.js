@@ -14,8 +14,9 @@ async function createSuperAdmin() {
     await sequelize.authenticate();
     console.log("✅ Database connection established");
 
-    // Recreate schema to match models since DB is fresh
-    await sequelize.sync({ force: true });
+    // Sync schema (create tables if they don't exist, don't drop existing)
+    // Use force: false to preserve existing data
+    await sequelize.sync({ force: false, alter: false });
     console.log("✅ Database tables synchronized");
 
     // Check if Super Admin already exists
