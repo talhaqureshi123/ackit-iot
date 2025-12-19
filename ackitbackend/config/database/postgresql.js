@@ -56,7 +56,16 @@ if (databaseUrlEnv) {
   sequelize = new Sequelize(databaseUrl, {
     dialect: "postgres",
     logging: process.env.NODE_ENV === "development" ? console.log : false,
-    pool: { max: 5, min: 0, acquire: 30000, idle: 10000 },
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 60000, // Increased to 60 seconds for Railway
+      idle: 10000,
+      evict: 1000, // Check for idle connections every second
+    },
+    retry: {
+      max: 3, // Retry failed queries up to 3 times
+    },
     timezone: "+05:00", // Pakistan/Karachi timezone (PKT - UTC+5)
     dialectOptions: {
       ssl:
@@ -66,6 +75,18 @@ if (databaseUrlEnv) {
               rejectUnauthorized: false,
             }
           : false,
+      // Keep connection alive
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+    },
+    // Handle connection errors gracefully
+    hooks: {
+      beforeConnect: async (config) => {
+        console.log("🔌 Attempting database connection...");
+      },
+      afterConnect: async (connection, config) => {
+        console.log("✅ Database connection established");
+      },
     },
   });
 } else {
@@ -117,13 +138,43 @@ if (databaseUrlEnv) {
   );
 }
 
+// Test connection with retry logic
 (async () => {
-  try {
-    await sequelize.authenticate();
-    console.log("✅ Database connection established successfully.");
-  } catch (error) {
-    console.error("❌ Unable to connect to the database:", error);
+  const maxRetries = 3;
+  let retries = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      await sequelize.authenticate();
+      console.log("✅ Database connection established successfully.");
+      break;
+    } catch (error) {
+      retries++;
+      console.error(`❌ Database connection attempt ${retries}/${maxRetries} failed:`, error.message);
+      
+      if (retries >= maxRetries) {
+        console.error("❌ Unable to connect to the database after", maxRetries, "attempts");
+        console.error("Full error:", error);
+      } else {
+        console.log(`⏳ Retrying in 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
   }
 })();
+
+// Handle connection errors gracefully
+sequelize.connectionManager.pool.on('error', (err) => {
+  console.error('❌ Database pool error:', err);
+});
+
+// Reconnect on connection loss
+sequelize.connectionManager.pool.on('connect', () => {
+  console.log('✅ Database pool connection established');
+});
+
+sequelize.connectionManager.pool.on('remove', () => {
+  console.log('⚠️ Database pool connection removed');
+});
 
 module.exports = sequelize;
