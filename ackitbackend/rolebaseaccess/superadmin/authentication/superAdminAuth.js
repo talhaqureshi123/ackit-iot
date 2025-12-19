@@ -303,14 +303,11 @@ class SuperAdminAuth {
       console.log("🔐 Login response - Session data:", req.session);
       console.log("🔐 Login response - Session cookie settings:", req.session.cookie);
       
-      // Manually ensure cookie is set in response headers
-      // This is a workaround for cross-origin cookie issues
-      const cookieValue = req.sessionID;
-      const cookieOptions = req.session.cookie;
-      const cookieString = `ackit.sid=${cookieValue}; Path=${cookieOptions.path || '/'}; Max-Age=${Math.floor(cookieOptions.maxAge / 1000)}; HttpOnly; ${cookieOptions.secure ? 'Secure;' : ''} SameSite=${cookieOptions.sameSite || 'Lax'}`;
-      
-      console.log("🔐 Login response - Setting cookie manually:", cookieString);
-      res.setHeader('Set-Cookie', cookieString);
+      // Express-session should automatically set the cookie when session is saved
+      // But we log to verify it's being set
+      console.log("🔐 Login response - Session ID for cookie:", req.sessionID);
+      console.log("🔐 Login response - Cookie will be set by express-session");
+      console.log("🔐 Login response - Cookie name:", req.session.cookie.name || 'ackit.sid');
       
       // Also let express-session set it (will override if needed)
       console.log("🔐 Login response - Response headers (before send):", {
