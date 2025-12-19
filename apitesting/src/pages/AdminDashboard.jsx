@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI } from '../services/apiAdmin';
-import { BACKEND_IP, BACKEND_PORT, FRONTEND_WS_PORT } from '../config/api';
+import { BACKEND_IP, BACKEND_PORT, FRONTEND_WS_PORT, WS_URL } from '../config/api';
 import toast from 'react-hot-toast';
 import EventForm from '../components/EventForm';
 import { 
@@ -746,10 +746,8 @@ const AdminDashboard = () => {
     loadEvents();
     
     // Native WebSocket connection for real-time updates
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${BACKEND_IP}:${FRONTEND_WS_PORT}/frontend`;
-    
-    const socket = new WebSocket(wsUrl);
+    // Use WS_URL from config (handles Railway URL automatically)
+    const socket = new WebSocket(WS_URL);
     
     socket.onopen = () => {
       console.log('✅ WebSocket connected to backend');
