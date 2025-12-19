@@ -83,23 +83,35 @@ api.interceptors.response.use(
       const isViewDetailsOperation =
         url.includes("/organizations/") && url.match(/\/organizations\/[^/]+$/);
       const isLoginOperation =
-        url.includes("/login") || url.includes("/superadmin/login") || 
-        url.includes("/admin/login") || url.includes("/manager/login");
+        url.includes("/login") ||
+        url.includes("/superadmin/login") ||
+        url.includes("/admin/login") ||
+        url.includes("/manager/login");
 
       // Don't auto-logout for lock/unlock operations, status checks, view details, or login attempts
+      // Also don't auto-logout immediately after login (give session time to establish)
+      const isRecentLogin = Date.now() - (parseInt(localStorage.getItem('loginTime') || '0')) < 5000; // 5 seconds grace period
+      
       if (
         !isStatusOperation &&
         !isToggleOperation &&
         !isUnlockOperation &&
         !isLockOperation &&
         !isViewDetailsOperation &&
-        !isLoginOperation
+        !isLoginOperation &&
+        !isRecentLogin
       ) {
+        console.warn('⚠️ 401 error detected - auto-logging out');
+        console.warn('⚠️ URL:', url);
+        console.warn('⚠️ Is recent login:', isRecentLogin);
         // Silent logout - no console logs
         localStorage.removeItem("user");
         localStorage.removeItem("role");
         localStorage.removeItem("sessionId");
+        localStorage.removeItem("loginTime");
         window.location.href = "/login";
+      } else if (isRecentLogin) {
+        console.log('ℹ️ 401 error on recent login - ignoring (session establishing)');
       }
     }
     // All other errors (403, 500, etc.) - silent handling, no console logs

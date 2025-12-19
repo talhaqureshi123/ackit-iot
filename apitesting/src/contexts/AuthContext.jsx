@@ -100,21 +100,28 @@ export const AuthProvider = ({ children }) => {
         response = await api.post(endpoint, { email, password });
       }
       
-      console.log('Login response:', response.data);
+      console.log('📥 Login response received:', response);
+      console.log('📥 Login response.data:', response.data);
+      console.log('📥 Login response.status:', response.status);
+      console.log('📥 Login response.headers:', response.headers);
       
-      if (response.data.success) {
+      if (response.data && response.data.success) {
         // Handle different response structures
         const userData = response.data.data?.user || response.data.user || response.data.data;
         const sessionId = response.data.data?.sessionId || response.data.sessionId;
         
+        console.log('🔍 Extracted userData:', userData);
+        console.log('🔍 Extracted sessionId:', sessionId);
+        
         if (!userData) {
-          console.error('No user data in response:', response.data);
+          console.error('❌ No user data in response:', response.data);
+          console.error('❌ Full response structure:', JSON.stringify(response.data, null, 2));
           throw new Error('Login response missing user data');
         }
         
-        console.log('Login successful - User data:', userData);
-        console.log('Login successful - Session ID:', sessionId);
-        console.log('Login successful - Role:', role);
+        console.log('✅ Login successful - User data:', userData);
+        console.log('✅ Login successful - Session ID:', sessionId);
+        console.log('✅ Login successful - Role:', role);
         
         // Ensure userData has required fields
         const userDataToStore = {
@@ -130,6 +137,7 @@ export const AuthProvider = ({ children }) => {
         // Store user data and session info (session is handled by cookies)
         localStorage.setItem('user', JSON.stringify(userDataToStore));
         localStorage.setItem('role', userDataToStore.role || role);
+        localStorage.setItem('loginTime', Date.now().toString()); // Track login time for grace period
         if (sessionId) {
           localStorage.setItem('sessionId', sessionId);
         }

@@ -123,14 +123,33 @@ const SuperAdminDashboard = () => {
   useEffect(() => {
     const loadDataSafely = async () => {
       try {
-        console.log('SuperAdmin Dashboard - User:', user);
-        console.log('SuperAdmin Dashboard - User role:', user?.role);
+        console.log('📊 SuperAdmin Dashboard - Loading data...');
+        console.log('📊 SuperAdmin Dashboard - User:', user);
+        console.log('📊 SuperAdmin Dashboard - User role:', user?.role);
+        console.log('📊 SuperAdmin Dashboard - localStorage user:', localStorage.getItem('user'));
+        console.log('📊 SuperAdmin Dashboard - localStorage role:', localStorage.getItem('role'));
+        
         if (user && user.role === 'superadmin') {
+          // Small delay to ensure session cookie is set after login
+          await new Promise(resolve => setTimeout(resolve, 300));
           await loadData();
+        } else {
+          console.warn('⚠️ SuperAdmin Dashboard - User not authenticated or wrong role');
         }
       } catch (error) {
-        console.error('Failed to load dashboard data:', error);
-        toast.error('Failed to load dashboard data');
+        console.error('❌ Failed to load dashboard data:', error);
+        console.error('❌ Error details:', {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status
+        });
+        
+        // Don't show error toast for 401 - it might trigger auto-logout
+        if (error.response?.status !== 401) {
+          toast.error('Failed to load dashboard data');
+        } else {
+          console.warn('⚠️ 401 error on dashboard load - session might not be ready yet');
+        }
       }
     };
     

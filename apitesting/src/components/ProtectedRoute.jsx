@@ -15,14 +15,16 @@ const ProtectedRoute = ({ children, role }) => {
   const currentRole = currentUser?.role || storedRole;
   const authenticated = isAuthenticated || !!currentUser;
 
-  console.log('ProtectedRoute - Role required:', role);
-  console.log('ProtectedRoute - User (state):', user);
-  console.log('ProtectedRoute - User (localStorage):', parsedUser);
-  console.log('ProtectedRoute - Current user:', currentUser);
-  console.log('ProtectedRoute - Current role:', currentRole);
-  console.log('ProtectedRoute - Is authenticated (state):', isAuthenticated);
-  console.log('ProtectedRoute - Is authenticated (computed):', authenticated);
-  console.log('ProtectedRoute - Loading:', loading);
+  console.log('🛡️ ProtectedRoute - Role required:', role);
+  console.log('🛡️ ProtectedRoute - User (state):', user);
+  console.log('🛡️ ProtectedRoute - User (localStorage):', parsedUser);
+  console.log('🛡️ ProtectedRoute - Current user:', currentUser);
+  console.log('🛡️ ProtectedRoute - Current role:', currentRole);
+  console.log('🛡️ ProtectedRoute - Is authenticated (state):', isAuthenticated);
+  console.log('🛡️ ProtectedRoute - Is authenticated (computed):', authenticated);
+  console.log('🛡️ ProtectedRoute - Loading:', loading);
+  console.log('🛡️ ProtectedRoute - localStorage.getItem("user"):', localStorage.getItem('user'));
+  console.log('🛡️ ProtectedRoute - localStorage.getItem("role"):', localStorage.getItem('role'));
 
   if (loading) {
     return (
