@@ -16,7 +16,8 @@ console.log("DATABASE_PUBLIC_URL exists:", !!process.env.DATABASE_PUBLIC_URL);
 // Support Railway DATABASE_URL or individual DB credentials
 // Prefer DATABASE_PUBLIC_URL over DATABASE_URL (for Railway internal DNS issues)
 let sequelize;
-const databaseUrlEnv = process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
+const databaseUrlEnv =
+  process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL;
 
 if (databaseUrlEnv) {
   // Railway provides DATABASE_URL in format: postgresql://user:password@host:port/database
@@ -44,7 +45,9 @@ if (databaseUrlEnv) {
     process.exit(1);
   }
 
-  const urlSource = process.env.DATABASE_PUBLIC_URL ? "DATABASE_PUBLIC_URL" : "DATABASE_URL";
+  const urlSource = process.env.DATABASE_PUBLIC_URL
+    ? "DATABASE_PUBLIC_URL"
+    : "DATABASE_URL";
   console.log(`✅ Using ${urlSource} from Railway`);
   // Mask password in logs for security
   const maskedUrl = databaseUrl.replace(/:[^:@]+@/, ":****@");

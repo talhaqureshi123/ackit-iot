@@ -67,8 +67,11 @@ export const FRONTEND_WS_PORT = "5050";
 export const WS_URL = (() => {
   if (RAILWAY_BACKEND_URL) {
     // Convert Railway HTTPS URL to WSS for WebSocket
-    const wsProtocol = typeof window !== 'undefined' && window.location?.protocol === 'https:' ? 'wss' : 'ws';
-    return RAILWAY_BACKEND_URL.replace(/^https?/, wsProtocol) + '/frontend';
+    const wsProtocol =
+      typeof window !== "undefined" && window.location?.protocol === "https:"
+        ? "wss"
+        : "ws";
+    return RAILWAY_BACKEND_URL.replace(/^https?/, wsProtocol) + "/frontend";
   }
   return `ws://${BACKEND_IP}:${FRONTEND_WS_PORT}/frontend`;
 })();
@@ -84,7 +87,8 @@ export const VITE_PORT = "5173";
 // URL Configuration
 // ============================================
 // Backend base URL (without /api) - uses Railway URL in production, local IP in development
-export const BACKEND_BASE_URL = RAILWAY_BACKEND_URL || `http://${BACKEND_IP}:${BACKEND_PORT}`;
+export const BACKEND_BASE_URL =
+  RAILWAY_BACKEND_URL || `http://${BACKEND_IP}:${BACKEND_PORT}`;
 
 // API base URL (with /api)
 export const API_BASE_URL = `${BACKEND_BASE_URL}/api`;
