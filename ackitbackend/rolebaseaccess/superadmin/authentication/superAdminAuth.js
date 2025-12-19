@@ -269,29 +269,26 @@ class SuperAdminAuth {
         role: "superadmin",
       };
       
-      // Force session to be saved
-      req.session.save((err) => {
-        if (err) {
-          console.error("❌ Error saving session before response:", err);
-        } else {
-          console.log("✅ Session saved before response");
-        }
-      });
-
-      // Ensure session is saved one more time before response
+      // Force session to be saved and ensure cookie is set
       await new Promise((resolve, reject) => {
         req.session.save((err) => {
           if (err) {
-            console.error("❌ Final SuperAdmin session save error:", err);
+            console.error("❌ Error saving session:", err);
             reject(err);
           } else {
-            console.log("✅ Final SuperAdmin session save completed before response");
-            console.log("✅ Session ID after save:", req.sessionID);
-            console.log("✅ Session data after save:", req.session);
+            console.log("✅ Session saved successfully");
+            console.log("✅ Session ID:", req.sessionID);
+            console.log("✅ Session data:", req.session);
             resolve();
           }
         });
       });
+      
+      // Ensure cookie is set by touching the session cookie
+      if (req.session.cookie) {
+        req.session.cookie.expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        console.log("✅ Session cookie expiration set");
+      }
 
       // Touch session to refresh expiration
       if (req.session.touch) {
