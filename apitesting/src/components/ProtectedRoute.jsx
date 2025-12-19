@@ -5,13 +5,24 @@ import { useAuth } from '../contexts/AuthContext';
 const ProtectedRoute = ({ children, role }) => {
   const { isAuthenticated, user, loading } = useAuth();
 
+  // Fallback to localStorage if state hasn't updated yet (handles race condition after login)
+  const storedUser = localStorage.getItem('user');
+  const storedRole = localStorage.getItem('role');
+  const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+  
+  // Use state if available, otherwise fallback to localStorage
+  const currentUser = user || parsedUser;
+  const currentRole = currentUser?.role || storedRole;
+  const authenticated = isAuthenticated || !!currentUser;
+
   console.log('ProtectedRoute - Role required:', role);
-  console.log('ProtectedRoute - User:', user);
-  console.log('ProtectedRoute - User role:', user?.role);
-  console.log('ProtectedRoute - Is authenticated:', isAuthenticated);
+  console.log('ProtectedRoute - User (state):', user);
+  console.log('ProtectedRoute - User (localStorage):', parsedUser);
+  console.log('ProtectedRoute - Current user:', currentUser);
+  console.log('ProtectedRoute - Current role:', currentRole);
+  console.log('ProtectedRoute - Is authenticated (state):', isAuthenticated);
+  console.log('ProtectedRoute - Is authenticated (computed):', authenticated);
   console.log('ProtectedRoute - Loading:', loading);
-  console.log('ProtectedRoute - localStorage user:', localStorage.getItem('user'));
-  console.log('ProtectedRoute - localStorage role:', localStorage.getItem('role'));
 
   if (loading) {
     return (
@@ -21,14 +32,14 @@ const ProtectedRoute = ({ children, role }) => {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!authenticated) {
     console.log('ProtectedRoute - Not authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
 
-  if (role && user?.role !== role) {
+  if (role && currentRole !== role) {
     console.log('ProtectedRoute - Role mismatch, redirecting to login');
-    console.log('ProtectedRoute - Expected role:', role, 'User role:', user?.role);
+    console.log('ProtectedRoute - Expected role:', role, 'User role:', currentRole);
     return <Navigate to="/login" replace />;
   }
 

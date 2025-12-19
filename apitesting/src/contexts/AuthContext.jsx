@@ -30,13 +30,28 @@ export const AuthProvider = ({ children }) => {
         console.log('  Stored role:', storedRole);
         
         if (storedUser && storedRole) {
-          const parsedUser = JSON.parse(storedUser);
-          console.log('  Parsed user:', parsedUser);
-          setUser(parsedUser);
+          try {
+            const parsedUser = JSON.parse(storedUser);
+            console.log('  Parsed user:', parsedUser);
+            
+            // Validate parsed user has required fields
+            if (parsedUser && parsedUser.email && parsedUser.role) {
+              setUser(parsedUser);
+              console.log('✅ User restored from localStorage');
+            } else {
+              console.warn('⚠️ Invalid user data in localStorage, clearing...');
+              logout();
+            }
+          } catch (parseError) {
+            console.error('❌ Failed to parse user data from localStorage:', parseError);
+            logout();
+          }
+        } else {
+          console.log('ℹ️ No stored user data found');
         }
       } catch (error) {
-        console.error('Auth check failed:', error);
-        logout();
+        console.error('❌ Auth check failed:', error);
+        // Don't logout on check error, just set loading to false
       }
       setLoading(false);
     };
@@ -109,10 +124,12 @@ export const AuthProvider = ({ children }) => {
           localStorage.setItem('sessionId', sessionId);
         }
         
+        // Set user state immediately
         setUser(userDataToStore);
         
-        console.log('User set in context:', userDataToStore);
-        console.log('User stored in localStorage:', JSON.parse(localStorage.getItem('user')));
+        console.log('✅ User set in context:', userDataToStore);
+        console.log('✅ User stored in localStorage:', JSON.parse(localStorage.getItem('user')));
+        console.log('✅ Role stored:', localStorage.getItem('role'));
         
         // Mark login time for grace period (prevents immediate logout on 401 errors)
         if (role === 'admin') {
@@ -121,8 +138,14 @@ export const AuthProvider = ({ children }) => {
           markManagerLogin();
         }
         
-        // Small delay to ensure session cookie is set and saved
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Small delay to ensure state is updated and session cookie is set
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Verify state was set correctly
+        const verifyUser = localStorage.getItem('user');
+        const verifyRole = localStorage.getItem('role');
+        console.log('✅ Verification - User in localStorage:', verifyUser ? 'Present' : 'Missing');
+        console.log('✅ Verification - Role in localStorage:', verifyRole || 'Missing');
         
         return { success: true, user: userDataToStore };
       } else {
