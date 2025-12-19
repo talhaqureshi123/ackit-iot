@@ -28,8 +28,26 @@ const LoginPage = () => {
     try {
       const result = await login(formData.email, formData.password, formData.role);
       
-      if (result.success) {
+      if (result && result.success) {
         toast.success(`Welcome back, ${result.user.name}!`);
+        
+        // Verify user is stored before navigating
+        const storedUser = localStorage.getItem('user');
+        const storedRole = localStorage.getItem('role');
+        
+        console.log('LoginPage - Before navigation:');
+        console.log('  Stored user:', storedUser ? 'Present' : 'Missing');
+        console.log('  Stored role:', storedRole || 'Missing');
+        console.log('  Result user:', result.user);
+        
+        if (!storedUser || !storedRole) {
+          console.error('❌ User data not stored properly, cannot navigate');
+          toast.error('Login successful but session not saved. Please try again.');
+          return;
+        }
+        
+        // Small delay to ensure state propagation
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         // Navigate based on role
         switch (formData.role) {
@@ -43,8 +61,11 @@ const LoginPage = () => {
             navigate('/manager');
             break;
         }
+      } else {
+        toast.error('Login failed: Invalid response from server');
       }
     } catch (error) {
+      console.error('LoginPage - Login error:', error);
       toast.error(error.response?.data?.message || error.message || 'Login failed');
     } finally {
       setLoading(false);

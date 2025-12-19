@@ -82,14 +82,18 @@ api.interceptors.response.use(
         url.includes("/system/lock");
       const isViewDetailsOperation =
         url.includes("/organizations/") && url.match(/\/organizations\/[^/]+$/);
+      const isLoginOperation =
+        url.includes("/login") || url.includes("/superadmin/login") || 
+        url.includes("/admin/login") || url.includes("/manager/login");
 
-      // Don't auto-logout for lock/unlock operations, status checks, or view details
+      // Don't auto-logout for lock/unlock operations, status checks, view details, or login attempts
       if (
         !isStatusOperation &&
         !isToggleOperation &&
         !isUnlockOperation &&
         !isLockOperation &&
-        !isViewDetailsOperation
+        !isViewDetailsOperation &&
+        !isLoginOperation
       ) {
         // Silent logout - no console logs
         localStorage.removeItem("user");

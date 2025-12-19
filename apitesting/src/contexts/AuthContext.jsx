@@ -122,7 +122,8 @@ export const AuthProvider = ({ children }) => {
           name: userData.name,
           email: userData.email,
           role: userData.role || role,
-          status: userData.status,
+          status: userData.status || 'active', // Default to active if not provided
+          lastLogin: userData.lastLogin,
           ...userData
         };
         
@@ -147,14 +148,18 @@ export const AuthProvider = ({ children }) => {
           markManagerLogin();
         }
         
-        // Small delay to ensure state is updated and session cookie is set
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait a bit longer to ensure state is fully updated and React has re-rendered
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         // Verify state was set correctly
         const verifyUser = localStorage.getItem('user');
         const verifyRole = localStorage.getItem('role');
         console.log('✅ Verification - User in localStorage:', verifyUser ? 'Present' : 'Missing');
         console.log('✅ Verification - Role in localStorage:', verifyRole || 'Missing');
+        console.log('✅ Verification - Current user state:', userDataToStore);
+        
+        // Force a state update to ensure React knows about the change
+        setUser(userDataToStore);
         
         return { success: true, user: userDataToStore };
       } else {
