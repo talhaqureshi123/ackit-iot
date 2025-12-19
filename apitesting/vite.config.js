@@ -1,7 +1,17 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 // Import from api.js - it now works in both Node.js and browser contexts
-import { FRONTEND_PORT, BACKEND_BASE_URL } from "./src/config/api.js";
+import { FRONTEND_PORT } from "./src/config/api.js";
+
+// Get Railway backend URL from environment (Node.js context in vite.config.js)
+const RAILWAY_BACKEND_URL = process.env.VITE_RAILWAY_BACKEND_URL || null;
+const BACKEND_IP = process.env.VITE_BACKEND_IP || "192.168.1.105";
+const BACKEND_PORT = "5050";
+
+// Backend base URL - prefer Railway URL, fallback to local IP
+const BACKEND_BASE_URL = RAILWAY_BACKEND_URL || `http://${BACKEND_IP}:${BACKEND_PORT}`;
+
+console.log("🔧 Vite Config - Backend URL:", BACKEND_BASE_URL);
 
 // https://vitejs.dev/config/
 export default defineConfig({
