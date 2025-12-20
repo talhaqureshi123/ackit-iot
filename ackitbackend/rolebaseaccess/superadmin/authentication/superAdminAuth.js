@@ -334,19 +334,38 @@ class SuperAdminAuth {
         sameSite: cookieOptions.sameSite
       });
       
+      // Detect if request is from localhost (via proxy)
+      // If origin is localhost, we need to set cookie without Secure
+      const origin = req.headers.origin || req.headers.referer || '';
+      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1') || 
+                         req.headers['x-forwarded-host']?.includes('localhost');
+      
+      console.log("🔐 Login response - Request origin:", origin);
+      console.log("🔐 Login response - Is localhost:", isLocalhost);
+      
       // Use res.cookie() which properly handles cookie setting
-      // For localhost via proxy, we'll set it without Secure so browser accepts it
-      // The proxy will handle the modification
-      res.cookie(cookieName, req.sessionID, {
+      // For localhost, set cookie without Secure (browser will reject Secure on HTTP)
+      // For Railway direct access, use Secure and SameSite=None
+      const cookieSettings = {
         path: cookieOptions.path || '/',
         maxAge: cookieOptions.maxAge,
         httpOnly: cookieOptions.httpOnly !== false,
-        // For production (Railway), set Secure and SameSite=None
-        // For localhost, Vite proxy will modify it
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         domain: undefined, // Don't set domain for cross-origin
-      });
+      };
+      
+      if (isLocalhost) {
+        // For localhost (HTTP), don't use Secure (browser rejects it)
+        cookieSettings.secure = false;
+        cookieSettings.sameSite = 'lax';
+        console.log("🔐 Login response - Setting cookie for localhost (no Secure)");
+      } else {
+        // For production (Railway HTTPS), use Secure and SameSite=None
+        cookieSettings.secure = process.env.NODE_ENV === "production";
+        cookieSettings.sameSite = process.env.NODE_ENV === "production" ? "none" : "lax";
+        console.log("🔐 Login response - Setting cookie for production");
+      }
+      
+      res.cookie(cookieName, req.sessionID, cookieSettings);
       
       console.log("🔐 Login response - Cookie set using res.cookie()");
       
