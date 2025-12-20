@@ -2458,13 +2458,6 @@ const ManagerDashboard = () => {
             }
           }
           
-          // Debug log to see what we're parsing
-          console.log('🕐 formatTime parsing:', {
-            original: dateString,
-            normalized: dateValue,
-            hasTimezone: hasTimezone
-          });
-          
           date = new Date(dateValue);
           
           if (isNaN(date.getTime())) {
@@ -2479,6 +2472,11 @@ const ManagerDashboard = () => {
           return 'N/A';
         }
         
+        // CRITICAL: Verify the date is actually in UTC
+        // Get UTC hours to verify
+        const utcHours = date.getUTCHours();
+        const utcMinutes = date.getUTCMinutes();
+        
         // Convert UTC to Pakistan/Karachi time - TIME ONLY
         // Use 24-hour format first to avoid AM/PM confusion, then convert to 12-hour
         const timeFormatter24 = new Intl.DateTimeFormat('en-US', {
@@ -2490,6 +2488,19 @@ const ManagerDashboard = () => {
         
         const pktTime24 = timeFormatter24.format(date);
         const [pktHour24, pktMinute] = pktTime24.split(':').map(Number);
+        
+        // Expected PKT time: UTC + 5 hours
+        const expectedPKTHour = (utcHours + 5) % 24;
+        
+        // Debug log to verify conversion
+        console.log('🕐 formatTime conversion:', {
+          original: dateString,
+          normalized: dateValue,
+          utcTime: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
+          pktTime: `${String(pktHour24).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} PKT`,
+          expectedPKT: `${String(expectedPKTHour).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} PKT`,
+          match: pktHour24 === expectedPKTHour ? '✅ CORRECT' : '❌ MISMATCH'
+        });
         
         // Convert to 12-hour format with AM/PM
         const pktHour12 = pktHour24 === 0 ? 12 : (pktHour24 > 12 ? pktHour24 - 12 : pktHour24);
