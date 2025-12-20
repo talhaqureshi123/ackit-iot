@@ -40,6 +40,7 @@ const ManagerDashboard = () => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true); // Track initial data load
   const [alerts, setAlerts] = useState([]);
   const [allAlerts, setAllAlerts] = useState([]); // Store all alerts (including device-level) for device highlighting
   const [alertsLoading, setAlertsLoading] = useState(false);
@@ -636,6 +637,9 @@ const ManagerDashboard = () => {
           events: prev.events || []
         }));
 
+        // Mark initial loading as complete after first successful load
+        setInitialLoading(false);
+
         // Show warning if no data but request succeeded
         if (organizations.length === 0 && acs.length === 0 && orgsRes?.data?.success !== false && acsRes?.data?.success !== false) {
           console.warn('No organizations or ACs found for this manager');
@@ -646,6 +650,8 @@ const ManagerDashboard = () => {
         if (!orgsRes) {
           console.warn('Organizations fetch failed, preserving last known data');
         }
+        // Even on error, mark initial loading as complete to show error state
+        setInitialLoading(false);
         if (!acsRes) {
           console.warn('ACs fetch failed, preserving last known data');
         }
@@ -2711,6 +2717,15 @@ const ManagerDashboard = () => {
   };
 
   const DashboardView = () => {
+    // Show loading spinner during initial load
+    if (initialLoading) {
+      return (
+        <div className="flex items-center justify-center min-h-[400px] w-full">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
+        </div>
+      );
+    }
+    
     const totalVenues = data.organizations.reduce((sum, org) => sum + (org.venues?.length || 0), 0);
     const activeACs = data.acs.filter(ac => ac.isOn === true || ac.isOn === 'true' || ac.isOn === 1).length;
     const totalEvents = Array.isArray(data.events) ? data.events.length : 0;

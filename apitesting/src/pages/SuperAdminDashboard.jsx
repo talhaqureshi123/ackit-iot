@@ -92,6 +92,7 @@ const SuperAdminDashboard = () => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('admins');
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true); // Track initial data load
   const [showModal, setShowModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -358,6 +359,16 @@ const SuperAdminDashboard = () => {
   );
 
   const renderContent = () => {
+    // Show loading spinner during initial load
+    if (initialLoading) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      );
+    }
+    
+    // Show loading spinner during refresh (if data already exists)
     if (loading && data.admins.length === 0 && data.logs.length === 0) {
       return (
         <div className="flex items-center justify-center h-64">

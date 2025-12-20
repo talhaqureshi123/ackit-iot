@@ -588,6 +588,7 @@ const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true); // Track initial data load
   const [temperatureLoading, setTemperatureLoading] = useState({});
   const [localTemperatures, setLocalTemperatures] = useState({});
   const [orgPowerLoading, setOrgPowerLoading] = useState({});
@@ -1606,6 +1607,9 @@ const AdminDashboard = () => {
       await Promise.resolve(); // Ensure state update is processed
       loadAlerts(); // Load alerts in parallel (no delay needed)
       loadEvents(); // Load events to ensure they're up to date
+      
+      // Mark initial loading as complete after first successful load
+      setInitialLoading(false);
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || 'Failed to load data';
       toast.error(errorMessage);
@@ -1615,6 +1619,8 @@ const AdminDashboard = () => {
         response: error.response?.data,
         status: error.response?.status
       });
+      // Even on error, mark initial loading as complete to show error state
+      setInitialLoading(false);
     } finally {
       if (showLoading) {
         setLoading(false);
@@ -2711,7 +2717,17 @@ const AdminDashboard = () => {
     { id: 'logs', label: 'Activity Logs', icon: Activity, count: data.logs.length }
   ];
 
-  const DashboardView = () => (
+  const DashboardView = () => {
+    // Show loading spinner during initial load
+    if (initialLoading) {
+      return (
+        <div className="flex items-center justify-center min-h-[400px] w-full">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
+        </div>
+      );
+    }
+    
+    return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full px-2 sm:px-0">
       {/* Statistics Cards - Ultra Enhanced */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 w-full">
