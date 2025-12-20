@@ -6609,6 +6609,7 @@ const AdminDashboard = () => {
                 const eventTemp = hasEvent ? (activeEvent?.temperature || scheduledEvent?.temperature) : null;
                 
                 return (
+                  <div className="space-y-4">
                 <div className="space-y-4">
                   <div>
                     <h4 className="font-semibold text-gray-900 mb-4 text-lg">{selectedACDetails.name}</h4>
