@@ -144,12 +144,16 @@ const SuperAdminDashboard = () => {
           console.log('🍪 SuperAdmin Dashboard - Cookies after delay:', cookiesAfterDelay);
           console.log('🍪 SuperAdmin Dashboard - Has ackit.sid after delay:', cookiesAfterDelay.includes('ackit.sid'));
           
+          // Note: HttpOnly cookies are NOT visible in document.cookie
+          // But they ARE sent automatically with requests if they were set
+          // So we try to load data - if cookie was set, it will work
           if (!cookiesAfterDelay.includes('ackit.sid')) {
-            console.error('❌ No session cookie found! Login might have failed to set cookie.');
-            toast.error('Session cookie not found. Please login again.');
-            return;
+            console.warn('⚠️ Cookie not visible in document.cookie');
+            console.warn('⚠️ This is normal for HttpOnly cookies - they are still sent with requests');
+            console.warn('⚠️ Attempting to load data - cookie will be sent automatically if it exists');
           }
           
+          // Try to load data - cookie will be sent automatically if it was set
           await loadData();
         } else {
           console.warn('⚠️ SuperAdmin Dashboard - User not authenticated or wrong role');
