@@ -6610,8 +6610,7 @@ const AdminDashboard = () => {
                 
                 return (
                   <div className="space-y-4">
-                <div className="space-y-4">
-                  <div>
+                    <div>
                     <h4 className="font-semibold text-gray-900 mb-4 text-lg">{selectedACDetails.name}</h4>
                     
                     {/* AC Information */}
