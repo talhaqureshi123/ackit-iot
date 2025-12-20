@@ -378,27 +378,31 @@ class SuperAdminController {
         reason
       );
 
-      // Send notification email
-      try {
-        console.log(
-          `📬 DEBUG: Sending suspension email to: ${admin.email} (Admin: ${admin.name})`
-        );
-        const notificationService = require("../../../realtimes/email/superadminNotifications");
-        await notificationService.sendSuspensionNotification(
-          admin.email,
-          admin.name,
-          reason,
-          `Super Admin (ID: ${superAdminId})`
-        );
-        console.log(`✅ Suspension notification sent to ${admin.email}`);
-      } catch (notificationError) {
-        console.error(
-          `❌ Error sending suspension notification:`,
-          notificationError.message
-        );
-        // Don't throw error to prevent breaking the main flow
-      }
+      // Send notification email asynchronously (non-blocking) to improve response time
+      // Don't await - let it run in background
+      setImmediate(async () => {
+        try {
+          console.log(
+            `📬 Sending suspension email to: ${admin.email} (Admin: ${admin.name})`
+          );
+          const notificationService = require("../../../realtimes/email/superadminNotifications");
+          await notificationService.sendSuspensionNotification(
+            admin.email,
+            admin.name,
+            reason,
+            `Super Admin (ID: ${superAdminId})`
+          );
+          console.log(`✅ Suspension notification sent to ${admin.email}`);
+        } catch (notificationError) {
+          console.error(
+            `❌ Error sending suspension notification:`,
+            notificationError.message
+          );
+          // Don't throw error - this is background operation
+        }
+      });
 
+      // Return response immediately without waiting for email
       res.status(200).json({
         success: true,
         message: "Admin suspended successfully with cascade effect",
@@ -438,23 +442,30 @@ class SuperAdminController {
       // Use SuspensionService for proper resumption handling
       const result = await SuspensionService.resumeAdmin(adminId, superAdminId);
 
-      // Send notification email
-      try {
-        const notificationService = require("../../../realtimes/email/superadminNotifications");
-        await notificationService.sendResumptionNotification(
-          admin.email,
-          admin.name,
-          `Super Admin (ID: ${superAdminId})`
-        );
-        console.log(`✅ Resumption notification sent to ${admin.email}`);
-      } catch (notificationError) {
-        console.error(
-          `❌ Error sending resumption notification:`,
-          notificationError.message
-        );
-        // Don't throw error to prevent breaking the main flow
-      }
+      // Send notification email asynchronously (non-blocking) to improve response time
+      // Don't await - let it run in background
+      setImmediate(async () => {
+        try {
+          console.log(
+            `📬 Sending resumption email to: ${admin.email} (Admin: ${admin.name})`
+          );
+          const notificationService = require("../../../realtimes/email/superadminNotifications");
+          await notificationService.sendResumptionNotification(
+            admin.email,
+            admin.name,
+            `Super Admin (ID: ${superAdminId})`
+          );
+          console.log(`✅ Resumption notification sent to ${admin.email}`);
+        } catch (notificationError) {
+          console.error(
+            `❌ Error sending resumption notification:`,
+            notificationError.message
+          );
+          // Don't throw error - this is background operation
+        }
+      });
 
+      // Return response immediately without waiting for email
       res.status(200).json({
         success: true,
         message: "Admin resumed successfully with all related entities",

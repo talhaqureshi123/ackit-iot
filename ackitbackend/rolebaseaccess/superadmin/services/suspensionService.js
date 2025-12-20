@@ -55,21 +55,24 @@ class SuspensionService {
 
       await transaction.commit();
 
-      // Invalidate all manager sessions under this admin
-      try {
-        const result = await ManagerAuth.invalidateAllManagerSessionsForAdmin(
-          adminId
-        );
-        console.log(
-          `🔒 Admin ${adminId} suspended. Invalidated ${result.sessionsInvalidated} session(s) for ${result.managersAffected} manager(s).`
-        );
-      } catch (error) {
-        console.error(
-          "Error invalidating manager sessions during admin suspension:",
-          error
-        );
-        // Don't fail the suspension if session invalidation fails
-      }
+      // Invalidate all manager sessions under this admin (non-blocking)
+      // Run in background to avoid blocking the response
+      setImmediate(async () => {
+        try {
+          const result = await ManagerAuth.invalidateAllManagerSessionsForAdmin(
+            adminId
+          );
+          console.log(
+            `🔒 Admin ${adminId} suspended. Invalidated ${result.sessionsInvalidated} session(s) for ${result.managersAffected} manager(s).`
+          );
+        } catch (error) {
+          console.error(
+            "Error invalidating manager sessions during admin suspension:",
+            error
+          );
+          // Don't fail the suspension if session invalidation fails
+        }
+      });
 
       return {
         success: true,
