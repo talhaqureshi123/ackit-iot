@@ -306,30 +306,25 @@ class SuperAdminAuth {
       console.log("🔐 Login response - Cookie name:", cookieName);
       console.log("🔐 Login response - Session ID for cookie:", req.sessionID);
       
-      // Check if cookie header is already set
-      const existingCookie = res.getHeader('set-cookie');
-      console.log("🔐 Login response - Existing Set-Cookie header:", existingCookie);
+      // ALWAYS manually set cookie to ensure it's sent (critical for cross-origin)
+      // Express-session might not set it properly in cross-origin scenarios
+      const cookieOptions = req.session.cookie;
+      const maxAge = Math.floor(cookieOptions.maxAge / 1000);
       
-      // If cookie is not set, manually set it (fallback for cross-origin issues)
-      if (!existingCookie || !Array.isArray(existingCookie) || !existingCookie.some(c => c.includes(cookieName))) {
-        console.log("⚠️ Cookie not set by express-session, setting manually...");
-        const cookieOptions = req.session.cookie;
-        const maxAge = Math.floor(cookieOptions.maxAge / 1000);
-        let cookieString = `${cookieName}=${req.sessionID}; Path=${cookieOptions.path || '/'}; Max-Age=${maxAge}; HttpOnly`;
-        
-        // For production (Railway HTTPS), we need Secure and SameSite=None
-        // But Vite proxy will modify it for localhost
-        if (process.env.NODE_ENV === "production") {
-          cookieString += "; Secure; SameSite=None";
-        } else {
-          cookieString += "; SameSite=Lax";
-        }
-        
-        console.log("🔐 Login response - Manually setting cookie:", cookieString);
-        res.setHeader('Set-Cookie', cookieString);
+      // Build cookie string - Vite proxy will modify Secure and SameSite for localhost
+      let cookieString = `${cookieName}=${req.sessionID}; Path=${cookieOptions.path || '/'}; Max-Age=${maxAge}; HttpOnly`;
+      
+      // For production (Railway HTTPS), we need Secure and SameSite=None for cross-origin
+      // Vite proxy will remove Secure and change SameSite to Lax for localhost
+      if (process.env.NODE_ENV === "production") {
+        cookieString += "; Secure; SameSite=None";
       } else {
-        console.log("✅ Cookie already set by express-session");
+        cookieString += "; SameSite=Lax";
       }
+      
+      console.log("🔐 Login response - ALWAYS setting cookie manually:", cookieString);
+      console.log("🔐 Login response - Cookie will be modified by Vite proxy for localhost");
+      res.setHeader('Set-Cookie', cookieString);
 
       res.status(200).json({
         success: true,
