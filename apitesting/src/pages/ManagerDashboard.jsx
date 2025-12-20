@@ -2438,17 +2438,20 @@ const ManagerDashboard = () => {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
-          // CRITICAL: Backend returns UTC time strings, we MUST treat them as UTC
+          // CRITICAL FIX: Backend returns UTC time strings
+          // Check if it has timezone indicator
           const hasTimezone = dateValue.endsWith('Z') || 
                              dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
                              dateValue.includes('+05:00') ||
                              dateValue.includes('+0500');
           
-          // If NO timezone, assume it's UTC and add 'Z'
-          if (!hasTimezone) {
-            dateValue = dateValue.replace(/\s+$/, '');
+          // If NO timezone but has ISO format (YYYY-MM-DDTHH:mm:ss), treat as UTC
+          if (!hasTimezone && dateValue.includes('T')) {
+            // Remove milliseconds if present for cleaner parsing
+            dateValue = dateValue.replace(/\.\d{3}$/, '');
+            // Ensure it ends with 'Z' to force UTC parsing
             if (!dateValue.endsWith('Z')) {
-              dateValue = dateValue + 'Z'; // Force UTC parsing
+              dateValue = dateValue + 'Z';
             }
           }
           
