@@ -969,8 +969,8 @@ const AdminDashboard = () => {
             const completedEventName = eventData.eventName || event?.name || 'Event';
             
             // Show notification
-            toast.success(`Event "${completedEventName}" completed. Will be removed in 5 seconds.`, {
-              duration: 3000,
+            toast.success(`Event "${completedEventName}" completed. Will be removed in 30 seconds.`, {
+              duration: 4000,
             });
             
             return {
@@ -984,14 +984,24 @@ const AdminDashboard = () => {
             };
           });
           
-          // Auto-delete after 5 seconds
+          // Auto-delete after 30 seconds (increased from 5 seconds to give user time to see)
+          // Only remove if event is still completed (not restarted)
           setTimeout(() => {
-            setData(prevData => ({
-              ...prevData,
-              events: prevData.events.filter(event => event && event.id !== eventData.eventId)
-            }));
-            console.log(`🗑️ Removed completed event ${eventData.eventId} from list`);
-          }, 5000);
+            setData(prevData => {
+              const event = prevData.events.find(e => e && e.id === eventData.eventId);
+              // Only remove if event is still completed (not restarted or updated)
+              if (event && event.status === 'completed') {
+                console.log(`🗑️ Removed completed event ${eventData.eventId} from list`);
+                return {
+                  ...prevData,
+                  events: prevData.events.filter(e => e && e.id !== eventData.eventId)
+                };
+              } else {
+                console.log(`⏭️ Skipped removing event ${eventData.eventId} - status changed to ${event?.status}`);
+                return prevData; // Don't remove if status changed
+              }
+            });
+          }, 30000); // 30 seconds instead of 5
         }
 
         // Handle event deleted - remove immediately
@@ -1314,8 +1324,15 @@ const AdminDashboard = () => {
       
       if (Array.isArray(events)) {
         // Ensure each event has the required fields
+        // IMPORTANT: Don't filter out completed events - show all events
         const validEvents = events.filter(event => event && (event.id || event.eventId));
         console.log('Valid events count:', validEvents.length);
+        console.log('Events by status:', {
+          scheduled: validEvents.filter(e => e.status === 'scheduled').length,
+          active: validEvents.filter(e => e.status === 'active').length,
+          completed: validEvents.filter(e => e.status === 'completed').length,
+          stopped: validEvents.filter(e => e.status === 'stopped').length
+        });
         
         setData(prev => {
           console.log('=== Setting Events in State ===');

@@ -336,18 +336,27 @@ const ManagerDashboard = () => {
           }));
           
           // Show notification
-          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 5 minutes.`, {
+          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 1 minute.`, {
             duration: 4000,
           });
           
-          // Auto-delete after 5 minutes (300000ms)
+          // Auto-delete after 1 minute (60000ms) - only if still completed
           setTimeout(() => {
-            setData(prevData => ({
-              ...prevData,
-              events: prevData.events.filter(event => event && event.id !== eventData.eventId)
-            }));
-            console.log(`🗑️ Removed completed event ${eventData.eventId} from list`);
-          }, 300000); // 5 minutes delay
+            setData(prevData => {
+              const event = prevData.events.find(e => e && e.id === eventData.eventId);
+              // Only remove if event is still completed (not restarted or updated)
+              if (event && event.status === 'completed') {
+                console.log(`🗑️ Removed completed event ${eventData.eventId} from list`);
+                return {
+                  ...prevData,
+                  events: prevData.events.filter(e => e && e.id !== eventData.eventId)
+                };
+              } else {
+                console.log(`⏭️ Skipped removing event ${eventData.eventId} - status changed to ${event?.status}`);
+                return prevData; // Don't remove if status changed
+              }
+            });
+          }, 60000); // 1 minute instead of 5 minutes
         }
 
         // Handle event deleted - remove immediately
