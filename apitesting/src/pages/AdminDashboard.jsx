@@ -3155,17 +3155,17 @@ const AdminDashboard = () => {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold shadow-md ${
+            <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold shadow-md whitespace-nowrap ${
               manager.status === 'unlocked' 
                 ? 'bg-white text-blue-600' 
                 : manager.status === 'locked'
                 ? 'bg-white text-blue-600'
                 : 'bg-white text-blue-600'
             }`}>
-              {manager.status === 'unlocked' && <Unlock className="w-3 h-3 mr-1" />}
-              {manager.status === 'locked' && <Lock className="w-3 h-3 mr-1" />}
-              {manager.status === 'restricted' && <Settings className="w-3 h-3 mr-1" />}
-              {manager.status || 'unlocked'}
+              {manager.status === 'unlocked' && <Unlock className="w-3 h-3 mr-1 flex-shrink-0" />}
+              {manager.status === 'locked' && <Lock className="w-3 h-3 mr-1 flex-shrink-0" />}
+              {manager.status === 'restricted' && <Settings className="w-3 h-3 mr-1 flex-shrink-0" />}
+              <span className="capitalize">{manager.status || 'unlocked'}</span>
             </span>
             {hasOrganizations && (
               <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-white text-blue-600 shadow-md">
