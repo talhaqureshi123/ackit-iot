@@ -134,7 +134,71 @@ class SuperAdminAuth {
         cookie: req.session?.cookie
       });
 
-      // Check if session exists and has session ID
+      // CRITICAL FIX: If session exists but custom data is missing, reload from database
+      // This happens when express-session loads a new empty session instead of the one from cookie
+      if (req.session && req.sessionID && (!req.session.sessionId || !req.session.user)) {
+        console.log("⚠️ Session exists but custom data missing - reloading from store");
+        console.log("   Cookie session ID:", req.headers.cookie?.match(/ackit\.sid=([^;]+)/)?.[1]);
+        console.log("   req.sessionID:", req.sessionID);
+        
+        // Extract session ID from cookie header
+        const cookieMatch = req.headers.cookie?.match(/ackit\.sid=([^;]+)/);
+        const cookieSessionId = cookieMatch ? cookieMatch[1] : null;
+        
+        // Use cookie session ID if available, otherwise use req.sessionID
+        const sessionIdToLoad = cookieSessionId || req.sessionID;
+        
+        console.log("   Attempting to load session:", sessionIdToLoad);
+        
+        try {
+          const sessionStore = req.app.get("sessionStore");
+          if (sessionStore && sessionStore.get) {
+            await new Promise((resolve, reject) => {
+              sessionStore.get(sessionIdToLoad, (err, sessionData) => {
+                if (err) {
+                  console.error("❌ Error loading session from store:", err);
+                  reject(err);
+                } else if (sessionData) {
+                  console.log("📦 Session data loaded from store:", {
+                    hasSessionId: !!sessionData.sessionId,
+                    hasUser: !!sessionData.user,
+                    sessionId: sessionData.sessionId,
+                    user: sessionData.user
+                  });
+                  
+                  // Restore custom properties
+                  if (sessionData.sessionId) {
+                    req.session.sessionId = sessionData.sessionId;
+                  }
+                  if (sessionData.user) {
+                    req.session.user = sessionData.user;
+                  }
+                  
+                  // Mark as modified and save
+                  req.session.touch();
+                  
+                  console.log("✅ Session reloaded successfully");
+                  console.log("   - sessionId:", req.session.sessionId);
+                  console.log("   - user:", req.session.user);
+                } else {
+                  console.log("❌ No session data found in store for ID:", sessionIdToLoad);
+                  console.log("   This means:");
+                  console.log("   1. Session was never saved during login");
+                  console.log("   2. Session expired or was deleted");
+                  console.log("   3. Session ID mismatch");
+                }
+                resolve();
+              });
+            });
+          } else {
+            console.log("⚠️ Session store not available for reload");
+          }
+        } catch (reloadError) {
+          console.error("❌ Failed to reload session:", reloadError);
+        }
+      }
+
+      // Check if session exists and has session ID after reload attempt
       if (!req.session || !req.session.sessionId || !req.session.user) {
         console.log("❌ No valid session found");
         console.log("❌ Session check failed - Details:", {
