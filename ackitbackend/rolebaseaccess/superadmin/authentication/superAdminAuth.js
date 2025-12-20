@@ -122,15 +122,29 @@ class SuperAdminAuth {
   static async authenticateSuperAdmin(req, res, next) {
     try {
       console.log("🔐 SuperAdmin Auth - Checking session...");
+      console.log("🔐 Request URL:", req.url);
+      console.log("🔐 Request method:", req.method);
+      console.log("🔐 Request cookies:", req.cookies);
+      console.log("🔐 Request headers.cookie:", req.headers.cookie);
       console.log("🔐 Session exists:", !!req.session);
-      console.log("🔐 Session ID:", req.session?.sessionId);
-      console.log("🔐 Session user:", req.session?.user);
-      console.log("🔐 Full session object:", req.session);
-      console.log("🔐 Session cookie:", req.sessionID);
+      console.log("🔐 Session ID (cookie):", req.sessionID);
+      console.log("🔐 Session data:", {
+        sessionId: req.session?.sessionId,
+        user: req.session?.user,
+        cookie: req.session?.cookie
+      });
 
       // Check if session exists and has session ID
       if (!req.session || !req.session.sessionId || !req.session.user) {
         console.log("❌ No valid session found");
+        console.log("❌ Session check failed - Details:", {
+          sessionExists: !!req.session,
+          hasSessionId: !!req.session?.sessionId,
+          hasUser: !!req.session?.user,
+          sessionID: req.sessionID,
+          cookies: req.cookies,
+          headersCookie: req.headers.cookie
+        });
         return res.status(401).json({
           success: false,
           message: "Access denied. Please login first.",

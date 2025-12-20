@@ -24,7 +24,10 @@ api.interceptors.request.use(
     );
     console.log(`   └─ Full URL: ${config.baseURL}${config.url}`);
     console.log(`   └─ Target: ${config.baseURL}`);
+    console.log(`   └─ With credentials: ${config.withCredentials}`);
     // Session is handled automatically by cookies
+    // Ensure withCredentials is always true for cookie sending
+    config.withCredentials = true;
     return config;
   },
   (error) => {
@@ -90,8 +93,9 @@ api.interceptors.response.use(
 
       // Don't auto-logout for lock/unlock operations, status checks, view details, or login attempts
       // Also don't auto-logout immediately after login (give session time to establish)
-      const isRecentLogin = Date.now() - (parseInt(localStorage.getItem('loginTime') || '0')) < 5000; // 5 seconds grace period
-      
+      const isRecentLogin =
+        Date.now() - parseInt(localStorage.getItem("loginTime") || "0") < 5000; // 5 seconds grace period
+
       if (
         !isStatusOperation &&
         !isToggleOperation &&
@@ -101,9 +105,9 @@ api.interceptors.response.use(
         !isLoginOperation &&
         !isRecentLogin
       ) {
-        console.warn('⚠️ 401 error detected - auto-logging out');
-        console.warn('⚠️ URL:', url);
-        console.warn('⚠️ Is recent login:', isRecentLogin);
+        console.warn("⚠️ 401 error detected - auto-logging out");
+        console.warn("⚠️ URL:", url);
+        console.warn("⚠️ Is recent login:", isRecentLogin);
         // Silent logout - no console logs
         localStorage.removeItem("user");
         localStorage.removeItem("role");
@@ -111,7 +115,9 @@ api.interceptors.response.use(
         localStorage.removeItem("loginTime");
         window.location.href = "/login";
       } else if (isRecentLogin) {
-        console.log('ℹ️ 401 error on recent login - ignoring (session establishing)');
+        console.log(
+          "ℹ️ 401 error on recent login - ignoring (session establishing)"
+        );
       }
     }
     // All other errors (403, 500, etc.) - silent handling, no console logs
