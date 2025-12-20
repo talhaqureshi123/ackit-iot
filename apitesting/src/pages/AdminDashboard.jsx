@@ -1634,21 +1634,33 @@ const AdminDashboard = () => {
 
   const handleUnlockManager = async (managerId) => {
     try {
-      await adminAPI.unlockManager(managerId);
+      console.log('🔓 Unlocking manager:', managerId);
+      const response = await adminAPI.unlockManager(managerId);
+      console.log('✅ Unlock manager response:', response.data);
       toast.success('Manager unlocked successfully');
       loadData(true);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to unlock manager');
+      console.error('❌ Unlock manager error:', error);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to unlock manager';
+      toast.error(errorMessage);
     }
   };
 
   const handleRestrictedUnlockManager = async (managerId) => {
     try {
-      await adminAPI.restrictedUnlockManager(managerId);
+      console.log('🔓 Restricted unlocking manager:', managerId);
+      const response = await adminAPI.restrictedUnlockManager(managerId);
+      console.log('✅ Restricted unlock manager response:', response.data);
       toast.success('Manager unlocked with restricted access');
       loadData(true);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to unlock manager');
+      console.error('❌ Restricted unlock manager error:', error);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to unlock manager';
+      toast.error(errorMessage);
     }
   };
 

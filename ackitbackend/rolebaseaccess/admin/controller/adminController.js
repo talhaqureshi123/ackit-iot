@@ -251,24 +251,45 @@ class AdminController {
   // - When manager account is unlocked, they can use remote access lock feature
   async unlockManager(req, res) {
     try {
+      console.log("🔓 Unlock Manager - Request received");
+      console.log("   - Request body:", req.body);
+      console.log("   - Admin ID:", req.admin?.id);
+      console.log("   - Session:", req.session?.user);
+      
       // Session validated by authenticateAdmin middleware
       const { managerId } = req.body;
-      const adminId = req.admin.id;
+      const adminId = req.admin?.id;
+      
+      if (!adminId) {
+        console.error("❌ No admin ID in request");
+        return res.status(401).json({
+          success: false,
+          message: "Admin authentication required",
+        });
+      }
+      
       if (!managerId) {
+        console.error("❌ Manager ID missing in request body");
         return res.status(400).json({
           success: false,
           message: "Manager ID is required",
         });
       }
+      
+      console.log(`🔍 Looking for manager ${managerId} under admin ${adminId}`);
       const manager = await Manager.findOne({
         where: { id: managerId, adminId: adminId },
       });
+      
       if (!manager) {
+        console.error(`❌ Manager ${managerId} not found under admin ${adminId}`);
         return res.status(404).json({
           success: false,
           message: "Manager not found",
         });
       }
+      
+      console.log(`✅ Manager found: ${manager.name} (Status: ${manager.status})`);
       // Unlock manager ACCOUNT (this is separate from remote access lock)
       // Manager account status: unlocked = can login and perform all actions including remote access lock
       await manager.update({
