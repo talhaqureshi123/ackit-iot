@@ -5799,6 +5799,14 @@ const AdminDashboard = () => {
     }
   };
 
+  // Debug: Log before render
+  console.log('🎨 AdminDashboard - Rendering component:', {
+    initialLoading,
+    user: user?.role,
+    activeTab,
+    dataLoaded: !!data.organizations
+  });
+
   return (
     <div className="min-h-screen bg-gray-50 flex w-full">
       {/* Mobile Overlay */}
