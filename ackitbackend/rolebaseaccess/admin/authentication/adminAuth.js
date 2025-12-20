@@ -754,18 +754,40 @@ class AdminAuth {
       const cookieName = req.session.cookie.name || 'ackit.sid';
       const cookieOptions = req.session.cookie;
 
-      const requestOrigin = req.headers.origin;
-      const isLocalhost = requestOrigin && requestOrigin.includes("localhost");
+      const requestOrigin = req.headers.origin || req.headers.referer || '';
+      const isLocalhost = requestOrigin.includes("localhost") || requestOrigin.includes("127.0.0.1");
+      const isRailway = requestOrigin.includes('.railway.app') || requestOrigin.includes('.up.railway.app');
+      const isProduction = process.env.NODE_ENV === "production";
 
       console.log("🔐 Login response - Request origin:", requestOrigin);
       console.log("🔐 Login response - Is localhost:", isLocalhost);
+      console.log("🔐 Login response - Is Railway:", isRailway);
+      console.log("🔐 Login response - Is production:", isProduction);
+
+      // Determine cookie settings based on origin
+      let cookieSecure = false;
+      let cookieSameSite = 'lax';
+      
+      if (isLocalhost) {
+        cookieSecure = false;
+        cookieSameSite = 'lax';
+        console.log("🔐 Login response - Setting cookie for localhost (no Secure)");
+      } else if (isRailway || isProduction) {
+        cookieSecure = true;
+        cookieSameSite = "none";
+        console.log("🔐 Login response - Setting cookie for Railway/production (Secure, SameSite=None)");
+      } else {
+        cookieSecure = isProduction;
+        cookieSameSite = isProduction ? "none" : "lax";
+        console.log("🔐 Login response - Setting cookie with fallback settings");
+      }
 
       res.cookie(cookieName, req.sessionID, {
         path: cookieOptions.path || '/',
         maxAge: cookieOptions.maxAge,
         httpOnly: cookieOptions.httpOnly !== false,
-        secure: isLocalhost ? false : (process.env.NODE_ENV === "production"), // Set secure based on origin
-        sameSite: isLocalhost ? "lax" : (process.env.NODE_ENV === "production" ? "none" : "lax"), // Set sameSite based on origin
+        secure: cookieSecure,
+        sameSite: cookieSameSite,
         domain: undefined,
       });
 

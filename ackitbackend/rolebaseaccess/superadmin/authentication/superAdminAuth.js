@@ -413,18 +413,21 @@ class SuperAdminAuth {
         sameSite: cookieOptions.sameSite
       });
       
-      // Detect if request is from localhost (via proxy)
-      // If origin is localhost, we need to set cookie without Secure
+      // Detect if request is from localhost (via proxy) or Railway frontend
       const origin = req.headers.origin || req.headers.referer || '';
       const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1') || 
                          req.headers['x-forwarded-host']?.includes('localhost');
+      const isRailway = origin.includes('.railway.app') || origin.includes('.up.railway.app');
+      const isProduction = process.env.NODE_ENV === "production";
       
       console.log("🔐 Login response - Request origin:", origin);
       console.log("🔐 Login response - Is localhost:", isLocalhost);
+      console.log("🔐 Login response - Is Railway:", isRailway);
+      console.log("🔐 Login response - Is production:", isProduction);
       
       // Use res.cookie() which properly handles cookie setting
-      // For localhost, set cookie without Secure (browser will reject Secure on HTTP)
-      // For Railway direct access, use Secure and SameSite=None
+      // For localhost (HTTP), don't use Secure
+      // For Railway (HTTPS), use Secure and SameSite=None for cross-origin
       const cookieSettings = {
         path: cookieOptions.path || '/',
         maxAge: cookieOptions.maxAge,
@@ -437,11 +440,16 @@ class SuperAdminAuth {
         cookieSettings.secure = false;
         cookieSettings.sameSite = 'lax';
         console.log("🔐 Login response - Setting cookie for localhost (no Secure)");
+      } else if (isRailway || isProduction) {
+        // For Railway/production (HTTPS), use Secure and SameSite=None for cross-origin
+        cookieSettings.secure = true;
+        cookieSettings.sameSite = "none";
+        console.log("🔐 Login response - Setting cookie for Railway/production (Secure, SameSite=None)");
       } else {
-        // For production (Railway HTTPS), use Secure and SameSite=None
-        cookieSettings.secure = process.env.NODE_ENV === "production";
-        cookieSettings.sameSite = process.env.NODE_ENV === "production" ? "none" : "lax";
-        console.log("🔐 Login response - Setting cookie for production");
+        // Fallback
+        cookieSettings.secure = isProduction;
+        cookieSettings.sameSite = isProduction ? "none" : "lax";
+        console.log("🔐 Login response - Setting cookie with fallback settings");
       }
       
       res.cookie(cookieName, req.sessionID, cookieSettings);
