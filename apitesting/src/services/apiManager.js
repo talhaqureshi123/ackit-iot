@@ -81,7 +81,8 @@ apiManager.interceptors.response.use(
         url.includes("/organizations/") && url.match(/\/organizations\/[^/]+$/);
 
       // Check if we're in grace period after login
-      const timeSinceLogin = Date.now() - lastLoginTime;
+      const loginTime = parseInt(localStorage.getItem("loginTime") || "0");
+      const timeSinceLogin = Date.now() - Math.max(lastLoginTime, loginTime);
       const isInGracePeriod = timeSinceLogin < LOGIN_GRACE_PERIOD;
 
       // Log detailed error info for debugging
@@ -115,6 +116,7 @@ apiManager.interceptors.response.use(
         localStorage.removeItem("user");
         localStorage.removeItem("role");
         localStorage.removeItem("sessionId");
+        localStorage.removeItem("loginTime"); // Clear login time on auto-logout
         window.location.href = "/login";
       } else {
         const operationType = isLockOperation
