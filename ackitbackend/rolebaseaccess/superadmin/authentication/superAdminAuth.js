@@ -275,6 +275,7 @@ class SuperAdminAuth {
       }
 
       // Mark session as modified to ensure it gets saved
+      // CRITICAL: Set session data BEFORE saving
       req.session.sessionId = sessionId;
       req.session.user = {
         id: superAdmin.id,
@@ -282,6 +283,15 @@ class SuperAdminAuth {
         email: superAdmin.email,
         role: "superadmin",
       };
+      
+      // Mark session as modified (required for express-session to save)
+      req.session.touch();
+      
+      console.log("🔐 Before save - Session data:", {
+        sessionId: req.session.sessionId,
+        user: req.session.user,
+        sessionID: req.sessionID
+      });
       
       // Force session to be saved and ensure cookie is set
       await new Promise((resolve, reject) => {
@@ -291,8 +301,14 @@ class SuperAdminAuth {
             reject(err);
           } else {
             console.log("✅ Session saved successfully");
-            console.log("✅ Session ID:", req.sessionID);
-            console.log("✅ Session data:", req.session);
+            console.log("✅ Session ID (cookie):", req.sessionID);
+            console.log("✅ Session data after save:", {
+              sessionId: req.session.sessionId,
+              user: req.session.user
+            });
+            
+            // Verify session was saved to database
+            console.log("✅ Verifying session in database...");
             resolve();
           }
         });
