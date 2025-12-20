@@ -324,7 +324,14 @@ class SuperAdminAuth {
       
       console.log("🔐 Login response - ALWAYS setting cookie manually:", cookieString);
       console.log("🔐 Login response - Cookie will be modified by Vite proxy for localhost");
-      res.setHeader('Set-Cookie', cookieString);
+      
+      // Set cookie as array (express-session format) to ensure it's not overwritten
+      const existingCookies = res.getHeader('set-cookie') || [];
+      const cookieArray = Array.isArray(existingCookies) ? existingCookies : [existingCookies];
+      cookieArray.push(cookieString);
+      res.setHeader('Set-Cookie', cookieArray);
+      
+      console.log("🔐 Login response - Cookie set in response headers");
 
       res.status(200).json({
         success: true,
