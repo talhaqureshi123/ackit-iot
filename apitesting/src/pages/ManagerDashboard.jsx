@@ -135,10 +135,30 @@ const ManagerDashboard = () => {
   };
 
   useEffect(() => {
-    loadData();
-    loadAlerts();
-    // Load events on initial mount to get accurate count for tab badge
-    loadEvents();
+    const loadDataSafely = async () => {
+      try {
+        console.log('📊 Manager Dashboard - Loading data...');
+        console.log('📊 Manager Dashboard - User:', user);
+        console.log('📊 Manager Dashboard - User role:', user?.role);
+        console.log('📊 Manager Dashboard - localStorage user:', localStorage.getItem('user'));
+        console.log('📊 Manager Dashboard - localStorage role:', localStorage.getItem('role'));
+
+        if (user && user.role === 'manager') {
+          // Longer delay to ensure session cookie is set after login
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+          await loadData();
+          loadAlerts();
+          // Load events on initial mount to get accurate count for tab badge
+          loadEvents();
+        } else {
+          console.warn('⚠️ Manager Dashboard - User not authenticated or wrong role');
+        }
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        toast.error('Failed to load dashboard data');
+      }
+    };
+    loadDataSafely();
     
     // Native WebSocket connection for real-time updates
     // Use WS_URL from config (handles Railway URL automatically)
@@ -405,7 +425,7 @@ const ManagerDashboard = () => {
       socket.close();
       clearInterval(alertsInterval);
     };
-  }, []);
+  }, [user]); // Dependency on user state
 
   useEffect(() => {
     if (activeTab === 'events') {
