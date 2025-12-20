@@ -3145,13 +3145,13 @@ const AdminDashboard = () => {
     <div className="bg-white rounded-2xl shadow-xl border-2 border-blue-200 hover:border-blue-400 hover:shadow-2xl transition-all duration-300 overflow-hidden">
       <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 px-6 py-4">
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center space-x-4 flex-1 min-w-0">
+          <div className="flex items-center space-x-4 flex-1">
             <div className="bg-white bg-opacity-20 rounded-full p-3 flex-shrink-0">
               <User className="w-6 h-6 text-white" />
             </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-xl font-bold text-white truncate">{manager.name}</h3>
-              <p className="text-sm text-blue-100 truncate">{manager.email}</p>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-white break-words">{manager.name}</h3>
+              <p className="text-sm text-blue-100 break-words">{manager.email}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2 flex-shrink-0">
