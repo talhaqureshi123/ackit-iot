@@ -741,11 +741,11 @@ const AdminDashboard = () => {
   const [managerActionLoading, setManagerActionLoading] = useState({});
 
   useEffect(() => {
-    // Safety timeout: If loading takes more than 10 seconds, show dashboard anyway
+    // Safety timeout: If loading takes more than 5 seconds, show dashboard anyway
     const timeoutId = setTimeout(() => {
       console.warn('⚠️ Admin Dashboard - Loading timeout, showing dashboard anyway');
       setInitialLoading(false);
-    }, 10000); // 10 seconds timeout
+    }, 5000); // 5 seconds timeout (reduced from 10)
     
     const loadDataSafely = async () => {
       try {
@@ -756,14 +756,22 @@ const AdminDashboard = () => {
         console.log('📊 Admin Dashboard - localStorage role:', localStorage.getItem('role'));
 
         if (user && user.role === 'admin') {
-          // Longer delay to ensure session cookie is set after login
-          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
-          await loadData();
+          // Shorter delay to ensure session cookie is set after login
+          await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 second delay (reduced from 1)
+          try {
+            await loadData();
+          } catch (loadError) {
+            console.error('❌ Error in loadData:', loadError);
+            // Continue even if loadData fails
+          }
+          // Load other data in parallel (non-blocking)
           loadAlerts();
           loadSystemStatus();
-          // Load events on initial mount to get accurate count for tab badge
           loadEvents();
-          // Clear timeout since loading completed successfully
+          // Mark loading as complete - always show dashboard even if some data fails
+          console.log('✅ Admin Dashboard - Data loading complete, showing dashboard');
+          setInitialLoading(false);
+          // Clear timeout since loading completed
           clearTimeout(timeoutId);
         } else {
           console.warn('⚠️ Admin Dashboard - User not authenticated or wrong role');
@@ -772,7 +780,7 @@ const AdminDashboard = () => {
           clearTimeout(timeoutId);
         }
       } catch (error) {
-        console.error('Failed to load dashboard data:', error);
+        console.error('❌ Failed to load dashboard data:', error);
         toast.error('Failed to load dashboard data');
         // Always set initialLoading to false even on error to show the dashboard
         setInitialLoading(false);
@@ -1656,6 +1664,8 @@ const AdminDashboard = () => {
       loadEvents(); // Load events to ensure they're up to date
       
       // Mark initial loading as complete after first successful load
+      // NOTE: This is also set in useEffect, but we set it here too for safety
+      console.log('✅ Admin Dashboard - loadData() completed, setting initialLoading to false');
       setInitialLoading(false);
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || 'Failed to load data';
