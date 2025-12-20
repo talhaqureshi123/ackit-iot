@@ -3165,7 +3165,7 @@ const AdminDashboard = () => {
               {manager.status === 'unlocked' && <Unlock className="w-3 h-3 mr-1" />}
               {manager.status === 'locked' && <Lock className="w-3 h-3 mr-1" />}
               {manager.status === 'restricted' && <Settings className="w-3 h-3 mr-1" />}
-              <span className="capitalize">{manager.status || 'unlocked'}</span>
+              {manager.status || 'unlocked'}
             </span>
             {hasOrganizations && (
               <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-white text-blue-600 shadow-md">
