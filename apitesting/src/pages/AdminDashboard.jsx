@@ -3144,32 +3144,32 @@ const AdminDashboard = () => {
     return (
     <div className="bg-white rounded-2xl shadow-xl border-2 border-blue-200 hover:border-blue-400 hover:shadow-2xl transition-all duration-300 overflow-hidden">
       <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center space-x-4 flex-1 min-w-0">
-            <div className="bg-white bg-opacity-20 rounded-full p-3 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="bg-white bg-opacity-20 rounded-full p-3">
               <User className="w-6 h-6 text-white" />
             </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-xl font-bold text-white truncate">{manager.name}</h3>
-              <p className="text-sm text-blue-100 truncate">{manager.email}</p>
+            <div>
+              <h3 className="text-xl font-bold text-white">{manager.name}</h3>
+              <p className="text-sm text-blue-100">{manager.email}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold shadow-md whitespace-nowrap min-w-fit ${
+          <div className="flex items-center space-x-2">
+            <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold shadow-md whitespace-nowrap ${
               manager.status === 'unlocked' 
                 ? 'bg-white text-blue-600' 
                 : manager.status === 'locked'
                 ? 'bg-white text-blue-600'
                 : 'bg-white text-blue-600'
             }`}>
-              {manager.status === 'unlocked' && <Unlock className="w-3 h-3 mr-1 flex-shrink-0" />}
-              {manager.status === 'locked' && <Lock className="w-3 h-3 mr-1 flex-shrink-0" />}
-              {manager.status === 'restricted' && <Settings className="w-3 h-3 mr-1 flex-shrink-0" />}
+              {manager.status === 'unlocked' && <Unlock className="w-3 h-3 mr-1" />}
+              {manager.status === 'locked' && <Lock className="w-3 h-3 mr-1" />}
+              {manager.status === 'restricted' && <Settings className="w-3 h-3 mr-1" />}
               <span className="capitalize">{manager.status || 'unlocked'}</span>
             </span>
             {hasOrganizations && (
-              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-white text-blue-600 shadow-md whitespace-nowrap flex-shrink-0">
-                <Building className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
+              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-white text-blue-600 shadow-md">
+                <Building className="w-3.5 h-3.5 mr-1" />
                 {assignedOrgs.length} Org{assignedOrgs.length !== 1 ? 's' : ''}
               </span>
             )}
