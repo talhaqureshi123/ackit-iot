@@ -739,11 +739,31 @@ const AdminDashboard = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
 
   useEffect(() => {
-    loadData();
-    loadAlerts();
-    loadSystemStatus();
-    // Load events on initial mount to get accurate count for tab badge
-    loadEvents();
+    const loadDataSafely = async () => {
+      try {
+        console.log('📊 Admin Dashboard - Loading data...');
+        console.log('📊 Admin Dashboard - User:', user);
+        console.log('📊 Admin Dashboard - User role:', user?.role);
+        console.log('📊 Admin Dashboard - localStorage user:', localStorage.getItem('user'));
+        console.log('📊 Admin Dashboard - localStorage role:', localStorage.getItem('role'));
+
+        if (user && user.role === 'admin') {
+          // Longer delay to ensure session cookie is set after login
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+          await loadData();
+          loadAlerts();
+          loadSystemStatus();
+          // Load events on initial mount to get accurate count for tab badge
+          loadEvents();
+        } else {
+          console.warn('⚠️ Admin Dashboard - User not authenticated or wrong role');
+        }
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        toast.error('Failed to load dashboard data');
+      }
+    };
+    loadDataSafely();
     
     // Native WebSocket connection for real-time updates
     // Use WS_URL from config (handles Railway URL automatically)
@@ -1055,7 +1075,7 @@ const AdminDashboard = () => {
       socket.close();
       clearInterval(alertsInterval);
     };
-  }, []);
+  }, [user]); // Dependency on user state
 
   useEffect(() => {
     if (activeTab === 'events') {

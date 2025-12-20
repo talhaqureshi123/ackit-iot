@@ -299,45 +299,72 @@ class AdminAuth {
         });
       }
 
-      // If session exists but is empty, try to reload from store
-      // This can happen if session store didn't properly load the session data
-      if (!req.session.sessionId || !req.session.user) {
-        console.log(
-          "⚠️ Session exists but is empty - attempting to reload from store"
-        );
-        console.log("   Session cookie ID:", req.sessionID);
-
-        // Try to reload session from store
+      // CRITICAL FIX: If session exists but custom data is missing, reload from database
+      // This happens when express-session loads a new empty session instead of the one from cookie
+      if (req.session && req.sessionID && (!req.session.sessionId || !req.session.user)) {
+        console.log("⚠️ Session exists but custom data missing - reloading from store");
+        console.log("   Cookie session ID:", req.headers.cookie?.match(/ackit\.sid=([^;]+)/)?.[1]);
+        console.log("   req.sessionID:", req.sessionID);
+        
+        // Extract session ID from cookie header
+        const cookieMatch = req.headers.cookie?.match(/ackit\.sid=([^;]+)/);
+        const cookieSessionId = cookieMatch ? cookieMatch[1] : null;
+        
+        // Use cookie session ID if available, otherwise use req.sessionID
+        const sessionIdToLoad = cookieSessionId || req.sessionID;
+        
+        console.log("   Attempting to load session:", sessionIdToLoad);
+        
         try {
-          // Force reload by accessing the session store
           const sessionStore = req.app.get("sessionStore");
           if (sessionStore && sessionStore.get) {
             await new Promise((resolve, reject) => {
-              sessionStore.get(req.sessionID, (err, sessionData) => {
+              sessionStore.get(sessionIdToLoad, (err, sessionData) => {
                 if (err) {
                   console.error("❌ Error loading session from store:", err);
                   reject(err);
-                } else {
-                  console.log("📦 Session data from store:", sessionData);
-                  if (sessionData) {
-                    // Merge session data
-                    Object.assign(req.session, sessionData);
-                    console.log("✅ Session reloaded from store");
-                    console.log("   - sessionId:", req.session.sessionId);
-                    console.log("   - user:", req.session.user);
-                  } else {
-                    console.log(
-                      "❌ No session data found in store for ID:",
-                      req.sessionID
-                    );
+                } else if (sessionData) {
+                  console.log("📦 Session data loaded from store:", {
+                    hasSessionId: !!sessionData.sessionId,
+                    hasUser: !!sessionData.user,
+                    sessionId: sessionData.sessionId,
+                    user: sessionData.user
+                  });
+                  
+                  // Restore custom properties
+                  if (sessionData.sessionId) {
+                    req.session.sessionId = sessionData.sessionId;
                   }
-                  resolve();
+                  if (sessionData.user) {
+                    req.session.user = sessionData.user;
+                  }
+                  
+                  // Also ensure req.sessionID is correctly set for express-session
+                  req.sessionID = sessionIdToLoad;
+                  
+                  // Mark as modified and save
+                  if (req.session.touch) {
+                    req.session.touch();
+                  }
+                  
+                  console.log("✅ Session reloaded successfully");
+                  console.log("   - sessionId:", req.session.sessionId);
+                  console.log("   - user:", req.session.user);
+                } else {
+                  console.log("❌ No session data found in store for ID:", sessionIdToLoad);
+                  console.log("   This means:");
+                  console.log("   1. Session was never saved during login");
+                  console.log("   2. Session expired or was deleted");
+                  console.log("   3. Session ID mismatch");
                 }
+                resolve();
               });
             });
+          } else {
+            console.log("⚠️ Session store not available for reload");
           }
         } catch (reloadError) {
-          console.error("❌ Failed to reload session from store:", reloadError);
+          console.error("❌ Failed to reload session:", reloadError);
         }
       }
 
@@ -718,9 +745,35 @@ class AdminAuth {
         req.session.touch();
       }
 
+      console.log("🔐 Login response - Session ID:", sessionId);
+      console.log("🔐 Login response - Session cookie:", req.sessionID);
+      console.log("🔐 Login response - Session data:", req.session);
+      console.log("🔐 Login response - Session cookie settings:", req.session.cookie);
+
+      // Explicitly set the session cookie using res.cookie()
+      const cookieName = req.session.cookie.name || 'ackit.sid';
+      const cookieOptions = req.session.cookie;
+
+      const requestOrigin = req.headers.origin;
+      const isLocalhost = requestOrigin && requestOrigin.includes("localhost");
+
+      console.log("🔐 Login response - Request origin:", requestOrigin);
+      console.log("🔐 Login response - Is localhost:", isLocalhost);
+
+      res.cookie(cookieName, req.sessionID, {
+        path: cookieOptions.path || '/',
+        maxAge: cookieOptions.maxAge,
+        httpOnly: cookieOptions.httpOnly !== false,
+        secure: isLocalhost ? false : (process.env.NODE_ENV === "production"), // Set secure based on origin
+        sameSite: isLocalhost ? "lax" : (process.env.NODE_ENV === "production" ? "none" : "lax"), // Set sameSite based on origin
+        domain: undefined,
+      });
+
+      console.log(`🔐 Login response - Setting cookie using res.cookie(): ${cookieName}=${req.sessionID}`);
+      console.log("🔐 Login response - Cookie set using res.cookie()");
+
       // Send response with session cookie
-      // Express-session will automatically set cookie in response headers
-      res.json({
+      res.status(200).json({
         success: true,
         message: "Admin login successful",
         data: {
