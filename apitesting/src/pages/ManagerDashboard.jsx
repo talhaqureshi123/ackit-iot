@@ -3064,10 +3064,8 @@ const ManagerDashboard = () => {
     switch (activeTab) {
       case 'dashboard':
         return <DashboardView />;
-      case 'events':
-        return <ManagerEventsView />;
-      case 'events':
-        return <ManagerEventsView />;
+        case 'events':
+          return <ManagerEventsView />;
       case 'venues':
         // Get all venues from all organizations
         const allVenues = data.organizations.flatMap(org => 
