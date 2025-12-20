@@ -1,13 +1,16 @@
 import axios from "axios";
-import { API_BASE_URL, BACKEND_IP, BACKEND_PORT } from "../config/api";
+import { BACKEND_BASE_URL } from "../config/api";
 
-// Use Vite proxy by default (relative URL goes through vite.config.js proxy)
-// This avoids IP configuration issues and works better with cookies
-// To use direct connection, change "/api" to API_BASE_URL
-const USE_PROXY = true; // Set to false to use direct connection
+// Determine API base URL based on environment
+// Production: Use full backend URL (Railway)
+// Development: Use Vite proxy (/api)
+const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
+const API_BASE_URL = isProduction 
+  ? `${BACKEND_BASE_URL}/api`  // Production: Full backend URL
+  : "/api";  // Development: Vite proxy
 
 export const api = axios.create({
-  baseURL: USE_PROXY ? "/api" : API_BASE_URL, // Use proxy or direct connection
+  baseURL: API_BASE_URL,
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",

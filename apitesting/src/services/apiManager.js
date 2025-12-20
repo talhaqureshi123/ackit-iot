@@ -1,8 +1,13 @@
 import axios from "axios";
+import { BACKEND_BASE_URL } from "../config/api";
 
-// Use relative URL - Vite proxy will forward to backend
-// This makes requests same-origin so cookies work properly
-const API_BASE_URL = "/api";
+// Determine API base URL based on environment
+// Production: Use full backend URL (Railway)
+// Development: Use Vite proxy (/api)
+const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
+const API_BASE_URL = isProduction 
+  ? `${BACKEND_BASE_URL}/api`  // Production: Full backend URL
+  : "/api";  // Development: Vite proxy
 
 // Track login time to prevent immediate logout after login
 let lastLoginTime = 0;

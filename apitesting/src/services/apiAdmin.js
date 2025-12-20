@@ -1,8 +1,13 @@
 import axios from "axios";
+import { BACKEND_BASE_URL } from "../config/api";
 
-// Use Vite proxy for API calls (better CORS handling)
-// Proxy is configured in vite.config.js to forward /api requests to backend
-const API_BASE_URL = "/api"; // Use proxy instead of direct backend URL
+// Determine API base URL based on environment
+// Production: Use full backend URL (Railway)
+// Development: Use Vite proxy (/api)
+const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
+const API_BASE_URL = isProduction 
+  ? `${BACKEND_BASE_URL}/api`  // Production: Full backend URL
+  : "/api";  // Development: Vite proxy
 
 // Track login time to prevent immediate logout after login
 let lastLoginTime = 0;
