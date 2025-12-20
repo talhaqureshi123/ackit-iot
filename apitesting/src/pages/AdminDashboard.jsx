@@ -1347,6 +1347,16 @@ const AdminDashboard = () => {
         // IMPORTANT: Don't filter out completed events - show all events
         const validEvents = events.filter(event => event && (event.id || event.eventId));
         console.log('Valid events count:', validEvents.length);
+        
+        // Debug: Log first event's time format
+        if (validEvents.length > 0) {
+          console.log('🕐 First event time format check:', {
+            startTime: validEvents[0].startTime,
+            startTimeType: typeof validEvents[0].startTime,
+            endTime: validEvents[0].endTime,
+            endTimeType: typeof validEvents[0].endTime
+          });
+        }
         console.log('Events by status:', {
           scheduled: validEvents.filter(e => e.status === 'scheduled').length,
           active: validEvents.filter(e => e.status === 'active').length,
@@ -4282,7 +4292,8 @@ const AdminDashboard = () => {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
-          // CRITICAL FIX: Backend returns UTC time strings
+          // CRITICAL FIX: Backend returns UTC time strings from Sequelize
+          // Sequelize DATE fields are stored as UTC but may be returned without 'Z'
           // Check if it has timezone indicator
           const hasTimezone = dateValue.endsWith('Z') || 
                              dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
@@ -4290,14 +4301,23 @@ const AdminDashboard = () => {
                              dateValue.includes('+0500');
           
           // If NO timezone but has ISO format (YYYY-MM-DDTHH:mm:ss), treat as UTC
+          // Sequelize returns dates in ISO format but may not include 'Z'
           if (!hasTimezone && dateValue.includes('T')) {
             // Remove milliseconds if present for cleaner parsing
             dateValue = dateValue.replace(/\.\d{3}$/, '');
-            // Ensure it ends with 'Z' to force UTC parsing
+            // CRITICAL: Ensure it ends with 'Z' to force UTC parsing
+            // Without 'Z', JavaScript may interpret as local time, causing 5-hour offset
             if (!dateValue.endsWith('Z')) {
               dateValue = dateValue + 'Z';
             }
           }
+          
+          // Debug log to see what we're parsing
+          console.log('🕐 formatTime parsing:', {
+            original: dateString,
+            normalized: dateValue,
+            hasTimezone: hasTimezone
+          });
           
           date = new Date(dateValue);
           
