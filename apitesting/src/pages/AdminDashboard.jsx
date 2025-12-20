@@ -969,8 +969,8 @@ const AdminDashboard = () => {
             const completedEventName = eventData.eventName || event?.name || 'Event';
             
             // Show notification
-            toast.success(`Event "${completedEventName}" completed. Will be removed in 30 seconds.`, {
-              duration: 4000,
+            toast.success(`Event "${completedEventName}" completed. Will be removed in 5 seconds.`, {
+              duration: 3000,
             });
             
             return {
@@ -984,9 +984,10 @@ const AdminDashboard = () => {
             };
           });
           
-          // Auto-delete after 30 seconds (increased from 5 seconds to give user time to see)
+          // Auto-delete after 5 seconds
           // Only remove if event is still completed (not restarted)
-          setTimeout(() => {
+          // Note: This timeout will be lost on page refresh, so events will persist after refresh
+          const removeTimeout = setTimeout(() => {
             setData(prevData => {
               const event = prevData.events.find(e => e && e.id === eventData.eventId);
               // Only remove if event is still completed (not restarted or updated)
@@ -1001,7 +1002,10 @@ const AdminDashboard = () => {
                 return prevData; // Don't remove if status changed
               }
             });
-          }, 30000); // 30 seconds instead of 5
+          }, 5000); // 5 seconds
+          
+          // Store timeout ID so we can clear it if needed (though it will be lost on refresh, which is fine)
+          // On page refresh, the timeout is lost, so events will remain visible
         }
 
         // Handle event deleted - remove immediately
