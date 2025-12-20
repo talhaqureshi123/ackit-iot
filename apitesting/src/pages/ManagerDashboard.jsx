@@ -2467,14 +2467,23 @@ const ManagerDashboard = () => {
         }
         
         // Convert UTC to Pakistan/Karachi time - TIME ONLY
-        const timeFormatter = new Intl.DateTimeFormat('en-US', {
+        // Use 24-hour format first to avoid AM/PM confusion, then convert to 12-hour
+        const timeFormatter24 = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Karachi',
           hour: '2-digit',
           minute: '2-digit',
-          hour12: true
+          hour12: false // Get 24-hour format first
         });
         
-        return timeFormatter.format(date);
+        const pktTime24 = timeFormatter24.format(date);
+        const [pktHour24, pktMinute] = pktTime24.split(':').map(Number);
+        
+        // Convert to 12-hour format with AM/PM
+        const pktHour12 = pktHour24 === 0 ? 12 : (pktHour24 > 12 ? pktHour24 - 12 : pktHour24);
+        const ampm = pktHour24 >= 12 ? 'PM' : 'AM';
+        const pktTime = `${String(pktHour12).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} ${ampm}`;
+        
+        return pktTime;
       } catch (e) {
         console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';

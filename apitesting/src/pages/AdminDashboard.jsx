@@ -4296,23 +4296,33 @@ const AdminDashboard = () => {
         }
         
         // Convert UTC to Pakistan/Karachi time - TIME ONLY
-        // This will add 5 hours to UTC to get PKT
-        const timeFormatter = new Intl.DateTimeFormat('en-US', {
+        // Use 24-hour format first to avoid AM/PM confusion, then convert to 12-hour
+        const timeFormatter24 = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Karachi',
           hour: '2-digit',
           minute: '2-digit',
-          hour12: true
+          hour12: false // Get 24-hour format first
         });
         
-        const pktTime = timeFormatter.format(date);
+        const pktTime24 = timeFormatter24.format(date);
+        const [pktHour24, pktMinute] = pktTime24.split(':').map(Number);
+        
+        // Convert to 12-hour format with AM/PM
+        const pktHour12 = pktHour24 === 0 ? 12 : (pktHour24 > 12 ? pktHour24 - 12 : pktHour24);
+        const ampm = pktHour24 >= 12 ? 'PM' : 'AM';
+        const pktTime = `${String(pktHour12).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} ${ampm}`;
         
         // Debug log to verify conversion
         const utcHours = date.getUTCHours();
         const utcMinutes = date.getUTCMinutes();
+        const expectedPKTHour = (utcHours + 5) % 24;
+        
         console.log('🕐 UTC to PKT Display:', {
           utcInput: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
+          pkt24Hour: `${String(pktHour24).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} PKT (24h)`,
           pktDisplay: pktTime,
-          expectedPKT: `${String((utcHours + 5) % 24).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} PKT`
+          expectedPKT24: `${String(expectedPKTHour).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} PKT`,
+          match: pktHour24 === expectedPKTHour ? '✅ Correct' : `❌ Mismatch (expected ${expectedPKTHour}, got ${pktHour24})`
         });
         
         return pktTime;
