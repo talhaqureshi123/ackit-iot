@@ -163,13 +163,37 @@ class ManagerEventService {
         // For non-recurring events, use startTime and endTime as before
         // Note: Times are received in UTC from frontend, but we validate them
         // The frontend sends UTC times converted from Pakistan local time
-        startTime = new Date(eventData.startTime);
-        endTime = new Date(eventData.endTime);
+        // CRITICAL: Frontend sends ISO strings in UTC format (with 'Z' or without)
+        // We MUST ensure they are parsed as UTC, not local time
+        let startTimeStr = String(eventData.startTime).trim();
+        let endTimeStr = String(eventData.endTime).trim();
+        
+        // Ensure ISO strings are treated as UTC
+        // If no timezone indicator, assume it's UTC and add 'Z'
+        if (startTimeStr.includes('T') && !startTimeStr.endsWith('Z') && !startTimeStr.match(/[+-]\d{2}:?\d{2}$/)) {
+          startTimeStr = startTimeStr.replace(/\.\d{3}$/, '') + 'Z';
+        }
+        if (endTimeStr.includes('T') && !endTimeStr.endsWith('Z') && !endTimeStr.match(/[+-]\d{2}:?\d{2}$/)) {
+          endTimeStr = endTimeStr.replace(/\.\d{3}$/, '') + 'Z';
+        }
+        
+        startTime = new Date(startTimeStr);
+        endTime = new Date(endTimeStr);
 
         // Verify dates are valid
         if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
           throw new Error("Invalid startTime or endTime format");
         }
+        
+        // Log for debugging - show what was received and how it was parsed
+        console.log('📅 Manager Event time parsing (non-recurring):', {
+          receivedStartTime: eventData.startTime,
+          parsedStartTime: startTime.toISOString(),
+          receivedEndTime: eventData.endTime,
+          parsedEndTime: endTime.toISOString(),
+          startTimePKT: timezoneUtils.formatPakistanTime(startTime, "YYYY-MM-DD HH:mm:ss"),
+          endTimePKT: timezoneUtils.formatPakistanTime(endTime, "YYYY-MM-DD HH:mm:ss")
+        });
 
         if (endTime <= startTime) {
           throw new Error("endTime must be after startTime");
