@@ -3145,11 +3145,11 @@ const AdminDashboard = () => {
     <div className="bg-white rounded-2xl shadow-xl border-2 border-blue-200 hover:border-blue-400 hover:shadow-2xl transition-all duration-300 overflow-hidden">
       <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 px-6 py-4">
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center space-x-4 flex-shrink">
+          <div className="flex items-center space-x-4 flex-1 min-w-0">
             <div className="bg-white bg-opacity-20 rounded-full p-3 flex-shrink-0">
               <User className="w-6 h-6 text-white" />
             </div>
-            <div className="flex-shrink min-w-0">
+            <div className="min-w-0 flex-1">
               <h3 className="text-xl font-bold text-white truncate">{manager.name}</h3>
               <p className="text-sm text-blue-100 truncate">{manager.email}</p>
             </div>
@@ -3162,10 +3162,10 @@ const AdminDashboard = () => {
                 ? 'bg-white text-blue-600'
                 : 'bg-white text-blue-600'
             }`}>
-              {manager.status === 'unlocked' && <Unlock className="w-3 h-3 mr-1 flex-shrink-0" />}
-              {manager.status === 'locked' && <Lock className="w-3 h-3 mr-1 flex-shrink-0" />}
-              {manager.status === 'restricted' && <Settings className="w-3 h-3 mr-1 flex-shrink-0" />}
-              <span className="whitespace-nowrap">{manager.status || 'unlocked'}</span>
+              {manager.status === 'unlocked' && <Unlock className="w-3 h-3 mr-1" />}
+              {manager.status === 'locked' && <Lock className="w-3 h-3 mr-1" />}
+              {manager.status === 'restricted' && <Settings className="w-3 h-3 mr-1" />}
+              {manager.status || 'unlocked'}
             </span>
             {hasOrganizations && (
               <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-white text-blue-600 shadow-md whitespace-nowrap flex-shrink-0">
