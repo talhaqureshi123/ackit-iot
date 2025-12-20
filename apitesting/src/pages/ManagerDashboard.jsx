@@ -2492,10 +2492,11 @@ const ManagerDashboard = () => {
         // Expected PKT time: UTC + 5 hours
         const expectedPKTHour = (utcHours + 5) % 24;
         
-        // Debug log to verify conversion
+        // Debug log to verify conversion (only log normalized value if it exists)
+        const normalizedValue = typeof dateString === 'string' ? dateString.replace(/\s+/, 'T').replace(/\.\d{3}$/, '') + (dateString.includes('T') && !dateString.endsWith('Z') && !dateString.match(/[+-]\d{2}:?\d{2}$/) ? 'Z' : '') : dateString.toString();
         console.log('🕐 formatTime conversion:', {
           original: dateString,
-          normalized: dateValue,
+          normalized: normalizedValue,
           utcTime: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
           pktTime: `${String(pktHour24).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} PKT`,
           expectedPKT: `${String(expectedPKTHour).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} PKT`,
