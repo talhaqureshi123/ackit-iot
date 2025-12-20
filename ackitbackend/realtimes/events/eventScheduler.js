@@ -346,14 +346,14 @@ class EventScheduler {
               console.error('⚠️ Error broadcasting event completed:', broadcastError);
             }
             
-            // Auto-delete completed event after 5 seconds
+            // Auto-delete completed event after 1 minute (60 seconds) - consistent for both admin and manager
             setTimeout(async () => {
               try {
                 const eventToDelete = await Event.findByPk(event.id);
                 if (eventToDelete && eventToDelete.status === "completed") {
                   await eventToDelete.destroy();
                   console.log(
-                    `🗑️ Auto-deleted completed event: ${eventToDelete.name} (ID: ${eventToDelete.id})`
+                    `🗑️ Auto-deleted completed admin event: ${eventToDelete.name} (ID: ${eventToDelete.id}) after 1 minute`
                   );
                   
                   // Broadcast deletion to frontend
@@ -378,7 +378,7 @@ class EventScheduler {
               } catch (deleteError) {
                 console.error(`❌ Error auto-deleting completed event ${event.id}:`, deleteError);
               }
-            }, 5000); // 5 seconds delay
+            }, 60000); // 1 minute delay (60000ms) - consistent with manager events
           } else if (event.createdBy === "manager") {
             // Turn device OFF when manager event completes
             if (event.deviceId) {
@@ -448,14 +448,14 @@ class EventScheduler {
               console.error('⚠️ Error broadcasting event completed:', broadcastError);
             }
             
-            // Auto-delete completed manager event after 5 minutes
+            // Auto-delete completed manager event after 1 minute (60 seconds) - consistent with admin events
             setTimeout(async () => {
               try {
                 const eventToDelete = await Event.findByPk(event.id);
                 if (eventToDelete && eventToDelete.status === "completed") {
                   await eventToDelete.destroy();
                   console.log(
-                    `🗑️ Auto-deleted completed manager event: ${eventToDelete.name} (ID: ${eventToDelete.id})`
+                    `🗑️ Auto-deleted completed manager event: ${eventToDelete.name} (ID: ${eventToDelete.id}) after 1 minute`
                   );
                   
                   // Broadcast deletion to frontend
@@ -480,7 +480,7 @@ class EventScheduler {
               } catch (deleteError) {
                 console.error(`❌ Error auto-deleting completed event ${event.id}:`, deleteError);
               }
-            }, 300000); // 5 minutes delay (300000ms)
+            }, 60000); // 1 minute delay (60000ms) - consistent with admin events
           }
         } catch (error) {
           console.error(
