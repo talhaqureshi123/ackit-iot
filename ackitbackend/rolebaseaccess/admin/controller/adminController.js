@@ -255,11 +255,11 @@ class AdminController {
       console.log("   - Request body:", req.body);
       console.log("   - Admin ID:", req.admin?.id);
       console.log("   - Session:", req.session?.user);
-      
+
       // Session validated by authenticateAdmin middleware
       const { managerId } = req.body;
       const adminId = req.admin?.id;
-      
+
       if (!adminId) {
         console.error("❌ No admin ID in request");
         return res.status(401).json({
@@ -267,7 +267,7 @@ class AdminController {
           message: "Admin authentication required",
         });
       }
-      
+
       if (!managerId) {
         console.error("❌ Manager ID missing in request body");
         return res.status(400).json({
@@ -275,21 +275,25 @@ class AdminController {
           message: "Manager ID is required",
         });
       }
-      
+
       console.log(`🔍 Looking for manager ${managerId} under admin ${adminId}`);
       const manager = await Manager.findOne({
         where: { id: managerId, adminId: adminId },
       });
-      
+
       if (!manager) {
-        console.error(`❌ Manager ${managerId} not found under admin ${adminId}`);
+        console.error(
+          `❌ Manager ${managerId} not found under admin ${adminId}`
+        );
         return res.status(404).json({
           success: false,
           message: "Manager not found",
         });
       }
-      
-      console.log(`✅ Manager found: ${manager.name} (Status: ${manager.status})`);
+
+      console.log(
+        `✅ Manager found: ${manager.name} (Status: ${manager.status})`
+      );
       // Unlock manager ACCOUNT (this is separate from remote access lock)
       // Manager account status: unlocked = can login and perform all actions including remote access lock
       await manager.update({
@@ -2158,29 +2162,42 @@ class AdminController {
       }
 
       // Check for devices with active events (skip them from temperature update)
-      const deviceIds = acs.map(ac => ac.id);
-      const activeEvents = deviceIds.length > 0 ? await Event.findAll({
-        where: {
-          deviceId: { [Op.in]: deviceIds },
-          status: "active",
-          isDisabled: false,
-          eventType: "device",
-        },
-        attributes: ["deviceId"],
-      }) : [];
-      const devicesWithActiveEvents = new Set(activeEvents.map(e => e.deviceId));
-      const devicesToUpdate = acs.filter(ac => !devicesWithActiveEvents.has(ac.id));
-      const devicesSkipped = acs.filter(ac => devicesWithActiveEvents.has(ac.id));
+      const deviceIds = acs.map((ac) => ac.id);
+      const activeEvents =
+        deviceIds.length > 0
+          ? await Event.findAll({
+              where: {
+                deviceId: { [Op.in]: deviceIds },
+                status: "active",
+                isDisabled: false,
+                eventType: "device",
+              },
+              attributes: ["deviceId"],
+            })
+          : [];
+      const devicesWithActiveEvents = new Set(
+        activeEvents.map((e) => e.deviceId)
+      );
+      const devicesToUpdate = acs.filter(
+        (ac) => !devicesWithActiveEvents.has(ac.id)
+      );
+      const devicesSkipped = acs.filter((ac) =>
+        devicesWithActiveEvents.has(ac.id)
+      );
 
       if (devicesSkipped.length > 0) {
         console.log(
-          `⚠️ [ADMIN-ORG-TEMP] Skipping ${devicesSkipped.length} device(s) with active events: ${devicesSkipped.map(ac => ac.name).join(", ")}`
+          `⚠️ [ADMIN-ORG-TEMP] Skipping ${
+            devicesSkipped.length
+          } device(s) with active events: ${devicesSkipped
+            .map((ac) => ac.name)
+            .join(", ")}`
         );
       }
 
       // Update ALL AC temperatures (ON and OFF both) - EXCEPT devices with active events
       if (devicesToUpdate.length > 0 && venueIds.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map(ac => ac.id);
+        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
         await AC.update(
           {
             temperature: finalTemperature,
@@ -2196,7 +2213,13 @@ class AdminController {
           }
         );
         console.log(
-          `✅ [ADMIN-ORG-TEMP] Updated ${devicesToUpdate.length} AC temperatures (${devicesToUpdate.filter(ac => ac.isOn).length} ON, ${devicesToUpdate.filter(ac => !ac.isOn).length} OFF): ${oldOrgTemp}°C → ${finalTemperature}°C`
+          `✅ [ADMIN-ORG-TEMP] Updated ${
+            devicesToUpdate.length
+          } AC temperatures (${
+            devicesToUpdate.filter((ac) => ac.isOn).length
+          } ON, ${
+            devicesToUpdate.filter((ac) => !ac.isOn).length
+          } OFF): ${oldOrgTemp}°C → ${finalTemperature}°C`
         );
       }
 
@@ -2243,12 +2266,14 @@ class AdminController {
             );
           }
         }
-        
+
         // Log skipped devices with active events
         for (const ac of devicesSkipped) {
           skippedCount++;
           console.log(
-            `   └─ ⚠️ Device ${ac.serialNumber || ac.id} skipped (has active event)`
+            `   └─ ⚠️ Device ${
+              ac.serialNumber || ac.id
+            } skipped (has active event)`
           );
         }
 
@@ -2271,7 +2296,13 @@ class AdminController {
           action: "SET_ORGANIZATION_TEMPERATURE",
           targetType: "organization",
           targetId: orgId,
-          details: `Set temperature to ${finalTemperature}°C for organization ${organization.name} (updated ${devicesToUpdate.length} ACs${devicesSkipped.length > 0 ? `, ${devicesSkipped.length} skipped due to active events` : ''})`,
+          details: `Set temperature to ${finalTemperature}°C for organization ${
+            organization.name
+          } (updated ${devicesToUpdate.length} ACs${
+            devicesSkipped.length > 0
+              ? `, ${devicesSkipped.length} skipped due to active events`
+              : ""
+          })`,
           // createdAt is handled automatically by Sequelize timestamps
         });
         console.log("✅ Activity log created successfully");
@@ -2308,7 +2339,15 @@ class AdminController {
       // Session refreshed by ensureSession helper
       res.json({
         success: true,
-        message: `Organization temperature set to ${actualTemperature}°C. Updated ${allOrgVenues.length} venues and ${devicesToUpdate.length} devices (${devicesToUpdate.filter(ac => ac.isOn).length} ON, ${devicesToUpdate.filter(ac => !ac.isOn).length} OFF)${devicesSkipped.length > 0 ? `. ${devicesSkipped.length} device(s) skipped due to active events` : ''}`,
+        message: `Organization temperature set to ${actualTemperature}°C. Updated ${
+          allOrgVenues.length
+        } venues and ${devicesToUpdate.length} devices (${
+          devicesToUpdate.filter((ac) => ac.isOn).length
+        } ON, ${devicesToUpdate.filter((ac) => !ac.isOn).length} OFF)${
+          devicesSkipped.length > 0
+            ? `. ${devicesSkipped.length} device(s) skipped due to active events`
+            : ""
+        }`,
         organization: {
           id: organization.id,
           name: organization.name,
@@ -2497,28 +2536,41 @@ class AdminController {
       });
 
       // Check for devices with active events (skip them from temperature update)
-      const deviceIds = acs.map(ac => ac.id);
-      const activeEvents = deviceIds.length > 0 ? await Event.findAll({
-        where: {
-          deviceId: { [Op.in]: deviceIds },
-          status: "active",
-          isDisabled: false,
-          eventType: "device",
-        },
-        attributes: ["deviceId"],
-      }) : [];
-      const devicesWithActiveEvents = new Set(activeEvents.map(e => e.deviceId));
-      const devicesToUpdate = acs.filter(ac => !devicesWithActiveEvents.has(ac.id));
-      const devicesSkipped = acs.filter(ac => devicesWithActiveEvents.has(ac.id));
+      const deviceIds = acs.map((ac) => ac.id);
+      const activeEvents =
+        deviceIds.length > 0
+          ? await Event.findAll({
+              where: {
+                deviceId: { [Op.in]: deviceIds },
+                status: "active",
+                isDisabled: false,
+                eventType: "device",
+              },
+              attributes: ["deviceId"],
+            })
+          : [];
+      const devicesWithActiveEvents = new Set(
+        activeEvents.map((e) => e.deviceId)
+      );
+      const devicesToUpdate = acs.filter(
+        (ac) => !devicesWithActiveEvents.has(ac.id)
+      );
+      const devicesSkipped = acs.filter((ac) =>
+        devicesWithActiveEvents.has(ac.id)
+      );
 
       if (devicesSkipped.length > 0) {
         console.log(
-          `⚠️ [ADMIN-VENUE-TEMP] Skipping ${devicesSkipped.length} device(s) with active events: ${devicesSkipped.map(ac => ac.name).join(", ")}`
+          `⚠️ [ADMIN-VENUE-TEMP] Skipping ${
+            devicesSkipped.length
+          } device(s) with active events: ${devicesSkipped
+            .map((ac) => ac.name)
+            .join(", ")}`
         );
       }
 
       if (devicesToUpdate.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map(ac => ac.id);
+        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
         await AC.update(
           {
             temperature: tempValue,
@@ -2553,10 +2605,7 @@ class AdminController {
           if (ac.serialNumber) {
             try {
               console.log(`   └─ Processing device: ${ac.serialNumber}`);
-              await ESPService.startTemperatureSync(
-                ac.serialNumber,
-                tempValue
-              );
+              await ESPService.startTemperatureSync(ac.serialNumber, tempValue);
               sentCount++;
             } catch (wsError) {
               skippedCount++;
@@ -2572,12 +2621,14 @@ class AdminController {
             );
           }
         }
-        
+
         // Log skipped devices with active events
         for (const ac of devicesSkipped) {
           skippedCount++;
           console.log(
-            `   └─ ⚠️ Device ${ac.serialNumber || ac.id} skipped (has active event)`
+            `   └─ ⚠️ Device ${
+              ac.serialNumber || ac.id
+            } skipped (has active event)`
           );
         }
 
@@ -2718,7 +2769,13 @@ class AdminController {
 
       res.json({
         success: true,
-        message: `Venue temperature updated to ${actualTemperature}°C. Updated ${devicesToUpdate.length} devices${devicesSkipped.length > 0 ? `. ${devicesSkipped.length} device(s) skipped due to active events` : ''}.`,
+        message: `Venue temperature updated to ${actualTemperature}°C. Updated ${
+          devicesToUpdate.length
+        } devices${
+          devicesSkipped.length > 0
+            ? `. ${devicesSkipped.length} device(s) skipped due to active events`
+            : ""
+        }.`,
         venue: {
           id: updatedVenue.id,
           name: updatedVenue.name,
@@ -4708,20 +4765,20 @@ class AdminController {
       // Session validated by authenticateAdmin middleware
       const adminId = req.admin.id;
       const { eventId } = req.params;
-      
+
       if (!eventId) {
         return res.status(400).json({
           success: false,
           message: "Event ID is required",
         });
       }
-      
+
       const result = await EventService.deleteEvent(adminId, eventId);
       res.json(result);
     } catch (error) {
       console.error("Delete event error:", error);
       console.error("Error stack:", error.stack);
-      
+
       // Determine appropriate status code based on error message
       let statusCode = 500;
       if (
@@ -4740,7 +4797,7 @@ class AdminController {
       ) {
         statusCode = 400;
       }
-      
+
       res.status(statusCode).json({
         success: false,
         message: error.message || "Error deleting event",

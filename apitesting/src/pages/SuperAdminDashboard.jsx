@@ -169,7 +169,7 @@ const SuperAdminDashboard = () => {
         
         // Don't show error toast for 401 - it might trigger auto-logout
         if (error.response?.status !== 401) {
-          toast.error('Failed to load dashboard data');
+        toast.error('Failed to load dashboard data');
         } else {
           console.warn('⚠️ 401 error on dashboard load - session might not be ready yet');
           // Check cookie again

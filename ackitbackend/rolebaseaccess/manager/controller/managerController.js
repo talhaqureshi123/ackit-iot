@@ -1623,20 +1623,20 @@ class ManagerController {
       // Session validated by authenticateManager middleware
       const managerId = req.manager.id;
       const { eventId } = req.params;
-      
+
       if (!eventId) {
         return res.status(400).json({
           success: false,
           message: "Event ID is required",
         });
       }
-      
+
       const result = await ManagerEventService.deleteEvent(managerId, eventId);
       res.json(result);
     } catch (error) {
       console.error("Delete event error:", error);
       console.error("Error stack:", error.stack);
-      
+
       // Determine appropriate status code based on error message
       let statusCode = 500;
       if (
@@ -1655,7 +1655,7 @@ class ManagerController {
       ) {
         statusCode = 400;
       }
-      
+
       res.status(statusCode).json({
         success: false,
         message: error.message || "Error deleting event",
@@ -1877,28 +1877,41 @@ class ManagerController {
 
       // Check for devices with active events (skip them from temperature update)
       const Event = require("../../../models/Event/event");
-      const deviceIds = acs.map(ac => ac.id);
-      const activeEvents = deviceIds.length > 0 ? await Event.findAll({
-        where: {
-          deviceId: { [Op.in]: deviceIds },
-          status: "active",
-          isDisabled: false,
-          eventType: "device",
-        },
-        attributes: ["deviceId"],
-      }) : [];
-      const devicesWithActiveEvents = new Set(activeEvents.map(e => e.deviceId));
-      const devicesToUpdate = acs.filter(ac => !devicesWithActiveEvents.has(ac.id));
-      const devicesSkipped = acs.filter(ac => devicesWithActiveEvents.has(ac.id));
+      const deviceIds = acs.map((ac) => ac.id);
+      const activeEvents =
+        deviceIds.length > 0
+          ? await Event.findAll({
+              where: {
+                deviceId: { [Op.in]: deviceIds },
+                status: "active",
+                isDisabled: false,
+                eventType: "device",
+              },
+              attributes: ["deviceId"],
+            })
+          : [];
+      const devicesWithActiveEvents = new Set(
+        activeEvents.map((e) => e.deviceId)
+      );
+      const devicesToUpdate = acs.filter(
+        (ac) => !devicesWithActiveEvents.has(ac.id)
+      );
+      const devicesSkipped = acs.filter((ac) =>
+        devicesWithActiveEvents.has(ac.id)
+      );
 
       if (devicesSkipped.length > 0) {
         console.log(
-          `⚠️ [MANAGER-VENUE-TEMP] Skipping ${devicesSkipped.length} device(s) with active events: ${devicesSkipped.map(ac => ac.name).join(", ")}`
+          `⚠️ [MANAGER-VENUE-TEMP] Skipping ${
+            devicesSkipped.length
+          } device(s) with active events: ${devicesSkipped
+            .map((ac) => ac.name)
+            .join(", ")}`
         );
       }
 
       if (devicesToUpdate.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map(ac => ac.id);
+        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
         await AC.update(
           {
             temperature: tempValue,
@@ -1933,10 +1946,7 @@ class ManagerController {
           if (ac.serialNumber) {
             try {
               console.log(`   └─ Processing device: ${ac.serialNumber}`);
-              await ESPService.startTemperatureSync(
-                ac.serialNumber,
-                tempValue
-              );
+              await ESPService.startTemperatureSync(ac.serialNumber, tempValue);
               sentCount++;
             } catch (wsError) {
               skippedCount++;
@@ -1952,12 +1962,14 @@ class ManagerController {
             );
           }
         }
-        
+
         // Log skipped devices with active events
         for (const ac of devicesSkipped) {
           skippedCount++;
           console.log(
-            `   └─ ⚠️ Device ${ac.serialNumber || ac.id} skipped (has active event)`
+            `   └─ ⚠️ Device ${
+              ac.serialNumber || ac.id
+            } skipped (has active event)`
           );
         }
 
@@ -1999,7 +2011,11 @@ class ManagerController {
 
       res.json({
         success: true,
-        message: `Venue temperature set to ${tempValue}°C${devicesSkipped.length > 0 ? `. ${devicesSkipped.length} device(s) skipped due to active events` : ''}`,
+        message: `Venue temperature set to ${tempValue}°C${
+          devicesSkipped.length > 0
+            ? `. ${devicesSkipped.length} device(s) skipped due to active events`
+            : ""
+        }`,
         venue: {
           id: venue.id,
           name: venue.name,
@@ -2168,7 +2184,9 @@ class ManagerController {
       const allPossibleIds = [...orgIds, ...venueIds];
       const uniqueIds = [...new Set(allPossibleIds)];
 
-      console.log(`🔍 [GET-AC-DETAILS] Manager ${managerId} looking for AC ${acId}`);
+      console.log(
+        `🔍 [GET-AC-DETAILS] Manager ${managerId} looking for AC ${acId}`
+      );
       console.log(`🔍 [GET-AC-DETAILS] Checking with orgIds:`, orgIds);
       console.log(`🔍 [GET-AC-DETAILS] Checking with venueIds:`, venueIds);
       console.log(`🔍 [GET-AC-DETAILS] Combined uniqueIds:`, uniqueIds);
@@ -2219,23 +2237,29 @@ class ManagerController {
         const deviceExists = await AC.findByPk(acId, {
           attributes: ["id", "name", "venueId"],
         });
-        
+
         if (deviceExists) {
-          console.error(`❌ [GET-AC-DETAILS] Device ${acId} exists but venueId ${deviceExists.venueId} not in manager's orgIds/venueIds`);
+          console.error(
+            `❌ [GET-AC-DETAILS] Device ${acId} exists but venueId ${deviceExists.venueId} not in manager's orgIds/venueIds`
+          );
           console.error(`   Device venueId: ${deviceExists.venueId}`);
           console.error(`   Manager orgIds:`, orgIds);
           console.error(`   Manager venueIds:`, venueIds);
         } else {
-          console.error(`❌ [GET-AC-DETAILS] Device ${acId} does not exist in database`);
+          console.error(
+            `❌ [GET-AC-DETAILS] Device ${acId} does not exist in database`
+          );
         }
-        
+
         return res.status(404).json({
           success: false,
           message: "AC device not found or unauthorized",
         });
       }
-      
-      console.log(`✅ [GET-AC-DETAILS] Device ${ac.id} (${ac.name}) found with venueId: ${ac.venueId}`);
+
+      console.log(
+        `✅ [GET-AC-DETAILS] Device ${ac.id} (${ac.name}) found with venueId: ${ac.venueId}`
+      );
 
       res.json({
         success: true,

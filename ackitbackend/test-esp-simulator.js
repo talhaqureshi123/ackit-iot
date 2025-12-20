@@ -32,10 +32,18 @@ console.log(
 console.log("");
 console.log("🔗 Device Testing Links:");
 console.log(`   └─ Local Backend: http://${SERVER_IP}:${SERVER_PORT}`);
-console.log(`   └─ Railway Backend: https://ackit-iot-production.up.railway.app`);
-console.log(`   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`);
-console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`);
-console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`);
+console.log(
+  `   └─ Railway Backend: https://ackit-iot-production.up.railway.app`
+);
+console.log(
+  `   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`
+);
+console.log(
+  `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`
+);
+console.log(
+  `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`
+);
 console.log("");
 
 let deviceState = {

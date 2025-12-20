@@ -682,8 +682,11 @@ class EventService {
       if (organizationIds.size > 0) {
         try {
           const orgIdsArray = Array.from(organizationIds);
-          console.log(`📋 Fetching ${orgIdsArray.length} organizations:`, orgIdsArray);
-          
+          console.log(
+            `📋 Fetching ${orgIdsArray.length} organizations:`,
+            orgIdsArray
+          );
+
           const organizations = await Organization.findAll({
             where: { id: { [Op.in]: orgIdsArray } },
             attributes: ["id", "name"],
@@ -691,7 +694,9 @@ class EventService {
 
           console.log(`✅ Found ${organizations.length} organizations`);
 
-          const orgMap = new Map(organizations.map((org) => [org.id, org.get({ plain: true })]));
+          const orgMap = new Map(
+            organizations.map((org) => [org.id, org.get({ plain: true })])
+          );
 
           // Add organization to each event's device.venue
           events.forEach((event) => {
@@ -704,7 +709,10 @@ class EventService {
                 }
               }
             } catch (err) {
-              console.warn("⚠️ Error adding organization to event:", err.message);
+              console.warn(
+                "⚠️ Error adding organization to event:",
+                err.message
+              );
             }
           });
         } catch (orgError) {
@@ -949,15 +957,17 @@ class EventService {
           // Send OFF command to ESP device
           if (device.serialNumber) {
             ESPService.sendPowerCommand(device.serialNumber, false);
-            console.log(
-              `✅ [EVENT] Turned OFF device ${device.serialNumber}`
-            );
+            console.log(`✅ [EVENT] Turned OFF device ${device.serialNumber}`);
 
             // Send "event stop" message to ESP device
-            ESPService.sendEventStatusMessage(device.serialNumber, "event stop", {
-              eventId: event.id,
-              eventName: event.name,
-            });
+            ESPService.sendEventStatusMessage(
+              device.serialNumber,
+              "event stop",
+              {
+                eventId: event.id,
+                eventName: event.name,
+              }
+            );
           }
         }
       }
@@ -1230,7 +1240,17 @@ class EventService {
         updateData.startTime !== undefined ||
         updateData.endTime !== undefined
       ) {
-        if (event.endTime <= event.startTime) {
+        // Use updated values if provided, otherwise use existing values
+        const finalStartTime =
+          updateData.startTime !== undefined
+            ? new Date(updateData.startTime)
+            : event.startTime;
+        const finalEndTime =
+          updateData.endTime !== undefined
+            ? new Date(updateData.endTime)
+            : event.endTime;
+
+        if (finalEndTime <= finalStartTime) {
           throw new Error("endTime must be after startTime");
         }
       }

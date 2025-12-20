@@ -85,12 +85,12 @@ export default defineConfig({
                 "Status:",
                 proxyRes.statusCode
               );
-              
+
               // Modify cookie attributes for local development with Railway HTTPS backend
               proxyRes.headers["set-cookie"] = setCookieHeaders.map(
                 (cookie) => {
                   console.log("🍪 Proxy - Original cookie:", cookie);
-                  
+
                   // For local development with Railway backend (HTTPS -> HTTP proxy):
                   // - Remove Secure flag (since localhost is HTTP)
                   // - Change SameSite from "none" to "Lax" for local development
@@ -119,12 +119,19 @@ export default defineConfig({
               console.log("⚠️ Proxy - No cookies received from backend");
               console.log("⚠️ Proxy - Response status:", proxyRes.statusCode);
               console.log("⚠️ Proxy - Response URL:", req.url);
-              console.log("⚠️ Proxy - Response headers:", Object.keys(proxyRes.headers));
-              
+              console.log(
+                "⚠️ Proxy - Response headers:",
+                Object.keys(proxyRes.headers)
+              );
+
               // Check if this is a login response
               if (req.url && req.url.includes("/login")) {
-                console.log("⚠️ Proxy - This is a login request but no cookies received!");
-                console.log("⚠️ Proxy - Check backend logs for session creation");
+                console.log(
+                  "⚠️ Proxy - This is a login request but no cookies received!"
+                );
+                console.log(
+                  "⚠️ Proxy - Check backend logs for session creation"
+                );
               }
             }
           });

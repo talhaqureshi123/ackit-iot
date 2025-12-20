@@ -6645,6 +6645,7 @@ const AdminDashboard = () => {
                         </div>
                       )}
                     </div>
+                    </div>
 
                     {/* Temperature Control */}
                     <div className="bg-gray-50 rounded-lg p-4 mb-4">
@@ -6941,6 +6942,7 @@ const AdminDashboard = () => {
     </div>
   );
 };
+}
 
 export default AdminDashboard;
 

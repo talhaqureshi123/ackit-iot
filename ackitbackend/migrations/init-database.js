@@ -21,7 +21,7 @@ async function initDatabase() {
     // alter: false - doesn't alter existing tables (safer for production)
     // force: false - doesn't drop existing tables
     console.log("📊 Syncing database schema...");
-    
+
     try {
       await sequelize.sync({ alter: false, force: false });
       console.log("✅ Database schema synced successfully!");
@@ -30,8 +30,8 @@ async function initDatabase() {
       if (
         syncError.name === "SequelizeDatabaseError" &&
         (syncError.parent?.code === "42P07" || // duplicate_table, duplicate_index
-         syncError.message?.includes("already exists") ||
-         syncError.parent?.message?.includes("already exists"))
+          syncError.message?.includes("already exists") ||
+          syncError.parent?.message?.includes("already exists"))
       ) {
         console.log("⚠️ Some database objects already exist (this is OK):");
         console.log("   ", syncError.parent?.message || syncError.message);

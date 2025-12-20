@@ -4,10 +4,11 @@ import { BACKEND_BASE_URL } from "../config/api";
 // Determine API base URL based on environment
 // Production: Use full backend URL (Railway)
 // Development: Use Vite proxy (/api)
-const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
-const API_BASE_URL = isProduction 
-  ? `${BACKEND_BASE_URL}/api`  // Production: Full backend URL
-  : "/api";  // Development: Vite proxy
+const isProduction =
+  import.meta.env.PROD || import.meta.env.MODE === "production";
+const API_BASE_URL = isProduction
+  ? `${BACKEND_BASE_URL}/api` // Production: Full backend URL
+  : "/api"; // Development: Vite proxy
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

@@ -381,25 +381,25 @@ class SuperAdminController {
       // Send notification email asynchronously (non-blocking) to improve response time
       // Don't await - let it run in background
       setImmediate(async () => {
-        try {
-          console.log(
+      try {
+        console.log(
             `📬 Sending suspension email to: ${admin.email} (Admin: ${admin.name})`
-          );
-          const notificationService = require("../../../realtimes/email/superadminNotifications");
-          await notificationService.sendSuspensionNotification(
-            admin.email,
-            admin.name,
-            reason,
-            `Super Admin (ID: ${superAdminId})`
-          );
-          console.log(`✅ Suspension notification sent to ${admin.email}`);
-        } catch (notificationError) {
-          console.error(
-            `❌ Error sending suspension notification:`,
-            notificationError.message
-          );
+        );
+        const notificationService = require("../../../realtimes/email/superadminNotifications");
+        await notificationService.sendSuspensionNotification(
+          admin.email,
+          admin.name,
+          reason,
+          `Super Admin (ID: ${superAdminId})`
+        );
+        console.log(`✅ Suspension notification sent to ${admin.email}`);
+      } catch (notificationError) {
+        console.error(
+          `❌ Error sending suspension notification:`,
+          notificationError.message
+        );
           // Don't throw error - this is background operation
-        }
+      }
       });
 
       // Return response immediately without waiting for email
@@ -445,24 +445,24 @@ class SuperAdminController {
       // Send notification email asynchronously (non-blocking) to improve response time
       // Don't await - let it run in background
       setImmediate(async () => {
-        try {
+      try {
           console.log(
             `📬 Sending resumption email to: ${admin.email} (Admin: ${admin.name})`
           );
-          const notificationService = require("../../../realtimes/email/superadminNotifications");
-          await notificationService.sendResumptionNotification(
-            admin.email,
-            admin.name,
-            `Super Admin (ID: ${superAdminId})`
-          );
-          console.log(`✅ Resumption notification sent to ${admin.email}`);
-        } catch (notificationError) {
-          console.error(
-            `❌ Error sending resumption notification:`,
-            notificationError.message
-          );
+        const notificationService = require("../../../realtimes/email/superadminNotifications");
+        await notificationService.sendResumptionNotification(
+          admin.email,
+          admin.name,
+          `Super Admin (ID: ${superAdminId})`
+        );
+        console.log(`✅ Resumption notification sent to ${admin.email}`);
+      } catch (notificationError) {
+        console.error(
+          `❌ Error sending resumption notification:`,
+          notificationError.message
+        );
           // Don't throw error - this is background operation
-        }
+      }
       });
 
       // Return response immediately without waiting for email
