@@ -2424,25 +2424,29 @@ const ManagerDashboard = () => {
         } else if (typeof dateString === 'string') {
           let dateValue = String(dateString).trim();
           
+          // Normalize format
           if (dateValue.includes(' ') && !dateValue.includes('T')) {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
+          // CRITICAL: Backend returns UTC time strings, we MUST treat them as UTC
           const hasTimezone = dateValue.endsWith('Z') || 
                              dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
                              dateValue.includes('+05:00') ||
                              dateValue.includes('+0500');
           
+          // If NO timezone, assume it's UTC and add 'Z'
           if (!hasTimezone) {
             dateValue = dateValue.replace(/\s+$/, '');
             if (!dateValue.endsWith('Z')) {
-              dateValue = dateValue + 'Z';
+              dateValue = dateValue + 'Z'; // Force UTC parsing
             }
           }
           
           date = new Date(dateValue);
           
           if (isNaN(date.getTime())) {
+            console.error('❌ Invalid date string:', dateString);
             return 'N/A';
           }
         } else {
@@ -2453,7 +2457,7 @@ const ManagerDashboard = () => {
           return 'N/A';
         }
         
-        // Convert to Pakistan/Karachi time - TIME ONLY
+        // Convert UTC to Pakistan/Karachi time - TIME ONLY
         const timeFormatter = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Karachi',
           hour: '2-digit',
@@ -2463,6 +2467,7 @@ const ManagerDashboard = () => {
         
         return timeFormatter.format(date);
       } catch (e) {
+        console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';
       }
     };

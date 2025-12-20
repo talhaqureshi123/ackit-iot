@@ -4240,25 +4240,30 @@ const AdminDashboard = () => {
         } else if (typeof dateString === 'string') {
           let dateValue = String(dateString).trim();
           
+          // Normalize format
           if (dateValue.includes(' ') && !dateValue.includes('T')) {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
+          // CRITICAL: Backend returns UTC time strings, we MUST treat them as UTC
+          // Check if it has timezone indicator
           const hasTimezone = dateValue.endsWith('Z') || 
                              dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
                              dateValue.includes('+05:00') ||
                              dateValue.includes('+0500');
           
+          // If NO timezone, assume it's UTC and add 'Z'
           if (!hasTimezone) {
             dateValue = dateValue.replace(/\s+$/, '');
             if (!dateValue.endsWith('Z')) {
-              dateValue = dateValue + 'Z';
+              dateValue = dateValue + 'Z'; // Force UTC parsing
             }
           }
           
           date = new Date(dateValue);
           
           if (isNaN(date.getTime())) {
+            console.error('❌ Invalid date string:', dateString);
             return 'N/A';
           }
         } else {
@@ -4269,7 +4274,8 @@ const AdminDashboard = () => {
           return 'N/A';
         }
         
-        // Convert to Pakistan/Karachi time - TIME ONLY
+        // Convert UTC to Pakistan/Karachi time - TIME ONLY
+        // This will add 5 hours to UTC to get PKT
         const timeFormatter = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Karachi',
           hour: '2-digit',
@@ -4277,8 +4283,20 @@ const AdminDashboard = () => {
           hour12: true
         });
         
-        return timeFormatter.format(date);
+        const pktTime = timeFormatter.format(date);
+        
+        // Debug log to verify conversion
+        const utcHours = date.getUTCHours();
+        const utcMinutes = date.getUTCMinutes();
+        console.log('🕐 UTC to PKT Display:', {
+          utcInput: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
+          pktDisplay: pktTime,
+          expectedPKT: `${String((utcHours + 5) % 24).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} PKT`
+        });
+        
+        return pktTime;
       } catch (e) {
+        console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';
       }
     };
