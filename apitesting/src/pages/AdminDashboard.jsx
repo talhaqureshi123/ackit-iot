@@ -737,6 +737,7 @@ const AdminDashboard = () => {
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventActionLoading, setEventActionLoading] = useState({});
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [managerActionLoading, setManagerActionLoading] = useState({});
 
   useEffect(() => {
     const loadDataSafely = async () => {
@@ -1633,34 +1634,56 @@ const AdminDashboard = () => {
   };
 
   const handleUnlockManager = async (managerId) => {
+    if (managerActionLoading[managerId]) {
+      console.log('⏳ Unlock already in progress for manager:', managerId);
+      return; // Prevent double clicks
+    }
+    
     try {
+      setManagerActionLoading(prev => ({ ...prev, [managerId]: true }));
       console.log('🔓 Unlocking manager:', managerId);
       const response = await adminAPI.unlockManager(managerId);
       console.log('✅ Unlock manager response:', response.data);
       toast.success('Manager unlocked successfully');
-      loadData(true);
+      
+      // Reload data to reflect changes
+      await loadData(true);
+      
+      setManagerActionLoading(prev => ({ ...prev, [managerId]: false }));
     } catch (error) {
       console.error('❌ Unlock manager error:', error);
       console.error('❌ Error response:', error.response);
       console.error('❌ Error message:', error.message);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to unlock manager';
       toast.error(errorMessage);
+      setManagerActionLoading(prev => ({ ...prev, [managerId]: false }));
     }
   };
 
   const handleRestrictedUnlockManager = async (managerId) => {
+    if (managerActionLoading[managerId]) {
+      console.log('⏳ Restricted unlock already in progress for manager:', managerId);
+      return; // Prevent double clicks
+    }
+    
     try {
+      setManagerActionLoading(prev => ({ ...prev, [managerId]: true }));
       console.log('🔓 Restricted unlocking manager:', managerId);
       const response = await adminAPI.restrictedUnlockManager(managerId);
       console.log('✅ Restricted unlock manager response:', response.data);
       toast.success('Manager unlocked with restricted access');
-      loadData(true);
+      
+      // Reload data to reflect changes
+      await loadData(true);
+      
+      setManagerActionLoading(prev => ({ ...prev, [managerId]: false }));
     } catch (error) {
       console.error('❌ Restricted unlock manager error:', error);
       console.error('❌ Error response:', error.response);
       console.error('❌ Error message:', error.message);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to unlock manager';
       toast.error(errorMessage);
+      setManagerActionLoading(prev => ({ ...prev, [managerId]: false }));
     }
   };
 
@@ -3231,19 +3254,43 @@ const AdminDashboard = () => {
               <>
                 <button
                   onClick={() => handleUnlockManager(manager.id)}
-                className="flex-1 flex items-center justify-center px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md hover:shadow-lg font-medium text-sm"
+                  disabled={managerActionLoading[manager.id]}
+                  className={`flex-1 flex items-center justify-center px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md hover:shadow-lg font-medium text-sm ${
+                    managerActionLoading[manager.id] ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                   title="Full Unlock"
                 >
-                <Unlock className="w-4 h-4 mr-2" />
-                  Unlock
+                  {managerActionLoading[manager.id] ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Unlocking...
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="w-4 h-4 mr-2" />
+                      Unlock
+                    </>
+                  )}
                 </button>
                 <button
                   onClick={() => handleRestrictedUnlockManager(manager.id)}
-                className="flex-1 flex items-center justify-center px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md hover:shadow-lg font-medium text-sm"
+                  disabled={managerActionLoading[manager.id]}
+                  className={`flex-1 flex items-center justify-center px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md hover:shadow-lg font-medium text-sm ${
+                    managerActionLoading[manager.id] ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                   title="Restricted Unlock"
                 >
-                <Settings className="w-4 h-4 mr-2" />
-                Restricted
+                  {managerActionLoading[manager.id] ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Unlocking...
+                    </>
+                  ) : (
+                    <>
+                      <Settings className="w-4 h-4 mr-2" />
+                      Restricted
+                    </>
+                  )}
                 </button>
               </>
             ) : (
