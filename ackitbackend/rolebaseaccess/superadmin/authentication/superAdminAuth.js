@@ -259,11 +259,27 @@ class SuperAdminAuth {
       await superAdmin.update({ lastLogin: new Date() });
 
       // Create session with backend-stored token
+      // NOTE: createSession() already sets req.session.sessionId, req.session.user, and saves the session
       console.log("🔐 Creating session for SuperAdmin:", superAdmin.email);
       let sessionId;
       try {
         sessionId = await SuperAdminAuth.createSession(req, superAdmin);
         console.log("✅ Session created successfully - Session ID:", sessionId);
+        
+        // Verify session data was set by createSession
+        console.log("✅ Session data after createSession:", {
+          sessionId: req.session.sessionId,
+          user: req.session.user,
+          sessionID: req.sessionID
+        });
+        
+        if (!req.session.sessionId || !req.session.user) {
+          console.error("❌ Session data not set by createSession!");
+          return res.status(500).json({
+            success: false,
+            message: "Session data not set. Please try again.",
+          });
+        }
       } catch (sessionError) {
         console.error("❌ Session creation error:", sessionError);
         console.error("❌ Session error stack:", sessionError.stack);
@@ -274,41 +290,24 @@ class SuperAdminAuth {
         });
       }
 
-      // Mark session as modified to ensure it gets saved
-      // CRITICAL: Set session data BEFORE saving
-      req.session.sessionId = sessionId;
-      req.session.user = {
-        id: superAdmin.id,
-        name: superAdmin.name,
-        email: superAdmin.email,
-        role: "superadmin",
-      };
+      // Touch session to refresh expiration (already saved by createSession)
+      if (req.session.touch) {
+        req.session.touch();
+      }
       
-      // Mark session as modified (required for express-session to save)
-      req.session.touch();
-      
-      console.log("🔐 Before save - Session data:", {
-        sessionId: req.session.sessionId,
-        user: req.session.user,
-        sessionID: req.sessionID
-      });
-      
-      // Force session to be saved and ensure cookie is set
+      // Save one more time to ensure persistence (createSession already saved, but double-check)
       await new Promise((resolve, reject) => {
         req.session.save((err) => {
           if (err) {
-            console.error("❌ Error saving session:", err);
+            console.error("❌ Error saving session (final save):", err);
             reject(err);
           } else {
-            console.log("✅ Session saved successfully");
-            console.log("✅ Session ID (cookie):", req.sessionID);
-            console.log("✅ Session data after save:", {
+            console.log("✅ Final session save completed");
+            console.log("✅ Final session data:", {
               sessionId: req.session.sessionId,
-              user: req.session.user
+              user: req.session.user,
+              sessionID: req.sessionID
             });
-            
-            // Verify session was saved to database
-            console.log("✅ Verifying session in database...");
             resolve();
           }
         });
