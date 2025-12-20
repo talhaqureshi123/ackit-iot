@@ -4708,13 +4708,42 @@ class AdminController {
       // Session validated by authenticateAdmin middleware
       const adminId = req.admin.id;
       const { eventId } = req.params;
+      
+      if (!eventId) {
+        return res.status(400).json({
+          success: false,
+          message: "Event ID is required",
+        });
+      }
+      
       const result = await EventService.deleteEvent(adminId, eventId);
       res.json(result);
     } catch (error) {
       console.error("Delete event error:", error);
-      res.status(500).json({
+      console.error("Error stack:", error.stack);
+      
+      // Determine appropriate status code based on error message
+      let statusCode = 500;
+      if (
+        error.message.includes("not found") ||
+        error.message.includes("does not belong")
+      ) {
+        statusCode = 404;
+      } else if (
+        error.message.includes("active event") ||
+        error.message.includes("Cannot delete")
+      ) {
+        statusCode = 400; // Bad request - event is active
+      } else if (
+        error.message.includes("required") ||
+        error.message.includes("Invalid")
+      ) {
+        statusCode = 400;
+      }
+      
+      res.status(statusCode).json({
         success: false,
-        message: "Error deleting event",
+        message: error.message || "Error deleting event",
         error: error.message,
       });
     }
