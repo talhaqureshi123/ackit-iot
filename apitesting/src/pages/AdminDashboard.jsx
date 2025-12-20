@@ -741,6 +741,12 @@ const AdminDashboard = () => {
   const [managerActionLoading, setManagerActionLoading] = useState({});
 
   useEffect(() => {
+    // Safety timeout: If loading takes more than 10 seconds, show dashboard anyway
+    const timeoutId = setTimeout(() => {
+      console.warn('⚠️ Admin Dashboard - Loading timeout, showing dashboard anyway');
+      setInitialLoading(false);
+    }, 10000); // 10 seconds timeout
+    
     const loadDataSafely = async () => {
       try {
         console.log('📊 Admin Dashboard - Loading data...');
@@ -757,14 +763,23 @@ const AdminDashboard = () => {
           loadSystemStatus();
           // Load events on initial mount to get accurate count for tab badge
           loadEvents();
+          // Clear timeout since loading completed successfully
+          clearTimeout(timeoutId);
         } else {
           console.warn('⚠️ Admin Dashboard - User not authenticated or wrong role');
+          // Even if user is not authenticated, stop loading to show the component
+          setInitialLoading(false);
+          clearTimeout(timeoutId);
         }
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
         toast.error('Failed to load dashboard data');
+        // Always set initialLoading to false even on error to show the dashboard
+        setInitialLoading(false);
+        clearTimeout(timeoutId);
       }
     };
+    
     loadDataSafely();
     
     // Native WebSocket connection for real-time updates
@@ -1088,6 +1103,7 @@ const AdminDashboard = () => {
     }, 30000);
     
     return () => {
+      clearTimeout(timeoutId);
       socket.close();
       clearInterval(alertsInterval);
     };
