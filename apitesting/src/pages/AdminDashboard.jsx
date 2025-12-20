@@ -4208,6 +4208,7 @@ const AdminDashboard = () => {
         }
         
         // Convert to Pakistan/Karachi time using Intl.DateTimeFormat for better control
+        // Format: "MM/DD/YYYY, HH:MM:SS AM/PM"
         const formatter = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Karachi',
           month: '2-digit',
@@ -4221,24 +4222,64 @@ const AdminDashboard = () => {
         
         const pakistanTime = formatter.format(date);
         
-        // Log for debugging
-        const utcHour = date.getUTCHours();
-        const utcMin = date.getUTCMinutes();
-        const expectedPKTHour = (utcHour + 5) % 24;
-        
-        console.log('🕐 TIME CONVERSION:', {
-          input: originalInput,
-          normalized: date.toISOString(),
-          utc: `${String(utcHour).padStart(2, '0')}:${String(utcMin).padStart(2, '0')}`,
-          expectedPKT: `${String(expectedPKTHour).padStart(2, '0')}:${String(utcMin).padStart(2, '0')}`,
-          displayed: pakistanTime,
-          match: pakistanTime.includes(String(expectedPKTHour)) || pakistanTime.includes(String(expectedPKTHour % 12 || 12))
-        });
-        
         return pakistanTime;
       } catch (e) {
         console.error('❌ Date formatting exception:', e, dateString);
         return 'Invalid Date';
+      }
+    };
+
+    // Format time only (HH:MM AM/PM) in PKT
+    const formatTime = (dateString) => {
+      if (!dateString) return 'N/A';
+      try {
+        let date;
+        
+        if (dateString instanceof Date) {
+          date = dateString;
+        } else if (typeof dateString === 'string') {
+          let dateValue = String(dateString).trim();
+          
+          if (dateValue.includes(' ') && !dateValue.includes('T')) {
+            dateValue = dateValue.replace(/\s+/, 'T');
+          }
+          
+          const hasTimezone = dateValue.endsWith('Z') || 
+                             dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
+                             dateValue.includes('+05:00') ||
+                             dateValue.includes('+0500');
+          
+          if (!hasTimezone) {
+            dateValue = dateValue.replace(/\s+$/, '');
+            if (!dateValue.endsWith('Z')) {
+              dateValue = dateValue + 'Z';
+            }
+          }
+          
+          date = new Date(dateValue);
+          
+          if (isNaN(date.getTime())) {
+            return 'N/A';
+          }
+        } else {
+          return 'N/A';
+        }
+        
+        if (isNaN(date.getTime())) {
+          return 'N/A';
+        }
+        
+        // Convert to Pakistan/Karachi time - TIME ONLY
+        const timeFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Karachi',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+        
+        return timeFormatter.format(date);
+      } catch (e) {
+        return 'N/A';
       }
     };
 
@@ -4494,14 +4535,14 @@ const AdminDashboard = () => {
                         <div className="space-y-1">
                           <div>
                             <div className="text-xs font-semibold text-gray-700">Start</div>
-                            <div className="text-xs font-bold text-gray-900 truncate">
-                              {formatDateTime(event.startTime).split(' ')[1] || 'N/A'}
+                            <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.startTime)}>
+                              {formatTime(event.startTime)}
                           </div>
                       </div>
                           <div>
                             <div className="text-xs font-semibold text-gray-700">End</div>
-                            <div className="text-xs font-bold text-gray-900 truncate">
-                              {formatDateTime(event.endTime).split(' ')[1] || 'N/A'}
+                            <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.endTime)}>
+                              {formatTime(event.endTime)}
                         </div>
                           </div>
                           </div>
