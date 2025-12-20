@@ -252,25 +252,31 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
         const [year, month, day] = datePart.split('-').map(Number);
         const [hours, minutes] = timePart.split(':').map(Number);
         
-        // Method 1: Try using timezone offset string (+05:00 for PKT)
-        // This explicitly tells JavaScript this is PKT time
-        try {
-          const pktDateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00+05:00`;
-          const dateWithTimezone = new Date(pktDateString);
-          if (!isNaN(dateWithTimezone.getTime())) {
-            return dateWithTimezone; // This is already in UTC (Date objects always store UTC internally)
-          }
-        } catch (e) {
-          // Fall back to manual conversion
+        // CRITICAL FIX: Use timezone offset string (+05:00 for PKT)
+        // When we specify +05:00, JavaScript automatically converts to UTC
+        // Example: "2025-12-21T13:32:00+05:00" (1:32 PM PKT) = "2025-12-21T08:32:00Z" (8:32 AM UTC)
+        const pktDateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00+05:00`;
+        const dateWithTimezone = new Date(pktDateString);
+        
+        if (isNaN(dateWithTimezone.getTime())) {
+          console.error('❌ Failed to parse PKT date:', dateTimeString);
+          throw new Error('Invalid date format');
         }
         
-        // Method 2: Manual conversion (fallback)
-        // PKT is UTC+5, so PKT time = UTC time + 5 hours
-        // Therefore: UTC time = PKT time - 5 hours
-        // Create a UTC date representing the PKT time, then subtract 5 hours
-        const pktAsUTC = Date.UTC(year, month - 1, day, hours, minutes, 0);
-        const utcTime = pktAsUTC - (5 * 60 * 60 * 1000); // Subtract 5 hours
-        return new Date(utcTime);
+        // Verify conversion is correct
+        const utcHours = dateWithTimezone.getUTCHours();
+        const utcMinutes = dateWithTimezone.getUTCMinutes();
+        const expectedUTCHours = (hours - 5 + 24) % 24; // PKT - 5 hours = UTC
+        
+        console.log('🕐 PKT to UTC Conversion:', {
+          input: dateTimeString,
+          pktTime: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+          utcTime: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')}`,
+          expectedUTC: `${String(expectedUTCHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+          isoString: dateWithTimezone.toISOString()
+        });
+        
+        return dateWithTimezone; // Date object stores UTC internally
       };
       
       const startTimeUTC_Date = parsePakistanDateTimeToUTC(formData.startTime);
