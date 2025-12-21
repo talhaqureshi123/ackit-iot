@@ -69,12 +69,16 @@ const Event = sequelize.define(
     startTime: {
       type: DataTypes.DATE,
       allowNull: false,
-      comment: "Event start time",
+      comment: "Event start time (stored as UTC TIMESTAMPTZ in database)",
+      // CRITICAL: Sequelize DATE maps to PostgreSQL TIMESTAMPTZ
+      // Backend must send UTC ISO strings, PostgreSQL will store as UTC
     },
     endTime: {
       type: DataTypes.DATE,
       allowNull: false,
-      comment: "Event end time",
+      comment: "Event end time (stored as UTC TIMESTAMPTZ in database)",
+      // CRITICAL: Sequelize DATE maps to PostgreSQL TIMESTAMPTZ
+      // Backend must send UTC ISO strings, PostgreSQL will store as UTC
     },
     // Event settings
     temperature: {

@@ -532,9 +532,9 @@ class ManagerEventService {
       }
 
       // CRITICAL: Sequelize's timezone: "+05:00" setting causes it to convert dates
-      // When storing a Date object, Sequelize interprets it in the configured timezone
-      // and converts to UTC. This causes a 5-hour offset.
-      // Solution: Use Sequelize.literal with explicit UTC timestamp
+      // CRITICAL: Frontend sends UTC ISO strings (e.g., "2025-12-21T11:54:00.000Z")
+      // PostgreSQL TIMESTAMPTZ will automatically store as UTC
+      // Use Date objects directly - Sequelize will handle UTC conversion properly with TIMESTAMPTZ columns
 
       // Get UTC timestamps as ISO strings (already in UTC format)
       const startTimeUTCString = startTime.toISOString();
@@ -557,15 +557,10 @@ class ManagerEventService {
         },
       });
 
-      // CRITICAL: Store exactly what frontend sends - no timezone conversion
-      // Extract date-time part: '2025-12-21 04:12:00' (without timezone)
-      // PostgreSQL timestamp type stores as-is without timezone conversion
-      const startTimeSQL = startTimeUTCString
-        .replace("T", " ")
-        .replace(/\.\d{3}Z$/, "");
-      const endTimeSQL = endTimeUTCString
-        .replace("T", " ")
-        .replace(/\.\d{3}Z$/, "");
+      // CRITICAL: Frontend sends UTC ISO strings (e.g., "2025-12-21T11:54:00.000Z")
+      // PostgreSQL TIMESTAMPTZ will automatically store as UTC
+      // Use Date objects directly - Sequelize will handle UTC conversion properly
+      // No need for Sequelize.literal - just use the Date objects
 
       // Create manager event - ONLY device events
       const eventDataToCreate = {
@@ -576,9 +571,9 @@ class ManagerEventService {
         createdBy: "manager",
         adminId: manager.adminId,
         managerId: managerId,
-        startTime: Sequelize.literal(`'${startTimeSQL}'::timestamp`),
-        endTime: Sequelize.literal(`'${endTimeSQL}'::timestamp`),
-        originalEndTime: Sequelize.literal(`'${endTimeSQL}'::timestamp`), // Store original end time
+        startTime: startTime, // Date object - Sequelize will store as UTC TIMESTAMPTZ
+        endTime: endTime, // Date object - Sequelize will store as UTC TIMESTAMPTZ
+        originalEndTime: endTime, // Store original end time
         temperature: temperature, // Temperature is required
         powerOn: true, // Event will turn device ON when it starts
         status: initialStatus, // "active" for immediate start, "scheduled" for recurring

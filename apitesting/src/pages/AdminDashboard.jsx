@@ -640,33 +640,54 @@ const AdminDashboard = () => {
           };
         });
 
-        // Load venues separately if not included in organizations response
+        // CRITICAL: Backend already includes venues in organizations response
+        // But if organizations don't have venues, try loading from separate venues API
         let allVenuesFromAPI = [];
         if (venuesRes && venuesRes.data) {
           allVenuesFromAPI = venuesRes.data.venues || 
                             venuesRes.data.data?.venues || 
                             (Array.isArray(venuesRes.data.data) ? venuesRes.data.data : []) ||
                             [];
-          console.log('📊 [admin] Loaded Venues from API:', allVenuesFromAPI.length);
+          console.log('📊 [admin] Loaded Venues from separate API:', allVenuesFromAPI.length);
         }
         
-        // Merge venues from API with venues from organizations
-        // If organization doesn't have venues but API has them, add them
+        // Ensure all organizations have their venues
+        // Backend should already include venues, but if missing, add from separate API call
         organizations = organizations.map(org => {
-          const orgVenuesFromAPI = allVenuesFromAPI.filter(v => v.organizationId === org.id);
           const existingVenues = org.venues || [];
           
-          // Merge venues: prefer organization venues, but add API venues if missing
-          let mergedVenues = [...existingVenues];
-          orgVenuesFromAPI.forEach(apiVenue => {
-            const exists = mergedVenues.find(v => v.id === apiVenue.id);
-            if (!exists) {
-              mergedVenues.push(apiVenue);
-            }
-          });
+          // If organization has no venues, try to get from separate API
+          if (existingVenues.length === 0 && allVenuesFromAPI.length > 0) {
+            const orgVenuesFromAPI = allVenuesFromAPI.filter(v => v.organizationId === org.id);
+            console.log(`📊 [admin] Org "${org.name}" (ID: ${org.id}) has no venues in response, found ${orgVenuesFromAPI.length} from separate API`);
+            
+            // Update venues with mixed temperatures
+            const venuesWithMixed = orgVenuesFromAPI.map(venue => {
+              const venueACs = acs.filter(ac => ac.venueId === venue.id);
+              const venueTemp = venue.temperature || 16;
+              let venueHasMixed = false;
+              
+              if (venueACs.length > 1) {
+                venueHasMixed = venueACs.some(ac => {
+                  const acTemp = ac.temperature || 16;
+                  return acTemp !== venueTemp;
+                });
+              }
+              
+              return {
+                ...venue,
+                hasMixedTemperatures: venueHasMixed
+              };
+            });
+            
+            return {
+              ...org,
+              venues: venuesWithMixed
+            };
+          }
           
-          // Update venues with mixed temperatures
-          const venuesWithMixed = mergedVenues.map(venue => {
+          // Organization already has venues, just update with mixed temperatures
+          const venuesWithMixed = existingVenues.map(venue => {
             const venueACs = acs.filter(ac => ac.venueId === venue.id);
             const venueTemp = venue.temperature || 16;
             let venueHasMixed = false;
@@ -690,21 +711,37 @@ const AdminDashboard = () => {
           };
         });
         
-        // Debug logging
-        console.log('📊 [admin] Loaded Data:');
-        console.log('   Organizations:', organizations.length, organizations.map(o => ({ id: o.id, name: o.name, temperature: o.temperature, hasMixedTemperatures: o.hasMixedTemperatures, venues: o.venues?.length || 0 })));
-        console.log('   AC Devices:', acs.length, acs.map(ac => ({ id: ac.id, name: ac.name, venueId: ac.venueId, temperature: ac.temperature })));
-        console.log('   Venues from API:', allVenuesFromAPI.length);
+        // Enhanced debug logging - Show detailed venue information
+        console.log('📊 [admin] Loaded Data Summary:');
+        console.log('   Total Organizations:', organizations.length);
+        console.log('   Total AC Devices:', acs.length);
+        console.log('   Total Venues from separate API:', allVenuesFromAPI.length);
         
-        // Check venue-AC mapping
+        // Detailed organization and venue logging
         organizations.forEach(org => {
           const orgACs = acs.filter(ac => ac.organizationId === org.id || ac.venueId === org.id);
-          console.log(`   Org "${org.name}" (ID: ${org.id}): ${orgACs.length} ACs, Temp: ${org.temperature}°C, Mixed: ${org.hasMixedTemperatures}, Venues: ${org.venues?.length || 0}`);
-          if (org.venues && org.venues.length > 0) {
-            org.venues.forEach(venue => {
+          const venuesCount = org.venues?.length || 0;
+          console.log(`\n   🏢 Org "${org.name}" (ID: ${org.id}):`);
+          console.log(`      - ACs: ${orgACs.length}`);
+          console.log(`      - Temp: ${org.temperature}°C`);
+          console.log(`      - Mixed Temps: ${org.hasMixedTemperatures}`);
+          console.log(`      - Venues: ${venuesCount}`);
+          
+          if (venuesCount > 0) {
+            org.venues.forEach((venue, idx) => {
               const venueACs = acs.filter(ac => ac.venueId === venue.id);
-              console.log(`     Venue "${venue.name}" (ID: ${venue.id}): ${venueACs.length} ACs, Temp: ${venue.temperature}°C, Mixed: ${venue.hasMixedTemperatures}`);
+              console.log(`      ✅ Venue ${idx + 1}: "${venue.name}" (ID: ${venue.id}, orgId: ${venue.organizationId || 'N/A'})`);
+              console.log(`         - ACs: ${venueACs.length}`);
+              console.log(`         - Temp: ${venue.temperature}°C`);
+              console.log(`         - Mixed: ${venue.hasMixedTemperatures}`);
             });
+          } else {
+            console.log(`      ⚠️ NO VENUES FOUND for this organization!`);
+            // Check if separate API has venues for this org
+            const orgVenuesFromAPI = allVenuesFromAPI.filter(v => v.organizationId === org.id);
+            if (orgVenuesFromAPI.length > 0) {
+              console.log(`      💡 Found ${orgVenuesFromAPI.length} venues in separate API but not merged!`);
+            }
           }
         });
 
