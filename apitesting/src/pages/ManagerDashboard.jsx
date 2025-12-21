@@ -2615,10 +2615,11 @@ const ManagerDashboard = () => {
               const canDisable = !event.isDisabled && (event.status === 'scheduled' || event.status === 'active');
               
               // CRITICAL: Use UTC time for comparison since events are stored in UTC
+              // Ensure startTime and endTime exist before using them
               const now = new Date();
               const nowUTC = new Date(now.toISOString());
-              const eventStartTime = event.startTime ? new Date(event.startTime) : null;
-              const eventEndTime = event.endTime ? new Date(event.endTime) : null;
+              const eventStartTime = (event && event.startTime) ? new Date(event.startTime) : null;
+              const eventEndTime = (event && event.endTime) ? new Date(event.endTime) : null;
               const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
               const isCompleted = eventEndTime && eventEndTime.getTime() <= nowUTC.getTime() && event.status === 'active';
               
@@ -2649,7 +2650,7 @@ const ManagerDashboard = () => {
 
                     {/* Status Badges - Compact */}
                     <div className="flex items-center flex-wrap gap-1 mb-1.5">
-                      {getStatusBadge(event.status, event.isDisabled, event.startTime, event.endTime)}
+                      {getStatusBadge(event.status, event.isDisabled, event?.startTime, event?.endTime)}
                         {event.isRecurring && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-500 text-white">
                           🔁
@@ -2701,14 +2702,14 @@ const ManagerDashboard = () => {
                         <div className="space-y-1">
                           <div>
                             <div className="text-xs font-semibold text-gray-700">Start</div>
-                            <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.startTime)}>
-                              {formatTime(event.startTime)}
+                            <div className="text-xs font-bold text-gray-900 truncate" title={event.startTime ? formatDateTime(event.startTime) : 'N/A'}>
+                              {event.startTime ? formatTime(event.startTime) : 'N/A'}
                           </div>
                           </div>
                           <div>
                             <div className="text-xs font-semibold text-gray-700">End</div>
-                            <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.endTime)}>
-                              {formatTime(event.endTime)}
+                            <div className="text-xs font-bold text-gray-900 truncate" title={event.endTime ? formatDateTime(event.endTime) : 'N/A'}>
+                              {event.endTime ? formatTime(event.endTime) : 'N/A'}
                           </div>
                       </div>
                         </div>
