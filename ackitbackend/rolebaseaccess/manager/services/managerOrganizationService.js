@@ -96,7 +96,7 @@ class ManagerOrganizationService {
       allVenues.forEach((venue) => {
         const venueData = venue.toJSON();
         const org = organizations.find((o) => o.id === venue.organizationId);
-        
+
         // If venue name matches organization name, it's a temperature entry
         if (org && venue.name === org.name) {
           orgTempEntries[venue.organizationId] = venueData;
@@ -112,7 +112,7 @@ class ManagerOrganizationService {
       // Calculate hasMixedTemperatures for each organization and add venues
       const organizationsWithMixedFlag = organizations.map((org) => {
         const orgData = org.toJSON();
-        
+
         // Merge temperature entry data if exists
         const tempEntry = orgTempEntries[org.id];
         if (tempEntry) {
@@ -130,7 +130,7 @@ class ManagerOrganizationService {
           orgData.isLocked = false;
           orgData.status = "active";
         }
-        
+
         const orgTemp = Math.round(orgData.temperature || 16);
 
         // Check if any AC has different temperature than organization
@@ -246,14 +246,14 @@ class ManagerOrganizationService {
       });
 
       // Get temperature entry (venue with same name as organization)
-      const tempEntry = venues.find(v => v.name === organization.name);
-      
+      const tempEntry = venues.find((v) => v.name === organization.name);
+
       // Get actual venues (excluding temperature entry)
-      const actualVenues = venues.filter(v => v.name !== organization.name);
+      const actualVenues = venues.filter((v) => v.name !== organization.name);
 
       // Build organization data
       const orgData = organization.toJSON();
-      
+
       // Add temperature and power data from temperature entry
       if (tempEntry) {
         orgData.temperature = tempEntry.temperature || 16;
@@ -267,11 +267,11 @@ class ManagerOrganizationService {
         orgData.isOrganizationOn = false;
         orgData.isLocked = false;
       }
-      
+
       // Add ACs and venues
-      orgData.acs = acs.map(ac => ac.toJSON());
-      orgData.venues = actualVenues.map(v => v.toJSON());
-      
+      orgData.acs = acs.map((ac) => ac.toJSON());
+      orgData.venues = actualVenues.map((v) => v.toJSON());
+
       // Calculate hasMixedTemperatures
       const orgTemp = Math.round(orgData.temperature || 16);
       let hasMixedTemperatures = false;
@@ -812,7 +812,9 @@ class ManagerOrganizationService {
         attributes: ["id", "name", "temperature", "organizationId"],
         transaction,
       });
-      console.log(`📊 [MANAGER-ORG-TEMP] Found ${allOrgVenues.length} venues in organization`);
+      console.log(
+        `📊 [MANAGER-ORG-TEMP] Found ${allOrgVenues.length} venues in organization`
+      );
 
       // Update ALL venues under this organization
       if (allOrgVenues.length > 0) {
@@ -876,31 +878,44 @@ class ManagerOrganizationService {
       }
 
       // Check for devices with active events (skip them from temperature update)
-      const deviceIds = allACs.map(ac => ac.id);
-      const activeEvents = deviceIds.length > 0 ? await Event.findAll({
-        where: {
-          deviceId: { [Op.in]: deviceIds },
-          status: "active",
-          isDisabled: false,
-          eventType: "device",
-        },
-        attributes: ["deviceId"],
-        transaction,
-      }) : [];
-      const devicesWithActiveEvents = new Set(activeEvents.map(e => e.deviceId));
-      const devicesToUpdate = allACs.filter(ac => !devicesWithActiveEvents.has(ac.id));
-      const devicesSkipped = allACs.filter(ac => devicesWithActiveEvents.has(ac.id));
+      const deviceIds = allACs.map((ac) => ac.id);
+      const activeEvents =
+        deviceIds.length > 0
+          ? await Event.findAll({
+              where: {
+                deviceId: { [Op.in]: deviceIds },
+                status: "active",
+                isDisabled: false,
+                eventType: "device",
+              },
+              attributes: ["deviceId"],
+              transaction,
+            })
+          : [];
+      const devicesWithActiveEvents = new Set(
+        activeEvents.map((e) => e.deviceId)
+      );
+      const devicesToUpdate = allACs.filter(
+        (ac) => !devicesWithActiveEvents.has(ac.id)
+      );
+      const devicesSkipped = allACs.filter((ac) =>
+        devicesWithActiveEvents.has(ac.id)
+      );
 
       if (devicesSkipped.length > 0) {
         console.log(
-          `⚠️ [MANAGER-ORG-TEMP] Skipping ${devicesSkipped.length} device(s) with active events: ${devicesSkipped.map(ac => ac.name).join(", ")}`
+          `⚠️ [MANAGER-ORG-TEMP] Skipping ${
+            devicesSkipped.length
+          } device(s) with active events: ${devicesSkipped
+            .map((ac) => ac.name)
+            .join(", ")}`
         );
       }
 
       // Update ALL AC temperatures (ON and OFF both) - EXCEPT devices with active events
       let acsUpdated = 0;
       if (devicesToUpdate.length > 0 && venueIds.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map(ac => ac.id);
+        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
         const acUpdateResult = await AC.update(
           {
             temperature: temperature,
@@ -918,7 +933,15 @@ class ManagerOrganizationService {
         );
         acsUpdated = acUpdateResult[0];
         console.log(
-          `✅ [MANAGER-ORG-TEMP] Updated ${devicesToUpdate.length} AC temperatures (${devicesToUpdate.filter(ac => ac.isOn).length} ON, ${devicesToUpdate.filter(ac => !ac.isOn).length} OFF): ${oldOrgTemp}°C → ${temperature}°C (${devicesSkipped.length} skipped due to active events)`
+          `✅ [MANAGER-ORG-TEMP] Updated ${
+            devicesToUpdate.length
+          } AC temperatures (${
+            devicesToUpdate.filter((ac) => ac.isOn).length
+          } ON, ${
+            devicesToUpdate.filter((ac) => !ac.isOn).length
+          } OFF): ${oldOrgTemp}°C → ${temperature}°C (${
+            devicesSkipped.length
+          } skipped due to active events)`
         );
       }
 
@@ -963,7 +986,9 @@ class ManagerOrganizationService {
       );
       console.log(`   └─ Temperature: ${temperature}°C`);
       console.log(`   └─ Venues updated in database: ${allOrgVenues.length}`);
-      console.log(`   └─ ACs updated in database: ${acsUpdated} (${acsOn.length} ON, ${acsOff.length} OFF)`);
+      console.log(
+        `   └─ ACs updated in database: ${acsUpdated} (${acsOn.length} ON, ${acsOff.length} OFF)`
+      );
 
       // Send temperature command to all ESP devices in organization (ON and OFF both)
       try {
@@ -981,10 +1006,7 @@ class ManagerOrganizationService {
           if (ac.serialNumber) {
             console.log(`   └─ Processing device: ${ac.serialNumber}`);
             // Use startTemperatureSync with serial number for proper sync (same as admin)
-            await ESPService.startTemperatureSync(
-              ac.serialNumber,
-              temperature
-            );
+            await ESPService.startTemperatureSync(ac.serialNumber, temperature);
             sentCount++;
           } else {
             skippedCount++;
@@ -993,12 +1015,14 @@ class ManagerOrganizationService {
             );
           }
         }
-        
+
         // Log skipped devices with active events
         for (const ac of devicesSkipped) {
           skippedCount++;
           console.log(
-            `   └─ ⚠️ Device ${ac.serialNumber || ac.id} skipped (has active event)`
+            `   └─ ⚠️ Device ${
+              ac.serialNumber || ac.id
+            } skipped (has active event)`
           );
         }
 
@@ -1016,7 +1040,15 @@ class ManagerOrganizationService {
 
       return {
         success: true,
-        message: `Organization temperature set to ${temperature}°C. Updated ${allOrgVenues.length} venues and ${acsUpdated} devices (${devicesToUpdate.filter(ac => ac.isOn).length} ON, ${devicesToUpdate.filter(ac => !ac.isOn).length} OFF)${devicesSkipped.length > 0 ? `. ${devicesSkipped.length} device(s) skipped due to active events` : ''}`,
+        message: `Organization temperature set to ${temperature}°C. Updated ${
+          allOrgVenues.length
+        } venues and ${acsUpdated} devices (${
+          devicesToUpdate.filter((ac) => ac.isOn).length
+        } ON, ${devicesToUpdate.filter((ac) => !ac.isOn).length} OFF)${
+          devicesSkipped.length > 0
+            ? `. ${devicesSkipped.length} device(s) skipped due to active events`
+            : ""
+        }`,
         organization: {
           id: organization.id,
           name: organization.name,
