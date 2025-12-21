@@ -703,7 +703,10 @@ class ManagerACService {
         },
       };
     } catch (error) {
-      await transaction.rollback();
+      // Only rollback if transaction hasn't been finished
+      if (transaction && !transaction.finished) {
+        await transaction.rollback();
+      }
       throw error;
     }
   }
@@ -1017,7 +1020,10 @@ class ManagerACService {
         },
       };
     } catch (error) {
-      await transaction.rollback();
+      // Only rollback if transaction hasn't been finished
+      if (transaction && !transaction.finished) {
+        await transaction.rollback();
+      }
       throw error;
     }
   }
@@ -1108,7 +1114,10 @@ class ManagerACService {
         },
       };
     } catch (error) {
-      await transaction.rollback();
+      // Only rollback if transaction hasn't been finished
+      if (transaction && !transaction.finished) {
+        await transaction.rollback();
+      }
       throw error;
     }
   }
