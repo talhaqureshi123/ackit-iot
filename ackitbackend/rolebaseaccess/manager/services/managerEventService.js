@@ -1196,21 +1196,26 @@ class ManagerEventService {
             device.changedBy = "manager"; // Manager event started
           }
 
-          // Check device status: If OFF, turn ON; If ON, keep ON
+          // CRITICAL LOGIC: Check device status at event start time
+          // Scenario 1: Device is OFF → Turn it ON at event start time
+          // Scenario 2: Device is already ON → Event starts directly without turning device ON again
           if (!wasDeviceOn) {
-            // Device is OFF - turn it ON at start time
+            // Device is OFF - turn it ON at event start time
             device.isOn = true;
             console.log(
-              `🔌 [EVENT] Device ${
+              `🔌 [EVENT-START] Device ${
                 device.serialNumber || device.id
-              } was OFF - Turning ON at event start time`
+              } was OFF - Turning ON at event start time (${event.name})`
             );
           } else {
-            // Device is already ON - event will start normally
+            // Device is already ON - event will start directly at start time
+            // No need to change device status, just proceed with event
             console.log(
-              `✅ [EVENT] Device ${
+              `✅ [EVENT-START] Device ${
                 device.serialNumber || device.id
-              } is already ON - Event starting normally`
+              } is already ON - Event starting directly at start time (${
+                event.name
+              })`
             );
           }
 
@@ -1232,14 +1237,15 @@ class ManagerEventService {
             }
 
             // Only send power ON command if device was OFF
+            // If device was already ON, skip power command to avoid unnecessary ESP communication
             if (!wasDeviceOn) {
               await ESPService.sendPowerCommand(device.serialNumber, true);
               console.log(
-                `✅ [EVENT] Turned ON device ${device.serialNumber} at event start time`
+                `🔌 [EVENT-START] Sent power ON command to device ${device.serialNumber} at event start time`
               );
             } else {
               console.log(
-                `✅ [EVENT] Device ${device.serialNumber} already ON - Event started successfully`
+                `✅ [EVENT-START] Device ${device.serialNumber} already ON - Skipping power command, event started directly`
               );
             }
           }
