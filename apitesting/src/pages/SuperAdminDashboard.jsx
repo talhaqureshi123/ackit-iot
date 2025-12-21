@@ -186,30 +186,55 @@ const SuperAdminDashboard = () => {
   const loadData = async () => {
     setLoading(true);
     try {
+      console.log('🔄 Starting data load...');
       const [adminsRes, logsRes] = await Promise.all([
         superAdminAPI.getAllAdmins(),
         superAdminAPI.getSuperAdminActivityLogs()
       ]);
 
-      console.log('📊 Admins response:', adminsRes.data);
-      console.log('📊 Activity logs response:', logsRes.data);
+      console.log('📊 Full Admins response:', JSON.stringify(adminsRes.data, null, 2));
+      console.log('📊 Full Activity logs response:', JSON.stringify(logsRes.data, null, 2));
       
       // Parse admins - backend returns { success: true, data: [...] }
-      const admins = Array.isArray(adminsRes.data?.data) 
-        ? adminsRes.data.data 
-        : Array.isArray(adminsRes.data?.admins)
-        ? adminsRes.data.admins
-        : [];
+      let admins = [];
+      if (adminsRes?.data) {
+        if (adminsRes.data.success === false) {
+          console.error('❌ Admins API returned error:', adminsRes.data.message);
+          toast.error(adminsRes.data.message || 'Failed to load admins');
+        } else if (Array.isArray(adminsRes.data.data)) {
+          admins = adminsRes.data.data;
+        } else if (Array.isArray(adminsRes.data.admins)) {
+          admins = adminsRes.data.admins;
+        } else {
+          console.warn('⚠️ Unexpected admins response structure:', adminsRes.data);
+        }
+      }
       
       // Parse logs - backend returns { success: true, data: { logs: [...], pagination: {...} } }
-      const logs = Array.isArray(logsRes.data?.data?.logs)
-        ? logsRes.data.data.logs
-        : Array.isArray(logsRes.data?.logs)
-        ? logsRes.data.logs
-        : [];
+      let logs = [];
+      if (logsRes?.data) {
+        if (logsRes.data.success === false) {
+          console.error('❌ Logs API returned error:', logsRes.data.message);
+          toast.error(logsRes.data.message || 'Failed to load activity logs');
+        } else if (Array.isArray(logsRes.data.data?.logs)) {
+          logs = logsRes.data.data.logs;
+        } else if (Array.isArray(logsRes.data.logs)) {
+          logs = logsRes.data.logs;
+        } else if (logsRes.data.data && typeof logsRes.data.data === 'object') {
+          // Try to find logs array in nested structure
+          const dataObj = logsRes.data.data;
+          if (Array.isArray(dataObj.logs)) {
+            logs = dataObj.logs;
+          } else {
+            console.warn('⚠️ Unexpected logs response structure:', logsRes.data);
+          }
+        } else {
+          console.warn('⚠️ Unexpected logs response structure:', logsRes.data);
+        }
+      }
       
-      console.log('✅ Processed admins:', admins.length);
-      console.log('✅ Processed logs:', logs.length);
+      console.log('✅ Processed admins:', admins.length, admins);
+      console.log('✅ Processed logs:', logs.length, logs);
       
       setData({
         admins,
@@ -218,21 +243,30 @@ const SuperAdminDashboard = () => {
       
       // Set initialLoading to false after first successful load
       if (initialLoading) {
+        console.log('✅ Setting initialLoading to false');
         setInitialLoading(false);
       }
     } catch (error) {
       console.error('❌ Load data error:', error);
       console.error('❌ Error response:', error.response?.data);
       console.error('❌ Error status:', error.response?.status);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Full error:', error);
       
       // Set initialLoading to false even on error so UI doesn't stay in loading state
       if (initialLoading) {
+        console.log('✅ Setting initialLoading to false (error case)');
         setInitialLoading(false);
       }
       
-      toast.error(error.response?.data?.message || 'Failed to load data');
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Failed to load data';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
+      console.log('✅ Data load completed');
     }
   };
 
