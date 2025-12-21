@@ -599,22 +599,22 @@ class ManagerEventService {
 
       // CRITICAL: Log what we're about to store
       console.log("📅 Storing manager event with times:", {
-        startTime: startTimeUTC.toISOString(),
-        endTime: endTimeUTC.toISOString(),
-        startTimeUTC: `${String(startTimeUTC.getUTCHours()).padStart(
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        startTimeUTC: `${String(startTime.getUTCHours()).padStart(
           2,
           "0"
-        )}:${String(startTimeUTC.getUTCMinutes()).padStart(2, "0")} UTC`,
-        endTimeUTC: `${String(endTimeUTC.getUTCHours()).padStart(
+        )}:${String(startTime.getUTCMinutes()).padStart(2, "0")} UTC`,
+        endTimeUTC: `${String(endTime.getUTCHours()).padStart(
           2,
           "0"
-        )}:${String(endTimeUTC.getUTCMinutes()).padStart(2, "0")} UTC`,
+        )}:${String(endTime.getUTCMinutes()).padStart(2, "0")} UTC`,
         startTimePKT: timezoneUtils.formatPakistanTime(
-          startTimeUTC,
+          startTime,
           "YYYY-MM-DD HH:mm:ss"
         ),
         endTimePKT: timezoneUtils.formatPakistanTime(
-          endTimeUTC,
+          endTime,
           "YYYY-MM-DD HH:mm:ss"
         ),
       });
