@@ -197,11 +197,14 @@ class EventScheduler {
       // Find scheduled events that should start now (skip disabled events)
       // CRITICAL: Events are stored in UTC, but Sequelize timezone setting converts Date to PKT
       // We must use Sequelize.literal to force UTC comparison
-      const oneMinuteAgo = new Date(now.getTime() - 60000);
+      // Use a 5-second window to catch events that should start exactly now
+      // This prevents events from starting too early while still catching them on time
+      const fiveSecondsAgo = new Date(now.getTime() - 5000);
       const nowUTCString = now.toISOString();
-      const oneMinuteAgoUTCString = oneMinuteAgo.toISOString();
+      const fiveSecondsAgoUTCString = fiveSecondsAgo.toISOString();
 
       // Use raw SQL with UTC comparison to bypass Sequelize timezone conversion
+      // Only start events that are within the last 5 seconds (not 1 minute)
       const eventsToStart = await Event.findAll({
         where: {
           status: "scheduled",
@@ -211,7 +214,7 @@ class EventScheduler {
               `"startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
             ),
             Sequelize.literal(
-              `"startTime" AT TIME ZONE 'UTC' >= '${oneMinuteAgoUTCString}'::timestamptz`
+              `"startTime" AT TIME ZONE 'UTC' >= '${fiveSecondsAgoUTCString}'::timestamptz`
             ),
           ],
         },

@@ -1,6 +1,7 @@
 const Organization = require("../../../models/Organization/organization");
 const AC = require("../../../models/AC/ac");
 const Venue = require("../../../models/Venue/venue");
+const Event = require("../../../models/Event/event");
 const ActivityLog = require("../../../models/Activity log/activityLog");
 const { Op, Sequelize } = require("sequelize");
 const sequelize = require("../../../config/database/postgresql");
