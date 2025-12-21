@@ -1132,6 +1132,12 @@ const ManagerDashboard = () => {
 
   // Handle set temperature (API call)
   const handleSetTemperature = async (type, id, temperature) => {
+    // Check if manager is unlocked
+    if (user?.status !== 'unlocked') {
+      toast.error('Only unlocked managers can change temperature');
+      return;
+    }
+    
     const key = `${type}-${id}`;
     setTemperatureLoading(prev => ({ ...prev, [key]: true }));
     
@@ -1404,9 +1410,14 @@ const ManagerDashboard = () => {
 
   const handleToggleACPower = async (acId, targetState) => {
     try {
-      // Check manager status only (no device lock check for managers)
+      // Check if manager is unlocked
+      if (user?.status !== 'unlocked') {
+        toast.error('Only unlocked managers can toggle AC power');
+        return;
+      }
       
       // If targetState is not provided, toggle to opposite of current state
+      const ac = data.acs.find(a => a.id === acId);
       const newState = targetState !== undefined ? targetState : !ac?.isOn;
       
       setAcPowerLoading(prev => ({ ...prev, [acId]: true }));

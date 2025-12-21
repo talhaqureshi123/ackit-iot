@@ -580,8 +580,8 @@ const AdminDashboard = () => {
                         (Array.isArray(orgsRes?.data?.data) ? orgsRes.data.data : []) ||
                         [];
         
-        // Only show active organizations
-        let organizations = allOrgs.filter(org => org.status === 'active');
+        // Show ALL organizations (active and inactive) - admin can see everything
+        let organizations = allOrgs;
         
         const acs = (acsRes?.data?.acs || 
                     acsRes?.data?.data?.acs || 
