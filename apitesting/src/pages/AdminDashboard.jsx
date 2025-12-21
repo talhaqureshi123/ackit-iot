@@ -651,6 +651,43 @@ const AdminDashboard = () => {
           console.log('📊 [admin] Loaded Venues from separate API:', allVenuesFromAPI.length);
         }
         
+        // Collect all venues from organizations first
+        const allVenuesFromOrgs = organizations.flatMap(org => (org.venues || []));
+        
+        // Merge venues from organizations and separate API
+        // Use a Map to avoid duplicates (by venue ID)
+        const venuesMap = new Map();
+        
+        // Add venues from organizations
+        allVenuesFromOrgs.forEach(venue => {
+          venuesMap.set(venue.id, venue);
+        });
+        
+        // Add venues from separate API (will override if duplicate, but should be same data)
+        allVenuesFromAPI.forEach(venue => {
+          if (!venuesMap.has(venue.id)) {
+            // Calculate mixed temperatures for venues from API
+            const venueACs = acs.filter(ac => ac.venueId === venue.id);
+            const venueTemp = venue.temperature || 16;
+            let venueHasMixed = false;
+            
+            if (venueACs.length > 1) {
+              venueHasMixed = venueACs.some(ac => {
+                const acTemp = ac.temperature || 16;
+                return acTemp !== venueTemp;
+              });
+            }
+            
+            venuesMap.set(venue.id, {
+              ...venue,
+              hasMixedTemperatures: venueHasMixed
+            });
+          }
+        });
+        
+        // Convert map to array - this is all venues
+        const allVenues = Array.from(venuesMap.values());
+        
         // Ensure all organizations have their venues
         // Backend should already include venues, but if missing, add from separate API call
         organizations = organizations.map(org => {
@@ -762,6 +799,7 @@ const AdminDashboard = () => {
           acs,
           managers,
           logs,
+          venues: allVenues, // Store all venues (from orgs + separate API)
           // CRITICAL: Preserve events - don't clear them when loading other data
           events: prev.events || []
         }));
@@ -3162,16 +3200,23 @@ const AdminDashboard = () => {
         case 'events':
           return <AdminEventsView />;
       case 'venues':
-        // Get all venues from all organizations
-        const allVenues = data.organizations.flatMap(org => 
-          (org.venues || []).map(venue => ({
+        // Get all venues - from data.venues (which includes venues from orgs + separate API)
+        // Also include organization info for each venue
+        const allVenuesWithOrg = (data.venues || []).map(venue => {
+          // Find the organization for this venue
+          const org = data.organizations.find(o => 
+            o.id === venue.organizationId || 
+            (o.venues && o.venues.some(v => v.id === venue.id))
+          );
+          
+          return {
             ...venue,
-            organization: {
+            organization: org ? {
               id: org.id,
               name: org.name
-            }
-          }))
-        );
+            } : null
+          };
+        });
         
         return (
           <div className="space-y-8">
@@ -3188,14 +3233,14 @@ const AdminDashboard = () => {
                     <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Venues</h2>
                     <p className="text-blue-100 text-base font-medium mb-3">Manage all venues and locations</p>
                     <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
-                      {allVenues.length} Total Venue{allVenues.length !== 1 ? 's' : ''}
+                      {allVenuesWithOrg.length} Total Venue{allVenuesWithOrg.length !== 1 ? 's' : ''}
                     </span>
                   </div>
                 </div>
               </div>
             </div>
             
-            {allVenues.length === 0 ? (
+            {allVenuesWithOrg.length === 0 ? (
               <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <MapPin className="w-12 h-12 text-blue-600" />
@@ -3205,7 +3250,7 @@ const AdminDashboard = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {allVenues.map(venue => (
+                {allVenuesWithOrg.map(venue => (
                   <VenueCard key={venue.id} venue={venue} />
                 ))}
               </div>

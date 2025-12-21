@@ -127,8 +127,10 @@ USING "endTime" AT TIME ZONE 'UTC';
 
 ## Notes
 
-- The migration assumes existing data is in PKT (Asia/Karachi) timezone
+- **CRITICAL**: The migration uses `'UTC'` timezone because backend already sends UTC times (e.g., "2025-12-21T12:25:00.000Z")
+- If existing data was incorrectly stored as PKT, it will be converted assuming it's UTC (which matches what backend sends)
 - All new events will be stored in UTC
-- Frontend always displays in PKT for user convenience
+- Frontend always displays in PKT for user convenience using `toLocaleTimeString` with `Asia/Karachi` timezone
 - Backend always works with UTC internally
+- Sequelize config now uses `timezone: "+00:00"` and `useUTC: true` to prevent double conversion
 

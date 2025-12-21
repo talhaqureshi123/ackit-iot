@@ -66,7 +66,7 @@ if (databaseUrlEnv) {
     retry: {
       max: 3, // Retry failed queries up to 3 times
     },
-    timezone: "+05:00", // Pakistan/Karachi timezone (PKT - UTC+5)
+    timezone: "+00:00", // FORCE UTC - prevents Sequelize from doing PKT conversion
     dialectOptions: {
       ssl:
         process.env.NODE_ENV === "production"
@@ -78,6 +78,7 @@ if (databaseUrlEnv) {
       // Keep connection alive
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,
+      useUTC: true, // Force UTC for all date operations
     },
     // Handle connection errors gracefully
     hooks: {
@@ -132,8 +133,11 @@ if (databaseUrlEnv) {
       dialect: process.env.DB_DIALECT || "postgres",
       logging: process.env.NODE_ENV === "development" ? console.log : false,
       pool: { max: 5, min: 0, acquire: 30000, idle: 10000 },
-      timezone: "+05:00", // Pakistan/Karachi timezone (PKT - UTC+5)
-      // Note: Sequelize stores dates in UTC in database, but this setting affects how dates are interpreted
+      timezone: "+00:00", // FORCE UTC - prevents Sequelize from doing PKT conversion
+      dialectOptions: {
+        useUTC: true, // Force UTC for all date operations
+      },
+      // Note: With TIMESTAMPTZ columns and UTC timezone, Sequelize will store/retrieve dates correctly
     }
   );
 }
