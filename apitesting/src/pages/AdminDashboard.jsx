@@ -846,6 +846,33 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleUpdateManagerStatus = async (managerId, newStatus) => {
+    try {
+      let response;
+      
+      if (newStatus === 'unlocked') {
+        response = await adminAPI.unlockManager(managerId);
+      } else if (newStatus === 'restricted') {
+        response = await adminAPI.restrictedUnlockManager(managerId);
+      } else if (newStatus === 'locked') {
+        const reason = prompt('Enter reason for locking (optional):');
+        response = await adminAPI.lockManager(managerId, reason || 'Locked by admin');
+      } else {
+        toast.error('Invalid status');
+        return;
+      }
+      
+      toast.success(response.data?.message || `Manager status updated to ${newStatus}`);
+      
+      // Reload managers data
+      await loadData(false);
+    } catch (error) {
+      console.error('Update manager status error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to update manager status';
+      toast.error(errorMessage);
+    }
+  };
+
   const loadAlerts = async () => {
     try {
       setAlertsLoading(true);
@@ -4122,11 +4149,12 @@ const AdminDashboard = () => {
                         <p className="text-sm text-gray-600">{manager.email}</p>
                       </div>
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        manager.status === 'active' ? 'bg-green-100 text-green-800' : 
+                        manager.status === 'unlocked' ? 'bg-green-100 text-green-800' : 
                         manager.status === 'locked' ? 'bg-red-100 text-red-800' : 
-                        'bg-yellow-100 text-yellow-800'
+                        manager.status === 'restricted' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
                       }`}>
-                        {manager.status || 'active'}
+                        {manager.status || 'unlocked'}
                       </span>
                     </div>
                     {manager.organizations && manager.organizations.length > 0 && (
@@ -4141,6 +4169,51 @@ const AdminDashboard = () => {
                         </div>
                       </div>
                     )}
+                    {/* Status Change Buttons */}
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <p className="text-xs text-gray-500 mb-2">Change Status:</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleUpdateManagerStatus(manager.id, 'unlocked')}
+                          disabled={manager.status === 'unlocked'}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                            manager.status === 'unlocked'
+                              ? 'bg-green-500 text-white cursor-not-allowed opacity-50'
+                              : 'bg-green-100 text-green-800 hover:bg-green-200'
+                          }`}
+                          title="Unlock manager - Full access"
+                        >
+                          <Unlock className="w-3 h-3 inline mr-1" />
+                          Unlocked
+                        </button>
+                        <button
+                          onClick={() => handleUpdateManagerStatus(manager.id, 'restricted')}
+                          disabled={manager.status === 'restricted'}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                            manager.status === 'restricted'
+                              ? 'bg-yellow-500 text-white cursor-not-allowed opacity-50'
+                              : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                          }`}
+                          title="Restrict manager - Limited access"
+                        >
+                          <Lock className="w-3 h-3 inline mr-1" />
+                          Restricted
+                        </button>
+                        <button
+                          onClick={() => handleUpdateManagerStatus(manager.id, 'locked')}
+                          disabled={manager.status === 'locked'}
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                            manager.status === 'locked'
+                              ? 'bg-red-500 text-white cursor-not-allowed opacity-50'
+                              : 'bg-red-100 text-red-800 hover:bg-red-200'
+                          }`}
+                          title="Lock manager - No access"
+                        >
+                          <Lock className="w-3 h-3 inline mr-1" />
+                          Locked
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
