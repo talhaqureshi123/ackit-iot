@@ -1747,7 +1747,7 @@ const AdminDashboard = () => {
     const hasAlert = orgAlert || orgDeviceAlerts.length > 0;
     
     return (
-      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -2025,7 +2025,7 @@ const AdminDashboard = () => {
     const hasAlert = venueDeviceAlerts.length > 0;
     
     return (
-      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -2268,7 +2268,7 @@ const AdminDashboard = () => {
     const eventTemp = hasEvent ? (activeEvent?.temperature || scheduledEvent?.temperature) : null;
     
     return (
-      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -2743,7 +2743,7 @@ const AdminDashboard = () => {
             <p className="text-sm mt-2 text-gray-400">Create an event to get started</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
             {Array.isArray(data.events) && data.events.map((event) => {
               if (!event || !event.id) return null;
               const isLoading = eventActionLoading[event.id];
@@ -3248,7 +3248,7 @@ const AdminDashboard = () => {
         return (
           <div className="space-y-8">
             {/* Header Section - Ultra Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
+            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -3257,9 +3257,9 @@ const AdminDashboard = () => {
                     <MapPin className="w-10 h-10 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Venues</h2>
-                    <p className="text-blue-100 text-base font-medium mb-3">Manage all venues and locations</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Venues</h2>
+                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage all venues and locations</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
                       {allVenuesWithOrg.length} Total Venue{allVenuesWithOrg.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -3268,15 +3268,15 @@ const AdminDashboard = () => {
             </div>
             
             {allVenuesWithOrg.length === 0 ? (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <MapPin className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-2xl font-bold mb-3">No Venues Found</p>
-                <p className="text-gray-600 text-base mb-6">No venues are currently assigned to your organizations</p>
+                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Venues Found</p>
+                <p className="text-gray-600 text-sm sm:text-base mb-6">No venues are currently assigned to your organizations</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {allVenuesWithOrg.map(venue => (
                   <VenueCard key={venue.id} venue={venue} />
                 ))}
@@ -3288,7 +3288,7 @@ const AdminDashboard = () => {
         return (
           <div className="space-y-8">
             {/* Header Section - Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
+            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -3297,9 +3297,9 @@ const AdminDashboard = () => {
                     <Building className="w-10 h-10 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Organizations</h2>
-                    <p className="text-blue-100 text-base font-medium mb-3">Manage all assigned organizations</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Organizations</h2>
+                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage all assigned organizations</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
                       {data.organizations.length} Total Organization{data.organizations.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -3364,7 +3364,7 @@ const AdminDashboard = () => {
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mb-4">
                               <div className="bg-gray-50 rounded-lg p-3">
                                 <p className="text-xs text-gray-500 mb-1">Serial Number</p>
                                 <p className="text-sm font-semibold text-gray-900">{alert.serialNumber || 'N/A'}</p>
@@ -3394,7 +3394,7 @@ const AdminDashboard = () => {
                                   <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1">
                                     <p className="text-sm font-bold text-blue-900 mb-2">{alert.issue}</p>
-                                    <div className="grid grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                                       <div className="bg-white rounded p-2 text-center">
                                         <p className="text-xs text-gray-500">Hour 0</p>
                                         <p className="text-sm font-bold text-gray-900">{alert.roomTempHistory.hour0?.toFixed(1)}°C</p>
@@ -3504,18 +3504,18 @@ const AdminDashboard = () => {
 
             {/* Active Organizations */}
             {data.organizations.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.organizations.map(org => (
                   <OrganizationCard key={org.id} org={org} />
                 ))}
               </div>
             ) : (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <Building className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-2xl font-bold mb-3">No Organizations Found</p>
-                <p className="text-gray-600 text-base mb-6">No organizations are currently assigned to you</p>
+                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Organizations Found</p>
+                <p className="text-gray-600 text-sm sm:text-base mb-6">No organizations are currently assigned to you</p>
               </div>
             )}
           </div>
@@ -3524,7 +3524,7 @@ const AdminDashboard = () => {
         return (
           <div className="space-y-8">
             {/* Header Section - Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
+            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -3533,9 +3533,9 @@ const AdminDashboard = () => {
                     <Thermometer className="w-10 h-10 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">AC Devices</h2>
-                    <p className="text-blue-100 text-base font-medium mb-3">Manage all AC devices in your organizations</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">AC Devices</h2>
+                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage all AC devices in your organizations</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
                       {data.acs.length} Total AC Device{data.acs.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -3544,18 +3544,18 @@ const AdminDashboard = () => {
             </div>
 
             {data.acs.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.acs.map(ac => (
                   <ACCard key={ac.id} ac={ac} />
                 ))}
               </div>
             ) : (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <Thermometer className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-2xl font-bold mb-3">No AC Devices Found</p>
-                <p className="text-gray-600 text-base mb-6">No AC devices are currently assigned to your organizations</p>
+                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No AC Devices Found</p>
+                <p className="text-gray-600 text-sm sm:text-base mb-6">No AC devices are currently assigned to your organizations</p>
               </div>
             )}
           </div>
@@ -3590,7 +3590,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
                 <div className="flex items-center justify-between">
                   <div>
@@ -3631,7 +3631,7 @@ const AdminDashboard = () => {
                 <Building className="w-5 h-5 mr-2 text-blue-600" />
                 Energy by Organization
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
                 {data.organizations.map(org => {
                   const orgEnergy = energyData.organizations[org.id];
                   // Filter ACs by organizationId (direct field or from organization relationship)
@@ -3970,7 +3970,7 @@ const AdminDashboard = () => {
                             {/* Room Temperature History Visualization */}
                             <div className="mt-4">
                               <p className="text-xs font-medium text-gray-700 mb-3">3-Hour Room Temperature Pattern:</p>
-                              <div className="grid grid-cols-3 gap-3">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                                 <div className="bg-white rounded-lg p-3 border border-gray-200">
                                   <p className="text-xs text-gray-500 mb-1">Hour 0</p>
                                   <p className="text-lg font-bold text-gray-900">
@@ -4102,9 +4102,9 @@ const AdminDashboard = () => {
                     <Users className="w-10 h-10 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Managers</h2>
-                    <p className="text-blue-100 text-base font-medium mb-3">Manage and monitor all managers</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Managers</h2>
+                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage and monitor all managers</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
                       {data.managers?.length || 0} Total Manager{(data.managers?.length || 0) !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -4123,12 +4123,12 @@ const AdminDashboard = () => {
             </div>
             
             {(!data.managers || data.managers.length === 0) ? (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <Users className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-2xl font-bold mb-3">No Managers Found</p>
-                <p className="text-gray-600 text-base mb-6">Get started by adding your first manager</p>
+                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Managers Found</p>
+                <p className="text-gray-600 text-sm sm:text-base mb-6">Get started by adding your first manager</p>
                 <button
                   onClick={() => {
                     toast.info('Manager creation feature coming soon');
@@ -4140,7 +4140,7 @@ const AdminDashboard = () => {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.managers.map(manager => (
                   <div key={manager.id} className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
                     <div className="flex items-center justify-between mb-4">
@@ -4224,7 +4224,7 @@ const AdminDashboard = () => {
         return (
           <div className="space-y-8">
             {/* Header Section - Ultra Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
+            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex items-center space-x-5">
@@ -4232,7 +4232,7 @@ const AdminDashboard = () => {
                   <Activity className="w-10 h-10 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Activity Logs</h2>
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Activity Logs</h2>
                   <p className="text-blue-100 text-base font-medium mb-3">Track all system activities and changes</p>
                   <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
                     {data.logs?.length || 0} Total Log{(data.logs?.length || 0) !== 1 ? 's' : ''}
@@ -4263,11 +4263,11 @@ const AdminDashboard = () => {
                 ))}
               </div>
             ) : (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <Activity className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-2xl font-bold mb-3">No Activity Logs Found</p>
+                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Activity Logs Found</p>
                 <p className="text-gray-600 text-base font-medium">Activity logs will appear here as actions are performed</p>
               </div>
             )}
@@ -4289,7 +4289,7 @@ const AdminDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-64 sm:w-72 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20 xl:w-64'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
         <div className={`p-6 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
@@ -4332,14 +4332,14 @@ const AdminDashboard = () => {
                       setSidebarOpen(false);
                     }
                   }}
-                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-4' : 'justify-center px-2'} py-3 rounded-lg transition-all duration-200 ${
+                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-3 sm:px-4' : 'justify-center px-2'} py-2.5 sm:py-3 rounded-lg transition-all duration-200 touch-manipulation ${
                     isActive
                       ? 'bg-white text-blue-600 shadow-lg'
                       : 'text-blue-100 hover:bg-blue-700 hover:text-white'
                   }`}
                   title={!sidebarOpen ? tab.label : ''}
                 >
-                  <Icon className={`${sidebarOpen ? 'w-5 h-5 mr-3' : 'w-6 h-6'}`} />
+                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-5 h-5 sm:w-6 sm:h-6'}`} />
                   {sidebarOpen && (
                     <>
                       <span className="font-medium flex-1 text-left">{tab.label}</span>
@@ -4392,7 +4392,7 @@ const AdminDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} transition-all duration-300 bg-gray-50 min-h-screen`}>
+      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'lg:ml-20 xl:ml-64'} transition-all duration-300 bg-gray-50 min-h-screen`}>
         {/* Top Header */}
         <header className="bg-white shadow-md border-b sticky top-0 z-10 w-full">
           <div className="px-4 sm:px-6 py-4 w-full">
@@ -4480,8 +4480,8 @@ const AdminDashboard = () => {
       )}
 
       {showOrgDetailsModal && selectedOrgDetails && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-lg sm:rounded-xl shadow-xl max-w-4xl w-full mx-2 sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">Organization Details</h2>
               <button
@@ -4499,7 +4499,7 @@ const AdminDashboard = () => {
               {/* Organization Info */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">{selectedOrgDetails.name}</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                   <div>
                     <span className="text-sm text-gray-600">Status:</span>
                     <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
@@ -4653,7 +4653,7 @@ const AdminDashboard = () => {
                   <div className="space-y-3">
                     {selectedOrgDetails.acs.map((ac) => (
                       <div key={ac.id} className="border rounded-lg p-4 bg-gray-50">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
                           <div>
                             <span className="text-xs text-gray-600">Name:</span>
                             <p className="text-sm font-medium">{ac.name}</p>

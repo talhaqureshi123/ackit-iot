@@ -1618,7 +1618,7 @@ const ManagerDashboard = () => {
     const hasAlert = orgAlert || orgDeviceAlerts.length > 0;
     
     return (
-      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -1896,7 +1896,7 @@ const ManagerDashboard = () => {
     const hasAlert = venueDeviceAlerts.length > 0;
     
     return (
-      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -2139,7 +2139,7 @@ const ManagerDashboard = () => {
     const eventTemp = hasEvent ? (activeEvent?.temperature || scheduledEvent?.temperature) : null;
     
     return (
-      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -2603,7 +2603,7 @@ const ManagerDashboard = () => {
             <p className="text-sm mt-2 text-gray-400">Create an event to get started</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
             {Array.isArray(data.events) && data.events.map((event) => {
               if (!event || !event.id) return null;
               const isLoading = eventActionLoading[event.id];
@@ -3130,7 +3130,7 @@ const ManagerDashboard = () => {
                 <p className="text-gray-600 text-base mb-6">No venues are currently assigned to your organizations</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {allVenues.map(venue => (
                   <VenueCard key={venue.id} venue={venue} />
                 ))}
@@ -3358,7 +3358,7 @@ const ManagerDashboard = () => {
 
             {/* Active Organizations */}
             {data.organizations.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.organizations.map(org => (
                   <OrganizationCard key={org.id} org={org} />
                 ))}
@@ -3398,7 +3398,7 @@ const ManagerDashboard = () => {
             </div>
 
             {data.acs.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.acs.map(ac => (
                   <ACCard key={ac.id} ac={ac} />
                 ))}
@@ -3444,7 +3444,7 @@ const ManagerDashboard = () => {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
                 <div className="flex items-center justify-between">
                   <div>
@@ -3485,7 +3485,7 @@ const ManagerDashboard = () => {
                 <Building className="w-5 h-5 mr-2 text-blue-600" />
                 Energy by Organization
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
                 {data.organizations.map(org => {
                   const orgEnergy = energyData.organizations[org.id];
                   // Filter ACs by organizationId (direct field or from organization relationship)
@@ -3959,7 +3959,7 @@ const ManagerDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-64 sm:w-72 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20 xl:w-64'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
         <div className={`p-6 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
@@ -4002,14 +4002,14 @@ const ManagerDashboard = () => {
                       setSidebarOpen(false);
                     }
                   }}
-                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-4' : 'justify-center px-2'} py-3 rounded-lg transition-all duration-200 ${
+                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-3 sm:px-4' : 'justify-center px-2'} py-2.5 sm:py-3 rounded-lg transition-all duration-200 touch-manipulation ${
                     isActive
                       ? 'bg-white text-blue-600 shadow-lg'
                       : 'text-blue-100 hover:bg-blue-700 hover:text-white'
                   }`}
                   title={!sidebarOpen ? tab.label : ''}
                 >
-                  <Icon className={`${sidebarOpen ? 'w-5 h-5 mr-3' : 'w-6 h-6'}`} />
+                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-5 h-5 sm:w-6 sm:h-6'}`} />
                   {sidebarOpen && (
                     <>
                       <span className="font-medium flex-1 text-left">{tab.label}</span>
@@ -4062,7 +4062,7 @@ const ManagerDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} transition-all duration-300 bg-gray-50 min-h-screen`}>
+      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'lg:ml-20 xl:ml-64'} transition-all duration-300 bg-gray-50 min-h-screen`}>
         {/* Top Header */}
         <header className="bg-white shadow-md border-b sticky top-0 z-10 w-full">
           <div className="px-4 sm:px-6 py-4 w-full">

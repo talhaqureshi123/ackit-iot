@@ -72,13 +72,13 @@ const AdminForm = ({ onSubmit, onCancel }) => {
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+          className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors touch-manipulation"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          className="flex items-center px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors touch-manipulation"
         >
           <Save className="w-4 h-4 mr-2" />
           Create Admin
@@ -272,11 +272,11 @@ const SuperAdminDashboard = () => {
   ];
 
   const AdminCard = ({ admin }) => (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-200">
+    <div className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-4 sm:p-6 border border-gray-200">
       <div className="flex items-center justify-between">
         <div className="flex-1">
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">{admin.name}</h3>
-          <p className="text-sm text-gray-600 mb-2">{admin.email}</p>
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">{admin.name}</h3>
+          <p className="text-xs sm:text-sm text-gray-600 mb-2">{admin.email}</p>
           <div className="flex items-center">
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
               admin.status === 'active' 
@@ -323,11 +323,11 @@ const SuperAdminDashboard = () => {
   );
 
   const LogCard = ({ log }) => (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-200">
+    <div className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-4 sm:p-6 border border-gray-200">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">{log.action}</h3>
-          <p className="text-sm text-gray-600 mb-2">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">{log.action}</h3>
+          <p className="text-xs sm:text-sm text-gray-600 mb-2">
             {typeof log.details === 'object' ? log.details.message || JSON.stringify(log.details) : log.details}
           </p>
           <p className="text-xs text-gray-500 mb-1">
@@ -382,13 +382,14 @@ const SuperAdminDashboard = () => {
         return (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">All Admins</h2>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">All Admins</h2>
               <button
                 onClick={() => setShowModal(true)}
-                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+                className="flex items-center px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white text-sm sm:text-base rounded-lg hover:bg-blue-700 transition-colors shadow-md touch-manipulation"
               >
-                <UserPlus className="w-5 h-5 mr-2" />
-                Create Admin
+                <UserPlus className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Create Admin</span>
+                <span className="sm:hidden">Create</span>
               </button>
             </div>
             {data.admins.length === 0 ? (
@@ -403,7 +404,7 @@ const SuperAdminDashboard = () => {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.admins.map(admin => (
                   <AdminCard key={admin.id} admin={admin} />
                 ))}
@@ -414,7 +415,7 @@ const SuperAdminDashboard = () => {
       case 'logs':
         return (
           <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Activity Logs</h2>
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Activity Logs</h2>
             {data.logs.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
                 <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -445,7 +446,7 @@ const SuperAdminDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20'} bg-gradient-to-b from-red-900 to-red-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-64 sm:w-72 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20 xl:w-64'} bg-gradient-to-b from-red-900 to-red-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
         <div className={`p-6 border-b border-red-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
@@ -487,14 +488,14 @@ const SuperAdminDashboard = () => {
                       setSidebarOpen(false);
                     }
                   }}
-                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-4' : 'justify-center px-2'} py-3 rounded-lg transition-all duration-200 ${
+                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-3 sm:px-4' : 'justify-center px-2'} py-2.5 sm:py-3 rounded-lg transition-all duration-200 touch-manipulation ${
                     isActive
                       ? 'bg-white text-red-600 shadow-lg'
                       : 'text-red-100 hover:bg-red-700 hover:text-white'
                   }`}
                   title={!sidebarOpen ? tab.label : ''}
                 >
-                  <Icon className={`${sidebarOpen ? 'w-5 h-5 mr-3' : 'w-6 h-6'}`} />
+                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-5 h-5 sm:w-6 sm:h-6'}`} />
                   {sidebarOpen && (
                     <>
                       <span className="font-medium flex-1 text-left">{tab.label}</span>
@@ -534,7 +535,7 @@ const SuperAdminDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} transition-all duration-300 bg-gray-50 min-h-screen`}>
+      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'lg:ml-20 xl:ml-64'} transition-all duration-300 bg-gray-50 min-h-screen`}>
         {/* Top Header */}
         <header className="bg-white shadow-md border-b sticky top-0 z-10 w-full">
           <div className="px-4 sm:px-6 py-4 w-full">
@@ -583,12 +584,13 @@ const SuperAdminDashboard = () => {
 
       {/* Create Admin Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                <UserPlus className="w-6 h-6 mr-2 text-blue-600" />
-                Create New Admin
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-lg sm:rounded-xl shadow-xl max-w-md w-full mx-2 sm:mx-4 p-4 sm:p-6 max-h-[95vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 sm:mb-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center">
+                <UserPlus className="w-5 h-5 sm:w-6 sm:h-6 mr-2 text-blue-600" />
+                <span className="hidden sm:inline">Create New Admin</span>
+                <span className="sm:hidden">New Admin</span>
               </h2>
               <button
                 onClick={() => setShowModal(false)}

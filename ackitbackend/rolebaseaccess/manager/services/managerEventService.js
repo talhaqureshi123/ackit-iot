@@ -605,10 +605,9 @@ class ManagerEventService {
           2,
           "0"
         )}:${String(startTime.getUTCMinutes()).padStart(2, "0")} UTC`,
-        endTimeUTC: `${String(endTime.getUTCHours()).padStart(
-          2,
-          "0"
-        )}:${String(endTime.getUTCMinutes()).padStart(2, "0")} UTC`,
+        endTimeUTC: `${String(endTime.getUTCHours()).padStart(2, "0")}:${String(
+          endTime.getUTCMinutes()
+        ).padStart(2, "0")} UTC`,
         startTimePKT: timezoneUtils.formatPakistanTime(
           startTime,
           "YYYY-MM-DD HH:mm:ss"
@@ -1188,6 +1187,7 @@ class ManagerEventService {
         if (device) {
           // Get current temperature BEFORE updating (for pulse calculation)
           const currentTemp = device.temperature || 16;
+          const wasDeviceOn = device.isOn || false;
 
           // Set temperature if provided
           if (event.temperature !== null) {
@@ -1196,8 +1196,23 @@ class ManagerEventService {
             device.changedBy = "manager"; // Manager event started
           }
 
-          // Always turn device ON when event starts
-          device.isOn = true;
+          // Check device status: If OFF, turn ON; If ON, keep ON
+          if (!wasDeviceOn) {
+            // Device is OFF - turn it ON at start time
+            device.isOn = true;
+            console.log(
+              `🔌 [EVENT] Device ${
+                device.serialNumber || device.id
+              } was OFF - Turning ON at event start time`
+            );
+          } else {
+            // Device is already ON - event will start normally
+            console.log(
+              `✅ [EVENT] Device ${
+                device.serialNumber || device.id
+              } is already ON - Event starting normally`
+            );
+          }
 
           // Save device state first
           await device.save({ transaction });
@@ -1215,9 +1230,18 @@ class ManagerEventService {
                 `✅ [EVENT] Starting temperature sync to ${event.temperature}°C for device ${device.serialNumber}`
               );
             }
-            // Always send power ON command (using serial number)
-            await ESPService.sendPowerCommand(device.serialNumber, true);
-            console.log(`✅ [EVENT] Turned ON device ${device.serialNumber}`);
+
+            // Only send power ON command if device was OFF
+            if (!wasDeviceOn) {
+              await ESPService.sendPowerCommand(device.serialNumber, true);
+              console.log(
+                `✅ [EVENT] Turned ON device ${device.serialNumber} at event start time`
+              );
+            } else {
+              console.log(
+                `✅ [EVENT] Device ${device.serialNumber} already ON - Event started successfully`
+              );
+            }
           }
         }
       }

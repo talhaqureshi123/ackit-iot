@@ -196,89 +196,123 @@ class EventService {
         // We MUST ensure they are parsed as UTC, not local time
         let startTimeStr = String(eventData.startTime).trim();
         let endTimeStr = String(eventData.endTime).trim();
-        
+
         // CRITICAL FIX: Frontend already sends UTC time (e.g., "2025-12-21T03:40:00.000Z")
         // We must parse it as UTC and store it as-is, without any timezone conversion
         // Ensure ISO strings are treated as UTC
         // If no timezone indicator, assume it's UTC and add 'Z'
-        if (startTimeStr.includes('T') && !startTimeStr.endsWith('Z') && !startTimeStr.match(/[+-]\d{2}:?\d{2}$/)) {
-          startTimeStr = startTimeStr.replace(/\.\d{3,}$/, '') + 'Z';
+        if (
+          startTimeStr.includes("T") &&
+          !startTimeStr.endsWith("Z") &&
+          !startTimeStr.match(/[+-]\d{2}:?\d{2}$/)
+        ) {
+          startTimeStr = startTimeStr.replace(/\.\d{3,}$/, "") + "Z";
         }
-        if (endTimeStr.includes('T') && !endTimeStr.endsWith('Z') && !endTimeStr.match(/[+-]\d{2}:?\d{2}$/)) {
-          endTimeStr = endTimeStr.replace(/\.\d{3,}$/, '') + 'Z';
+        if (
+          endTimeStr.includes("T") &&
+          !endTimeStr.endsWith("Z") &&
+          !endTimeStr.match(/[+-]\d{2}:?\d{2}$/)
+        ) {
+          endTimeStr = endTimeStr.replace(/\.\d{3,}$/, "") + "Z";
         }
-        
+
         // CRITICAL: Parse as UTC explicitly
         // new Date() with 'Z' suffix correctly parses as UTC, but we need to ensure
         // the Date object represents the correct UTC time
         startTime = new Date(startTimeStr);
         endTime = new Date(endTimeStr);
-        
+
         // CRITICAL: Verify the parsed times are correct UTC
         // If frontend sent 03:40 UTC, we should get 03:40 UTC, not 08:40 UTC
         const startUTCHours = startTime.getUTCHours();
         const startUTCMinutes = startTime.getUTCMinutes();
         const endUTCHours = endTime.getUTCHours();
         const endUTCMinutes = endTime.getUTCMinutes();
-        
+
         // Extract expected UTC time from the ISO string
         // If string is "2025-12-21T03:40:00.000Z", expected UTC is 03:40
         const startTimeMatch = startTimeStr.match(/T(\d{2}):(\d{2})/);
         const endTimeMatch = endTimeStr.match(/T(\d{2}):(\d{2})/);
-        
+
         if (startTimeMatch && endTimeMatch) {
           const expectedStartHour = parseInt(startTimeMatch[1], 10);
           const expectedStartMin = parseInt(startTimeMatch[2], 10);
           const expectedEndHour = parseInt(endTimeMatch[1], 10);
           const expectedEndMin = parseInt(endTimeMatch[2], 10);
-          
+
           // Verify parsing is correct
-          if (startUTCHours !== expectedStartHour || startUTCMinutes !== expectedStartMin) {
-            console.error('❌ CRITICAL: Start time parsing mismatch!', {
+          if (
+            startUTCHours !== expectedStartHour ||
+            startUTCMinutes !== expectedStartMin
+          ) {
+            console.error("❌ CRITICAL: Start time parsing mismatch!", {
               received: startTimeStr,
-              expectedUTC: `${String(expectedStartHour).padStart(2, '0')}:${String(expectedStartMin).padStart(2, '0')} UTC`,
-              parsedUTC: `${String(startUTCHours).padStart(2, '0')}:${String(startUTCMinutes).padStart(2, '0')} UTC`,
-              parsedISO: startTime.toISOString()
+              expectedUTC: `${String(expectedStartHour).padStart(
+                2,
+                "0"
+              )}:${String(expectedStartMin).padStart(2, "0")} UTC`,
+              parsedUTC: `${String(startUTCHours).padStart(2, "0")}:${String(
+                startUTCMinutes
+              ).padStart(2, "0")} UTC`,
+              parsedISO: startTime.toISOString(),
             });
             // Force correct UTC time
-            startTime = new Date(Date.UTC(
-              startTime.getUTCFullYear(),
-              startTime.getUTCMonth(),
-              startTime.getUTCDate(),
-              expectedStartHour,
-              expectedStartMin,
-              0,
-              0
-            ));
+            startTime = new Date(
+              Date.UTC(
+                startTime.getUTCFullYear(),
+                startTime.getUTCMonth(),
+                startTime.getUTCDate(),
+                expectedStartHour,
+                expectedStartMin,
+                0,
+                0
+              )
+            );
           }
-          
-          if (endUTCHours !== expectedEndHour || endUTCMinutes !== expectedEndMin) {
-            console.error('❌ CRITICAL: End time parsing mismatch!', {
+
+          if (
+            endUTCHours !== expectedEndHour ||
+            endUTCMinutes !== expectedEndMin
+          ) {
+            console.error("❌ CRITICAL: End time parsing mismatch!", {
               received: endTimeStr,
-              expectedUTC: `${String(expectedEndHour).padStart(2, '0')}:${String(expectedEndMin).padStart(2, '0')} UTC`,
-              parsedUTC: `${String(endUTCHours).padStart(2, '0')}:${String(endUTCMinutes).padStart(2, '0')} UTC`,
-              parsedISO: endTime.toISOString()
+              expectedUTC: `${String(expectedEndHour).padStart(
+                2,
+                "0"
+              )}:${String(expectedEndMin).padStart(2, "0")} UTC`,
+              parsedUTC: `${String(endUTCHours).padStart(2, "0")}:${String(
+                endUTCMinutes
+              ).padStart(2, "0")} UTC`,
+              parsedISO: endTime.toISOString(),
             });
             // Force correct UTC time
-            endTime = new Date(Date.UTC(
-              endTime.getUTCFullYear(),
-              endTime.getUTCMonth(),
-              endTime.getUTCDate(),
-              expectedEndHour,
-              expectedEndMin,
-              0,
-              0
-            ));
+            endTime = new Date(
+              Date.UTC(
+                endTime.getUTCFullYear(),
+                endTime.getUTCMonth(),
+                endTime.getUTCDate(),
+                expectedEndHour,
+                expectedEndMin,
+                0,
+                0
+              )
+            );
           }
         }
-        
-        console.log('🔍 Backend time parsing verification:', {
+
+        console.log("🔍 Backend time parsing verification:", {
           receivedStartTime: eventData.startTime,
           parsedStartTimeISO: startTime.toISOString(),
-          parsedStartTimeUTC: `${String(startTime.getUTCHours()).padStart(2, '0')}:${String(startTime.getUTCMinutes()).padStart(2, '0')} UTC`,
+          parsedStartTimeUTC: `${String(startTime.getUTCHours()).padStart(
+            2,
+            "0"
+          )}:${String(startTime.getUTCMinutes()).padStart(2, "0")} UTC`,
           receivedEndTime: eventData.endTime,
           parsedEndTimeISO: endTime.toISOString(),
-          parsedEndTimeUTC: `${String(endTime.getUTCHours()).padStart(2, '0')}:${String(endTime.getUTCMinutes()).padStart(2, '0')} UTC`
+          parsedEndTimeUTC: `${String(endTime.getUTCHours()).padStart(
+            2,
+            "0"
+          )}:${String(endTime.getUTCMinutes()).padStart(2, "0")} UTC`,
         });
 
         // Verify dates are valid
@@ -289,15 +323,21 @@ class EventService {
         if (endTime <= startTime) {
           throw new Error("endTime must be after startTime");
         }
-        
+
         // Log for debugging - show what was received and how it was parsed
-        console.log('📅 Event time parsing (non-recurring):', {
+        console.log("📅 Event time parsing (non-recurring):", {
           receivedStartTime: eventData.startTime,
           parsedStartTime: startTime.toISOString(),
           receivedEndTime: eventData.endTime,
           parsedEndTime: endTime.toISOString(),
-          startTimePKT: timezoneUtils.formatPakistanTime(startTime, "YYYY-MM-DD HH:mm:ss"),
-          endTimePKT: timezoneUtils.formatPakistanTime(endTime, "YYYY-MM-DD HH:mm:ss")
+          startTimePKT: timezoneUtils.formatPakistanTime(
+            startTime,
+            "YYYY-MM-DD HH:mm:ss"
+          ),
+          endTimePKT: timezoneUtils.formatPakistanTime(
+            endTime,
+            "YYYY-MM-DD HH:mm:ss"
+          ),
         });
       }
 
@@ -500,28 +540,33 @@ class EventService {
       // CRITICAL: Frontend sends UTC ISO strings (e.g., "2025-12-21T11:54:00.000Z")
       // PostgreSQL TIMESTAMPTZ will automatically store as UTC
       // Use Date objects directly - Sequelize will handle UTC conversion properly with TIMESTAMPTZ columns
-      
+
       // Get UTC timestamps as ISO strings (already in UTC format)
       const startTimeUTCString = startTime.toISOString();
       const endTimeUTCString = endTime.toISOString();
-      
+
       // CRITICAL: Verify the UTC times are correct before storing
-      console.log('🔍 Pre-storage UTC verification:', {
+      console.log("🔍 Pre-storage UTC verification:", {
         startTimeISO: startTimeUTCString,
-        startTimeUTC: `${String(startTime.getUTCHours()).padStart(2, '0')}:${String(startTime.getUTCMinutes()).padStart(2, '0')} UTC`,
+        startTimeUTC: `${String(startTime.getUTCHours()).padStart(
+          2,
+          "0"
+        )}:${String(startTime.getUTCMinutes()).padStart(2, "0")} UTC`,
         endTimeISO: endTimeUTCString,
-        endTimeUTC: `${String(endTime.getUTCHours()).padStart(2, '0')}:${String(endTime.getUTCMinutes()).padStart(2, '0')} UTC`,
+        endTimeUTC: `${String(endTime.getUTCHours()).padStart(2, "0")}:${String(
+          endTime.getUTCMinutes()
+        ).padStart(2, "0")} UTC`,
         receivedFromFrontend: {
           startTime: eventData.startTime,
-          endTime: eventData.endTime
-        }
+          endTime: eventData.endTime,
+        },
       });
-      
+
       // CRITICAL: Frontend sends UTC ISO strings (e.g., "2025-12-21T11:54:00.000Z")
       // PostgreSQL TIMESTAMPTZ will automatically store as UTC
       // Use Date objects directly - Sequelize will handle UTC conversion properly
       // No need for Sequelize.literal - just use the Date objects
-      
+
       // Create event - ONLY device events
       const eventDataToCreate = {
         name: eventData.name,
@@ -554,25 +599,54 @@ class EventService {
       }
 
       // CRITICAL: Log what we're about to store
-      console.log('📅 Storing event with times:', {
+      console.log("📅 Storing event with times:", {
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        startTimeUTC: `${String(startTime.getUTCHours()).padStart(2, '0')}:${String(startTime.getUTCMinutes()).padStart(2, '0')} UTC`,
-        endTimeUTC: `${String(endTime.getUTCHours()).padStart(2, '0')}:${String(endTime.getUTCMinutes()).padStart(2, '0')} UTC`,
-        startTimePKT: timezoneUtils.formatPakistanTime(startTime, "YYYY-MM-DD HH:mm:ss"),
-        endTimePKT: timezoneUtils.formatPakistanTime(endTime, "YYYY-MM-DD HH:mm:ss")
+        startTimeUTC: `${String(startTime.getUTCHours()).padStart(
+          2,
+          "0"
+        )}:${String(startTime.getUTCMinutes()).padStart(2, "0")} UTC`,
+        endTimeUTC: `${String(endTime.getUTCHours()).padStart(2, "0")}:${String(
+          endTime.getUTCMinutes()
+        ).padStart(2, "0")} UTC`,
+        startTimePKT: timezoneUtils.formatPakistanTime(
+          startTime,
+          "YYYY-MM-DD HH:mm:ss"
+        ),
+        endTimePKT: timezoneUtils.formatPakistanTime(
+          endTime,
+          "YYYY-MM-DD HH:mm:ss"
+        ),
       });
-      
+
       const event = await Event.create(eventDataToCreate, { transaction });
-      
+
       // CRITICAL: Log what was actually stored
-      console.log('📅 Event stored, retrieved times:', {
-        startTime: event.startTime ? event.startTime.toISOString() : 'null',
-        endTime: event.endTime ? event.endTime.toISOString() : 'null',
-        startTimeUTC: event.startTime ? `${String(event.startTime.getUTCHours()).padStart(2, '0')}:${String(event.startTime.getUTCMinutes()).padStart(2, '0')} UTC` : 'null',
-        endTimeUTC: event.endTime ? `${String(event.endTime.getUTCHours()).padStart(2, '0')}:${String(event.endTime.getUTCMinutes()).padStart(2, '0')} UTC` : 'null',
-        startTimePKT: event.startTime ? timezoneUtils.formatPakistanTime(event.startTime, "YYYY-MM-DD HH:mm:ss") : 'null',
-        endTimePKT: event.endTime ? timezoneUtils.formatPakistanTime(event.endTime, "YYYY-MM-DD HH:mm:ss") : 'null'
+      console.log("📅 Event stored, retrieved times:", {
+        startTime: event.startTime ? event.startTime.toISOString() : "null",
+        endTime: event.endTime ? event.endTime.toISOString() : "null",
+        startTimeUTC: event.startTime
+          ? `${String(event.startTime.getUTCHours()).padStart(2, "0")}:${String(
+              event.startTime.getUTCMinutes()
+            ).padStart(2, "0")} UTC`
+          : "null",
+        endTimeUTC: event.endTime
+          ? `${String(event.endTime.getUTCHours()).padStart(2, "0")}:${String(
+              event.endTime.getUTCMinutes()
+            ).padStart(2, "0")} UTC`
+          : "null",
+        startTimePKT: event.startTime
+          ? timezoneUtils.formatPakistanTime(
+              event.startTime,
+              "YYYY-MM-DD HH:mm:ss"
+            )
+          : "null",
+        endTimePKT: event.endTime
+          ? timezoneUtils.formatPakistanTime(
+              event.endTime,
+              "YYYY-MM-DD HH:mm:ss"
+            )
+          : "null",
       });
 
       // If event should start immediately, apply event settings
@@ -875,7 +949,7 @@ class EventService {
       // CRITICAL: Ensure startTime and endTime are returned as UTC ISO strings
       const plainEvents = events.map((event) => {
         const plainEvent = event.get({ plain: true });
-        
+
         // CRITICAL FIX: Ensure dates are in UTC format
         // Sequelize might return dates with timezone conversion applied
         // We need to ensure they're returned as UTC ISO strings
@@ -883,9 +957,12 @@ class EventService {
           // If it's a Date object, convert to UTC ISO string
           if (plainEvent.startTime instanceof Date) {
             plainEvent.startTime = plainEvent.startTime.toISOString();
-          } else if (typeof plainEvent.startTime === 'string') {
+          } else if (typeof plainEvent.startTime === "string") {
             // If it's already a string, ensure it's UTC (ends with 'Z')
-            if (!plainEvent.startTime.endsWith('Z') && !plainEvent.startTime.match(/[+-]\d{2}:?\d{2}$/)) {
+            if (
+              !plainEvent.startTime.endsWith("Z") &&
+              !plainEvent.startTime.match(/[+-]\d{2}:?\d{2}$/)
+            ) {
               // Parse and convert to UTC ISO string
               const date = new Date(plainEvent.startTime);
               if (!isNaN(date.getTime())) {
@@ -894,14 +971,17 @@ class EventService {
             }
           }
         }
-        
+
         if (plainEvent.endTime) {
           // If it's a Date object, convert to UTC ISO string
           if (plainEvent.endTime instanceof Date) {
             plainEvent.endTime = plainEvent.endTime.toISOString();
-          } else if (typeof plainEvent.endTime === 'string') {
+          } else if (typeof plainEvent.endTime === "string") {
             // If it's already a string, ensure it's UTC (ends with 'Z')
-            if (!plainEvent.endTime.endsWith('Z') && !plainEvent.endTime.match(/[+-]\d{2}:?\d{2}$/)) {
+            if (
+              !plainEvent.endTime.endsWith("Z") &&
+              !plainEvent.endTime.match(/[+-]\d{2}:?\d{2}$/)
+            ) {
               // Parse and convert to UTC ISO string
               const date = new Date(plainEvent.endTime);
               if (!isNaN(date.getTime())) {
@@ -910,7 +990,7 @@ class EventService {
             }
           }
         }
-        
+
         return plainEvent;
       });
 
@@ -1280,6 +1360,7 @@ class EventService {
         if (device) {
           // Get current temperature BEFORE updating (for pulse calculation)
           const currentTemp = device.temperature || 16;
+          const wasDeviceOn = device.isOn || false;
 
           // Set temperature if provided
           if (event.temperature !== null) {
@@ -1288,8 +1369,23 @@ class EventService {
             device.changedBy = "admin"; // Admin event started
           }
 
-          // Always turn device ON when event starts
-          device.isOn = true;
+          // Check device status: If OFF, turn ON; If ON, keep ON
+          if (!wasDeviceOn) {
+            // Device is OFF - turn it ON at start time
+            device.isOn = true;
+            console.log(
+              `🔌 [EVENT] Device ${
+                device.serialNumber || device.id
+              } was OFF - Turning ON at event start time`
+            );
+          } else {
+            // Device is already ON - event will start normally
+            console.log(
+              `✅ [EVENT] Device ${
+                device.serialNumber || device.id
+              } is already ON - Event starting normally`
+            );
+          }
 
           // Save device state first
           await device.save({ transaction });
@@ -1307,9 +1403,18 @@ class EventService {
                 `✅ [EVENT] Starting temperature sync to ${event.temperature}°C for device ${device.serialNumber}`
               );
             }
-            // Always send power ON command (using serial number)
-            await ESPService.sendPowerCommand(device.serialNumber, true);
-            console.log(`✅ [EVENT] Turned ON device ${device.serialNumber}`);
+
+            // Only send power ON command if device was OFF
+            if (!wasDeviceOn) {
+              await ESPService.sendPowerCommand(device.serialNumber, true);
+              console.log(
+                `✅ [EVENT] Turned ON device ${device.serialNumber} at event start time`
+              );
+            } else {
+              console.log(
+                `✅ [EVENT] Device ${device.serialNumber} already ON - Event started successfully`
+              );
+            }
           }
         }
       }
