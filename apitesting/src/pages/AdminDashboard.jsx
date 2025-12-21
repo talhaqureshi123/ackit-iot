@@ -4263,97 +4263,120 @@ const AdminDashboard = () => {
           </div>
         );
       case 'logs':
-        return (
-          <div className="space-y-8">
-            {/* Header Section - Ultra Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
-              <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
-              <div className="relative flex items-center space-x-5">
-                <div className="bg-white bg-opacity-25 rounded-2xl p-4 shadow-xl transform group-hover:rotate-12 transition-transform duration-300">
-                  <Activity className="w-10 h-10 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Activity Logs</h2>
-                  <p className="text-blue-100 text-base font-medium mb-3">Track all system activities and changes</p>
-                  <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
-                    {data.logs?.length || 0} Total Log{(data.logs?.length || 0) !== 1 ? 's' : ''}
-                  </span>
+        try {
+          console.log('📋 Rendering activity logs tab');
+          console.log('📋 Activity logs data:', data.logs);
+          console.log('📋 Activity logs length:', data.logs?.length);
+          
+          const formatDate = (dateString) => {
+            if (!dateString) return 'N/A';
+            try {
+              const date = new Date(dateString);
+              if (isNaN(date.getTime())) return 'Invalid Date';
+              return date.toLocaleString('en-PK', { 
+                timeZone: 'Asia/Karachi',
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+            } catch (error) {
+              console.error('Date formatting error:', error);
+              return 'N/A';
+            }
+          };
+
+          return (
+            <div className="space-y-4 sm:space-y-6 lg:space-y-8 p-2 sm:p-4">
+              {/* Header Section */}
+              <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-lg sm:rounded-xl lg:rounded-2xl shadow-lg sm:shadow-xl lg:shadow-2xl p-3 sm:p-4 lg:p-6 xl:p-8 border-2 border-blue-400 overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 sm:w-40 sm:h-40 bg-white opacity-10 rounded-full -mr-16 sm:-mr-20 -mt-16 sm:-mt-20"></div>
+                <div className="absolute bottom-0 left-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-5 rounded-full -ml-12 sm:-ml-16 -mb-12 sm:-mb-16"></div>
+                <div className="relative flex items-center space-x-3 sm:space-x-4 lg:space-x-5">
+                  <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 shadow-xl">
+                    <Activity className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-lg sm:text-xl lg:text-2xl xl:text-3xl font-extrabold text-white mb-1 sm:mb-2 drop-shadow-lg break-words">Activity Logs</h2>
+                    <p className="text-blue-100 text-xs sm:text-sm lg:text-base font-medium mb-2 sm:mb-3">Track all system activities and changes</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 py-1 sm:px-4 sm:py-1.5 lg:px-5 lg:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
+                      {data.logs?.length || 0} Total Log{(data.logs?.length || 0) !== 1 ? 's' : ''}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-            
-            {data.logs && data.logs.length > 0 ? (
-              <div className="space-y-3 sm:space-y-4">
-                {data.logs.map((log, index) => (
-                  <div key={log.id || index} className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-4 sm:p-6 border-l-4 border-blue-500">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0 mb-2">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-base sm:text-lg font-semibold text-gray-900 break-words">{log.action || 'Activity'}</h3>
-                        <p className="text-xs sm:text-sm text-gray-600 mt-1 break-words">
-                          {typeof log.details === 'object' 
-                            ? (log.details?.message || JSON.stringify(log.details)) 
-                            : (log.details || log.message || 'No details available')}
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-0 sm:ml-4">
-                        <span className="text-xs text-gray-500 whitespace-nowrap">
-                          {log.createdAt 
-                            ? new Date(log.createdAt).toLocaleString('en-PK', { 
-                                timeZone: 'Asia/Karachi',
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })
-                            : log.timestamp 
-                            ? new Date(log.timestamp).toLocaleString('en-PK', { 
-                                timeZone: 'Asia/Karachi',
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })
-                            : 'N/A'}
-                        </span>
-                        {log.targetType && (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ml-2 ${
-                            log.targetType === 'admin' 
-                              ? 'bg-red-100 text-red-800' 
-                              : log.targetType === 'manager'
-                              ? 'bg-blue-100 text-blue-800'
-                              : log.targetType === 'organization'
-                              ? 'bg-purple-100 text-purple-800'
-                              : log.targetType === 'ac'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {log.targetType}
-                          </span>
+              
+              {/* Activity Logs List */}
+              {data.logs && Array.isArray(data.logs) && data.logs.length > 0 ? (
+                <div className="space-y-3 sm:space-y-4">
+                  {data.logs.map((log, index) => {
+                    if (!log) return null;
+                    return (
+                      <div key={log.id || `log-${index}`} className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-3 sm:p-4 lg:p-6 border-l-4 border-blue-500">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0 mb-2">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 break-words mb-1">
+                              {log.action || 'Activity'}
+                            </h3>
+                            <p className="text-xs sm:text-sm text-gray-600 break-words">
+                              {typeof log.details === 'object' 
+                                ? (log.details?.message || JSON.stringify(log.details)) 
+                                : (log.details || log.message || 'No details available')}
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-0 sm:ml-4 flex-shrink-0">
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              {formatDate(log.createdAt || log.timestamp)}
+                            </span>
+                            {log.targetType && (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ml-2 ${
+                                log.targetType === 'admin' 
+                                  ? 'bg-red-100 text-red-800' 
+                                  : log.targetType === 'manager'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : log.targetType === 'organization'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : log.targetType === 'ac'
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {log.targetType}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {(log.admin || log.user) && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            By: {log.admin?.name || log.user?.name || log.admin?.email || log.user?.email || 'System'}
+                          </div>
                         )}
                       </div>
-                    </div>
-                    {(log.admin || log.user) && (
-                      <div className="mt-2 text-xs text-gray-500">
-                        By: {log.admin?.name || log.user?.name || log.admin?.email || log.user?.email || 'System'}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
-                <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
-                  <Activity className="w-12 h-12 text-blue-600" />
+                    );
+                  })}
                 </div>
-                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Activity Logs Found</p>
-                <p className="text-gray-600 text-base font-medium">Activity logs will appear here as actions are performed</p>
+              ) : (
+                <div className="bg-gradient-to-br from-white to-blue-50 p-6 sm:p-8 lg:p-12 xl:p-16 rounded-lg sm:rounded-xl lg:rounded-2xl shadow-xl lg:shadow-2xl text-center border-2 border-blue-200">
+                  <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-4 sm:p-5 lg:p-6 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 mx-auto mb-4 sm:mb-6 flex items-center justify-center shadow-lg">
+                    <Activity className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 text-blue-600" />
+                  </div>
+                  <p className="text-gray-800 text-base sm:text-lg lg:text-xl xl:text-2xl font-bold mb-2 sm:mb-3">No Activity Logs Found</p>
+                  <p className="text-gray-600 text-sm sm:text-base font-medium">Activity logs will appear here as actions are performed</p>
+                </div>
+              )}
+            </div>
+          );
+        } catch (error) {
+          console.error('❌ Error rendering activity logs:', error);
+          return (
+            <div className="p-4 sm:p-6">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h3 className="text-red-800 font-semibold mb-2">Error Loading Activity Logs</h3>
+                <p className="text-red-600 text-sm">{error.message}</p>
               </div>
-            )}
-          </div>
-        );
+            </div>
+          );
+        }
       default:
         return null;
     }
