@@ -462,7 +462,9 @@ class ManagerACService {
       const orgIds = managerOrgs.map((org) => org.id);
 
       if (orgIds.length === 0) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+          await transaction.rollback();
+        }
         throw new Error("AC device not found or unauthorized");
       }
 
@@ -471,19 +473,40 @@ class ManagerACService {
       const adminId = managerOrgs[0]?.adminId;
 
       if (!adminId) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+          await transaction.rollback();
+        }
         throw new Error("AC device not found or unauthorized");
       }
 
-      // ACs have venueId which references organizations table (not venues table)
-      // So we only need to check if venueId matches manager's organizations
-      // Note: AC.venueId directly references organizations table, so we use orgIds only
+      // Get venues for additional lookup (some ACs might reference venue IDs)
+      const Venue = require("../../../models/Venue/venue");
+      const venues = await Venue.findAll({
+        where: {
+          adminId: adminId,
+          organizationId: { [Op.in]: orgIds },
+        },
+        attributes: ["id"],
+        transaction,
+      });
+      const venueIds = venues.map((v) => v.id);
 
-      // Find AC where venueId matches manager's organizations
+      // ACs have venueId which references organizations table
+      // But to be safe, check both orgIds and venueIds (in case of data inconsistency)
+      // Combine both for lookup
+      const allPossibleIds = [...orgIds, ...venueIds];
+      const uniqueIds = [...new Set(allPossibleIds)];
+
+      console.log(`🔍 [MANAGER-AC-POWER] Looking for AC ${acId}`);
+      console.log(`   └─ Manager orgIds:`, orgIds);
+      console.log(`   └─ Manager venueIds:`, venueIds);
+      console.log(`   └─ Combined uniqueIds:`, uniqueIds);
+
+      // Find AC where venueId matches manager's organizations OR venues
       const ac = await AC.findOne({
         where: {
           id: acId,
-          venueId: { [Op.in]: orgIds },
+          venueId: { [Op.in]: uniqueIds },
         },
         include: [
           {
@@ -503,45 +526,128 @@ class ManagerACService {
       });
 
       if (!ac) {
-        await transaction.rollback();
+        // Debug: Check if device exists at all
+        const deviceExists = await AC.findByPk(acId, {
+          attributes: ["id", "name", "venueId"],
+          transaction,
+        });
+
+        if (deviceExists) {
+          console.error(
+            `❌ [MANAGER-AC-POWER] Device ${acId} exists but venueId ${deviceExists.venueId} not in manager's orgIds/venueIds`
+          );
+          console.error(`   Device venueId: ${deviceExists.venueId}`);
+          console.error(`   Manager orgIds:`, orgIds);
+          console.error(`   Manager venueIds:`, venueIds);
+        } else {
+          console.error(
+            `❌ [MANAGER-AC-POWER] Device ${acId} does not exist in database`
+          );
+        }
+
+        if (transaction && !transaction.finished) {
+          await transaction.rollback();
+        }
         throw new Error("AC device not found or unauthorized");
       }
+
+      console.log(
+        `✅ [MANAGER-AC-POWER] Device ${ac.id} (${ac.name}) found with venueId: ${ac.venueId}`
+      );
 
       // Check organization and venue power state - hierarchical control
       // If organization is OFF, cannot toggle individual AC
       // If venue is OFF, cannot toggle individual AC
-      const venueId = ac.venueId;
-      const venue = await Venue.findOne({
-        where: { id: venueId },
-        transaction,
-      });
-
-      if (!venue) {
-        await transaction.rollback();
-        throw new Error("Venue not found for this AC");
-      }
-
-      // Check venue power state
-      if (!venue.isVenueOn && powerState) {
-        await transaction.rollback();
-        throw new Error(
-          "Cannot turn ON AC: Venue is currently OFF. Please turn on the venue first."
-        );
-      }
-
-      // Check organization power state if venue belongs to an organization
-      if (venue.organizationId) {
-        const organization = await Venue.findOne({
-          where: {
-            id: venue.organizationId,
-            adminId: venue.adminId,
-          },
-          attributes: ["isVenueOn"],
+      
+      // Determine if ac.venueId is an organization ID or venue ID
+      let organization = null;
+      let venue = ac.venue;
+      
+      // If venueId is in orgIds, it's an organization ID
+      if (orgIds.includes(ac.venueId)) {
+        organization = await Organization.findByPk(ac.venueId, {
+          attributes: ["id", "name", "isVenueOn", "adminId"],
           transaction,
         });
-
+        
+        // Find venues under this organization
+        if (organization) {
+          const orgVenues = await Venue.findAll({
+            where: {
+              organizationId: organization.id,
+              adminId: organization.adminId,
+            },
+            attributes: ["id", "name", "isVenueOn"],
+            transaction,
+          });
+          
+          // Check if any venue is OFF (if all venues are OFF, organization is effectively OFF)
+          const allVenuesOff = orgVenues.length > 0 && orgVenues.every(v => !v.isVenueOn);
+          
+          // Check organization power state
+          if (organization && (!organization.isVenueOn || allVenuesOff) && powerState) {
+            if (transaction && !transaction.finished) {
+              await transaction.rollback();
+            }
+            throw new Error(
+              "Cannot turn ON AC: Organization is currently OFF. Please turn on the organization first."
+            );
+          }
+        }
+      } else if (venueIds.includes(ac.venueId)) {
+        // If venueId is in venueIds, it's a venue ID
+        if (!venue) {
+          venue = await Venue.findOne({
+            where: { id: ac.venueId },
+            attributes: ["id", "name", "isVenueOn", "organizationId", "adminId"],
+            transaction,
+          });
+        }
+        
+        if (!venue) {
+          if (transaction && !transaction.finished) {
+            await transaction.rollback();
+          }
+          throw new Error("Venue not found for this AC");
+        }
+        
+        // Check venue power state
+        if (!venue.isVenueOn && powerState) {
+          if (transaction && !transaction.finished) {
+            await transaction.rollback();
+          }
+          throw new Error(
+            "Cannot turn ON AC: Venue is currently OFF. Please turn on the venue first."
+          );
+        }
+        
+        // Check organization power state if venue belongs to an organization
+        if (venue.organizationId) {
+          organization = await Organization.findByPk(venue.organizationId, {
+            attributes: ["id", "name", "isVenueOn"],
+            transaction,
+          });
+          
+          if (organization && !organization.isVenueOn && powerState) {
+            if (transaction && !transaction.finished) {
+              await transaction.rollback();
+            }
+            throw new Error(
+              "Cannot turn ON AC: Organization is currently OFF. Please turn on the organization first."
+            );
+          }
+        }
+      } else {
+        // Fallback: try to find organization or venue
+        organization = await Organization.findByPk(ac.venueId, {
+          attributes: ["id", "name", "isVenueOn"],
+          transaction,
+        });
+        
         if (organization && !organization.isVenueOn && powerState) {
-          await transaction.rollback();
+          if (transaction && !transaction.finished) {
+            await transaction.rollback();
+          }
           throw new Error(
             "Cannot turn ON AC: Organization is currently OFF. Please turn on the organization first."
           );
