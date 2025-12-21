@@ -191,17 +191,46 @@ const SuperAdminDashboard = () => {
         superAdminAPI.getSuperAdminActivityLogs()
       ]);
 
-      console.log('Activity logs response:', logsRes.data);
+      console.log('📊 Admins response:', adminsRes.data);
+      console.log('📊 Activity logs response:', logsRes.data);
+      
+      // Parse admins - backend returns { success: true, data: [...] }
+      const admins = Array.isArray(adminsRes.data?.data) 
+        ? adminsRes.data.data 
+        : Array.isArray(adminsRes.data?.admins)
+        ? adminsRes.data.admins
+        : [];
+      
+      // Parse logs - backend returns { success: true, data: { logs: [...], pagination: {...} } }
+      const logs = Array.isArray(logsRes.data?.data?.logs)
+        ? logsRes.data.data.logs
+        : Array.isArray(logsRes.data?.logs)
+        ? logsRes.data.logs
+        : [];
+      
+      console.log('✅ Processed admins:', admins.length);
+      console.log('✅ Processed logs:', logs.length);
       
       setData({
-        admins: adminsRes.data.data || adminsRes.data.admins || [],
-        logs: logsRes.data.data?.logs || logsRes.data.logs || []
+        admins,
+        logs
       });
       
-      console.log('Processed logs:', logsRes.data.data?.logs || logsRes.data.logs || []);
+      // Set initialLoading to false after first successful load
+      if (initialLoading) {
+        setInitialLoading(false);
+      }
     } catch (error) {
-      toast.error('Failed to load data');
-      console.error('Load data error:', error);
+      console.error('❌ Load data error:', error);
+      console.error('❌ Error response:', error.response?.data);
+      console.error('❌ Error status:', error.response?.status);
+      
+      // Set initialLoading to false even on error so UI doesn't stay in loading state
+      if (initialLoading) {
+        setInitialLoading(false);
+      }
+      
+      toast.error(error.response?.data?.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
