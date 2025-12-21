@@ -387,23 +387,36 @@ const SuperAdminDashboard = () => {
 
   const LogCard = ({ log }) => (
     <div className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-4 sm:p-6 border border-gray-200">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">{log.action}</h3>
-          <p className="text-xs sm:text-sm text-gray-600 mb-2">
-            {typeof log.details === 'object' ? log.details.message || JSON.stringify(log.details) : log.details}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 break-words">{log.action}</h3>
+          <p className="text-xs sm:text-sm text-gray-600 mb-2 break-words">
+            {typeof log.details === 'object' 
+              ? (log.details?.message || JSON.stringify(log.details)) 
+              : (log.details || 'No details available')}
           </p>
-          <p className="text-xs text-gray-500 mb-1">
-            {new Date(log.createdAt).toLocaleString()}
-          </p>
-          {log.admin && (
-            <p className="text-xs text-blue-600">
-              Admin: {log.admin.name} ({log.admin.email})
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+            <p className="text-xs text-gray-500">
+              {log.createdAt 
+                ? new Date(log.createdAt).toLocaleString('en-PK', { 
+                    timeZone: 'Asia/Karachi',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                : 'N/A'}
             </p>
-          )}
+            {log.admin && (
+              <p className="text-xs text-blue-600">
+                Admin: {log.admin.name} ({log.admin.email})
+              </p>
+            )}
+          </div>
         </div>
-        <div className="ml-4">
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+        <div className="flex items-center justify-end sm:ml-4 sm:justify-start">
+          <span className={`inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${
             log.targetType === 'admin' 
               ? 'bg-red-100 text-red-800' 
               : log.targetType === 'manager'
@@ -477,15 +490,20 @@ const SuperAdminDashboard = () => {
         );
       case 'logs':
         return (
-          <div className="space-y-6">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Activity Logs</h2>
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Activity Logs</h2>
+              <span className="text-sm text-gray-500">
+                {data.logs.length} log{data.logs.length !== 1 ? 's' : ''}
+              </span>
+            </div>
             {data.logs.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-                <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">No activity logs found</p>
+              <div className="text-center py-8 sm:py-12 bg-white rounded-lg sm:rounded-xl border border-gray-200">
+                <Activity className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-sm sm:text-base text-gray-500">No activity logs found</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {data.logs.map((log, index) => (
                   <LogCard key={log.id || index} log={log} />
                 ))}

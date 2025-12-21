@@ -538,6 +538,14 @@ const AdminDashboard = () => {
     }
   }, [activeTab, data.acs.length, data.organizations.length]);
 
+  // Auto-load activity logs when logs tab is active
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      console.log('📋 Activity logs tab opened - reloading activity logs...');
+      loadData(false); // Reload data to get fresh activity logs
+    }
+  }, [activeTab]);
+
   const loadData = async (showLoading = true) => {
     // Only show loading spinner on manual refresh, not during polling
     if (showLoading) {
@@ -788,10 +796,20 @@ const AdminDashboard = () => {
                         (Array.isArray(managersRes?.data?.data) ? managersRes.data.data : []) ||
                         [];
         
-        const logs = logsRes?.data?.logs || 
-                    logsRes?.data?.data?.logs || 
-                    (Array.isArray(logsRes?.data?.data) ? logsRes.data.data : []) ||
-                    [];
+        // Parse activity logs - backend returns { success: true, data: [...] }
+        let logs = [];
+        if (logsRes?.data) {
+          if (logsRes.data.success === false) {
+            console.error('❌ Activity logs API returned error:', logsRes.data.message);
+          } else if (Array.isArray(logsRes.data.data)) {
+            logs = logsRes.data.data;
+          } else if (Array.isArray(logsRes.data.logs)) {
+            logs = logsRes.data.logs;
+          } else {
+            console.warn('⚠️ Unexpected activity logs response structure:', logsRes.data);
+          }
+        }
+        console.log('✅ Loaded activity logs:', logs.length);
 
         setData(prev => ({
           ...prev,
@@ -4266,21 +4284,60 @@ const AdminDashboard = () => {
             </div>
             
             {data.logs && data.logs.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {data.logs.map((log, index) => (
-                  <div key={index} className="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-gray-900">{log.action || 'Activity'}</h3>
-                        <p className="text-sm text-gray-600 mt-1">{log.details || log.message || 'No details available'}</p>
+                  <div key={log.id || index} className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-4 sm:p-6 border-l-4 border-blue-500">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-900 break-words">{log.action || 'Activity'}</h3>
+                        <p className="text-xs sm:text-sm text-gray-600 mt-1 break-words">
+                          {typeof log.details === 'object' 
+                            ? (log.details?.message || JSON.stringify(log.details)) 
+                            : (log.details || log.message || 'No details available')}
+                        </p>
                       </div>
-                      <span className="text-xs text-gray-500">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}
-                      </span>
+                      <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-0 sm:ml-4">
+                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                          {log.createdAt 
+                            ? new Date(log.createdAt).toLocaleString('en-PK', { 
+                                timeZone: 'Asia/Karachi',
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            : log.timestamp 
+                            ? new Date(log.timestamp).toLocaleString('en-PK', { 
+                                timeZone: 'Asia/Karachi',
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            : 'N/A'}
+                        </span>
+                        {log.targetType && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ml-2 ${
+                            log.targetType === 'admin' 
+                              ? 'bg-red-100 text-red-800' 
+                              : log.targetType === 'manager'
+                              ? 'bg-blue-100 text-blue-800'
+                              : log.targetType === 'organization'
+                              ? 'bg-purple-100 text-purple-800'
+                              : log.targetType === 'ac'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {log.targetType}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    {log.user && (
+                    {(log.admin || log.user) && (
                       <div className="mt-2 text-xs text-gray-500">
-                        By: {log.user.name || log.user.email || 'System'}
+                        By: {log.admin?.name || log.user?.name || log.admin?.email || log.user?.email || 'System'}
                       </div>
                     )}
                   </div>
