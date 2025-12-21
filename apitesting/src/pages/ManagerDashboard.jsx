@@ -2426,13 +2426,17 @@ const ManagerDashboard = () => {
       }
     };
 
-    // Format time only (HH:MM AM/PM) - Display UTC time directly from backend, no conversion
+    // Format time only (HH:MM AM/PM) in PKT
+    // CRITICAL: Backend stores UTC, but UI must display PKT
     const formatTime = (dateString) => {
       if (!dateString) return 'N/A';
       try {
         let date;
         
         if (dateString instanceof Date) {
+          if (isNaN(dateString.getTime())) {
+            return 'N/A';
+          }
           date = dateString;
         } else if (typeof dateString === 'string') {
           let dateValue = String(dateString).trim();
@@ -2442,50 +2446,28 @@ const ManagerDashboard = () => {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
-          // CRITICAL FIX: Backend returns UTC time strings from Sequelize
-          // Sequelize DATE fields are stored as UTC but may be returned without 'Z'
-          // Check if it has timezone indicator
-          const hasTimezone = dateValue.endsWith('Z') || 
-                             dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
-                             dateValue.includes('+05:00') ||
-                             dateValue.includes('+0500');
-          
-          // If NO timezone but has ISO format (YYYY-MM-DDTHH:mm:ss), treat as UTC
-          // Sequelize returns dates in ISO format but may not include 'Z'
-          if (!hasTimezone && dateValue.includes('T')) {
-            // Remove milliseconds if present for cleaner parsing
-            dateValue = dateValue.replace(/\.\d{3}$/, '');
-            // CRITICAL: Ensure it ends with 'Z' to force UTC parsing
-            // Without 'Z', JavaScript may interpret as local time, causing 5-hour offset
-            if (!dateValue.endsWith('Z')) {
-              dateValue = dateValue + 'Z';
-            }
+          // CRITICAL: Ensure UTC parsing - add 'Z' if no timezone
+          if (dateValue.includes('T') && !dateValue.endsWith('Z') && !dateValue.match(/[+-]\d{2}:?\d{2}$/)) {
+            dateValue = dateValue.replace(/\.\d{3,}$/, '') + 'Z';
           }
           
           date = new Date(dateValue);
           
           if (isNaN(date.getTime())) {
-            console.error('❌ Invalid date string:', dateString);
             return 'N/A';
           }
         } else {
           return 'N/A';
         }
         
-        if (isNaN(date.getTime())) {
-          return 'N/A';
-        }
-        
-        // Get UTC time directly from backend (no PKT conversion)
-        const utcHours = date.getUTCHours();
-        const utcMinutes = date.getUTCMinutes();
-        
-        // Convert to 12-hour format with AM/PM
-        const utcHour12 = utcHours === 0 ? 12 : (utcHours > 12 ? utcHours - 12 : utcHours);
-        const ampm = utcHours >= 12 ? 'PM' : 'AM';
-        const utcTime = `${String(utcHour12).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} ${ampm}`;
-        
-        return utcTime;
+        // FINAL FIX: Use toLocaleTimeString with Asia/Karachi timezone
+        // This ensures UTC time is displayed as PKT
+        return date.toLocaleTimeString('en-PK', {
+          timeZone: 'Asia/Karachi',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
       } catch (e) {
         console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';

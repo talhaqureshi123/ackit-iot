@@ -545,7 +545,7 @@ const AdminDashboard = () => {
     }
     
     try {
-      const [orgsRes, acsRes, managersRes, logsRes] = await Promise.all([
+      const [orgsRes, acsRes, managersRes, logsRes, venuesRes] = await Promise.all([
         adminAPI.getOrganizations().catch(err => {
           console.error('Failed to load organizations:', err);
           return null;
@@ -560,6 +560,10 @@ const AdminDashboard = () => {
         }),
         adminAPI.getActivityLogs().catch(err => {
           console.error('Failed to load logs:', err);
+          return null;
+        }),
+        adminAPI.getVenues().catch(err => {
+          console.error('Failed to load venues:', err);
           return null;
         })
       ]);
@@ -636,15 +640,66 @@ const AdminDashboard = () => {
           };
         });
 
+        // Load venues separately if not included in organizations response
+        let allVenuesFromAPI = [];
+        if (venuesRes && venuesRes.data) {
+          allVenuesFromAPI = venuesRes.data.venues || 
+                            venuesRes.data.data?.venues || 
+                            (Array.isArray(venuesRes.data.data) ? venuesRes.data.data : []) ||
+                            [];
+          console.log('📊 [admin] Loaded Venues from API:', allVenuesFromAPI.length);
+        }
+        
+        // Merge venues from API with venues from organizations
+        // If organization doesn't have venues but API has them, add them
+        organizations = organizations.map(org => {
+          const orgVenuesFromAPI = allVenuesFromAPI.filter(v => v.organizationId === org.id);
+          const existingVenues = org.venues || [];
+          
+          // Merge venues: prefer organization venues, but add API venues if missing
+          let mergedVenues = [...existingVenues];
+          orgVenuesFromAPI.forEach(apiVenue => {
+            const exists = mergedVenues.find(v => v.id === apiVenue.id);
+            if (!exists) {
+              mergedVenues.push(apiVenue);
+            }
+          });
+          
+          // Update venues with mixed temperatures
+          const venuesWithMixed = mergedVenues.map(venue => {
+            const venueACs = acs.filter(ac => ac.venueId === venue.id);
+            const venueTemp = venue.temperature || 16;
+            let venueHasMixed = false;
+            
+            if (venueACs.length > 1) {
+              venueHasMixed = venueACs.some(ac => {
+                const acTemp = ac.temperature || 16;
+                return acTemp !== venueTemp;
+              });
+            }
+            
+            return {
+              ...venue,
+              hasMixedTemperatures: venueHasMixed
+            };
+          });
+          
+          return {
+            ...org,
+            venues: venuesWithMixed
+          };
+        });
+        
         // Debug logging
         console.log('📊 [admin] Loaded Data:');
         console.log('   Organizations:', organizations.length, organizations.map(o => ({ id: o.id, name: o.name, temperature: o.temperature, hasMixedTemperatures: o.hasMixedTemperatures, venues: o.venues?.length || 0 })));
         console.log('   AC Devices:', acs.length, acs.map(ac => ({ id: ac.id, name: ac.name, venueId: ac.venueId, temperature: ac.temperature })));
+        console.log('   Venues from API:', allVenuesFromAPI.length);
         
         // Check venue-AC mapping
         organizations.forEach(org => {
           const orgACs = acs.filter(ac => ac.organizationId === org.id || ac.venueId === org.id);
-          console.log(`   Org "${org.name}" (ID: ${org.id}): ${orgACs.length} ACs, Temp: ${org.temperature}°C, Mixed: ${org.hasMixedTemperatures}`);
+          console.log(`   Org "${org.name}" (ID: ${org.id}): ${orgACs.length} ACs, Temp: ${org.temperature}°C, Mixed: ${org.hasMixedTemperatures}, Venues: ${org.venues?.length || 0}`);
           if (org.venues && org.venues.length > 0) {
             org.venues.forEach(venue => {
               const venueACs = acs.filter(ac => ac.venueId === venue.id);
@@ -2411,85 +2466,47 @@ const AdminDashboard = () => {
     };
 
     // Format time only (HH:MM AM/PM) in PKT
+    // CRITICAL: Backend stores UTC, but UI must display PKT
     const formatTime = (dateString) => {
       if (!dateString) return 'N/A';
       try {
         let date;
-        const originalInput = dateString;
         
         if (dateString instanceof Date) {
-          // If it's already a Date object, check if it's valid
           if (isNaN(dateString.getTime())) {
-            console.error('❌ Invalid Date object:', dateString);
             return 'N/A';
           }
-          // Date objects are stored internally as UTC timestamps
-          // Intl.DateTimeFormat will correctly convert from UTC to PKT
           date = dateString;
         } else if (typeof dateString === 'string') {
           let dateValue = String(dateString).trim();
           
-          // Step 1: Normalize format - replace space with T for ISO format
+          // Normalize format
           if (dateValue.includes(' ') && !dateValue.includes('T')) {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
-          // Step 2: Check for existing timezone indicators
-          const hasZ = dateValue.endsWith('Z');
-          const hasOffset = dateValue.match(/[+-]\d{2}:?\d{2}$/);
-          const hasPKTOffset = dateValue.includes('+05:00') || dateValue.includes('+0500');
-          
-          // Step 3: Handle different date formats
-          if (hasZ) {
-            // Already has UTC indicator, use as-is
-            date = new Date(dateValue);
-          } else if (hasOffset) {
-            // Has timezone offset, use as-is
-            date = new Date(dateValue);
-          } else if (hasPKTOffset) {
-            // Has PKT offset, parse and convert to UTC
-            date = new Date(dateValue);
-          } else if (dateValue.includes('T') || dateValue.match(/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}/)) {
-            // ISO format or date-time format without timezone - CRITICAL: Assume UTC
-            // Remove milliseconds if present
-            dateValue = dateValue.replace(/\.\d{3,}$/, '');
-            // Ensure it ends with 'Z' to force UTC parsing
-            // This is CRITICAL: Without 'Z', JavaScript parses as LOCAL time, causing 5-hour offset
-            if (!dateValue.endsWith('Z') && !dateValue.match(/[+-]\d{2}:?\d{2}$/)) {
-              dateValue = dateValue + 'Z';
-            }
-            date = new Date(dateValue);
-          } else {
-            // Try parsing as-is (might be date-only or other format)
-            date = new Date(dateValue);
+          // CRITICAL: Ensure UTC parsing - add 'Z' if no timezone
+          if (dateValue.includes('T') && !dateValue.endsWith('Z') && !dateValue.match(/[+-]\d{2}:?\d{2}$/)) {
+            dateValue = dateValue.replace(/\.\d{3,}$/, '') + 'Z';
           }
           
-          // Step 4: Validate the parsed date
+          date = new Date(dateValue);
+          
           if (isNaN(date.getTime())) {
-            console.error('❌ Invalid date string:', originalInput);
             return 'N/A';
           }
         } else {
-          console.error('❌ Unexpected date type:', typeof dateString, dateString);
           return 'N/A';
         }
         
-        // Step 5: Final validation
-        if (isNaN(date.getTime())) {
-          console.error('❌ Invalid date object after parsing:', originalInput);
-          return 'N/A';
-        }
-        
-        // Get UTC time directly from backend (no PKT conversion)
-        const utcHours = date.getUTCHours();
-        const utcMinutes = date.getUTCMinutes();
-        
-        // Convert to 12-hour format with AM/PM
-        const utcHour12 = utcHours === 0 ? 12 : (utcHours > 12 ? utcHours - 12 : utcHours);
-        const ampm = utcHours >= 12 ? 'PM' : 'AM';
-        const utcTime = `${String(utcHour12).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} ${ampm}`;
-        
-        return utcTime;
+        // FINAL FIX: Use toLocaleTimeString with Asia/Karachi timezone
+        // This ensures UTC time is displayed as PKT
+        return date.toLocaleTimeString('en-PK', {
+          timeZone: 'Asia/Karachi',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
       } catch (e) {
         console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';
