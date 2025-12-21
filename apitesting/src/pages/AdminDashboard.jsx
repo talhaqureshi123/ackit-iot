@@ -1556,10 +1556,29 @@ const AdminDashboard = () => {
       // Check admin status only (no device lock check for admins)
       
       // If targetState is not provided, toggle to opposite of current state
-      const newState = targetState !== undefined ? targetState : !ac?.isOn;
+      const ac = data.acs.find(a => a.id === acId);
+      if (!ac) {
+        toast.error('AC device not found');
+        console.error('AC not found in data.acs:', acId, 'Available ACs:', data.acs.map(a => a.id));
+        return;
+      }
+      
+      const currentState = ac.isOn || false;
+      const newState = targetState !== undefined ? targetState : !currentState;
+      
+      console.log('🔌 Toggling AC power:', {
+        acId,
+        acName: ac.name,
+        currentState,
+        newState,
+        targetState
+      });
       
       setAcPowerLoading(prev => ({ ...prev, [acId]: true }));
       const response = await adminAPI.toggleAdminACPower(acId, newState);
+      
+      console.log('✅ Toggle AC power response:', response?.data);
+      
       const updatedAC = response?.data?.ac || response?.data?.data?.ac;
       const finalState = updatedAC?.isOn !== undefined ? updatedAC.isOn : newState;
       
@@ -1573,22 +1592,27 @@ const AdminDashboard = () => {
           ...prev,
           acs: prev.acs.map(a => a.id === acId ? { ...a, ...updatedAC } : a)
         }));
+      } else {
+        // If response doesn't have updated AC, update manually
+        setData(prev => ({
+          ...prev,
+          acs: prev.acs.map(a => a.id === acId ? { ...a, isOn: finalState } : a)
+        }));
       }
       
       // Refresh data to get latest state
       await loadData(false);
       
       // Update state again after loadData to ensure consistency
-      if (updatedAC) {
-        setData(prev => ({
-          ...prev,
-          acs: prev.acs.map(a => a.id === acId ? { ...a, ...updatedAC, isOn: finalState } : a)
-        }));
-      }
+      setData(prev => ({
+        ...prev,
+        acs: prev.acs.map(a => a.id === acId ? { ...a, isOn: finalState } : a)
+      }));
     } catch (error) {
+      console.error('❌ Toggle AC power error:', error);
+      console.error('Error response:', error.response?.data);
       const errorMessage = getRestrictionMessage(error);
       toast.error(errorMessage);
-      console.error('Toggle AC power error:', error);
     } finally {
       setAcPowerLoading(prev => ({ ...prev, [acId]: false }));
     }
