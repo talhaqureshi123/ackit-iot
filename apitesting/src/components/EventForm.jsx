@@ -267,29 +267,48 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
         }
         
         // Verify the conversion
-        // If input is 13:32 PKT, UTC should be 08:32 (13:32 - 5 hours)
+        // If input is 8:16 PKT, UTC should be 3:16 (8:16 - 5 hours)
         const utcHours = dateWithTimezone.getUTCHours();
         const utcMinutes = dateWithTimezone.getUTCMinutes();
-        const expectedUTCHours = hours >= 5 ? (hours - 5) : (hours + 24 - 5);
         
-        // Debug log
-        console.log('🕐 PKT to UTC Conversion:', {
-          input: dateTimeString,
-          interpretedAsPKT: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} PKT`,
-          convertedToUTC: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
-          expectedUTC: `${String(expectedUTCHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} UTC`,
-          isoString: dateWithTimezone.toISOString(),
-          verification: utcHours === expectedUTCHours ? '✅ Correct' : '❌ Mismatch'
-        });
+        // Calculate expected UTC: PKT - 5 hours
+        // Handle day rollover: if hours < 5, subtract from previous day
+        let expectedUTCHours;
+        if (hours >= 5) {
+          expectedUTCHours = hours - 5;
+        } else {
+          // If hours < 5, we go to previous day (e.g., 3:16 PKT = 22:16 previous day UTC)
+          expectedUTCHours = hours + 24 - 5;
+        }
         
-        // Double-check: Convert back to PKT to verify
+        // Verify conversion is correct
+        if (utcHours !== expectedUTCHours) {
+          console.error('❌ PKT to UTC conversion mismatch!', {
+            input: dateTimeString,
+            inputPKT: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} PKT`,
+            convertedUTC: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
+            expectedUTC: `${String(expectedUTCHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
+            isoString: dateWithTimezone.toISOString()
+          });
+        }
+        
+        // Double-check: Convert back to PKT to verify it matches input
         const backToPKT = dateWithTimezone.toLocaleString('en-US', {
           timeZone: 'Asia/Karachi',
           hour: '2-digit',
           minute: '2-digit',
           hour12: false
         });
-        console.log('   Verification (UTC back to PKT):', backToPKT);
+        const [backHour, backMin] = backToPKT.split(':').map(Number);
+        
+        // Verify round-trip conversion
+        if (backHour !== hours || backMin !== minutes) {
+          console.error('❌ Round-trip conversion failed!', {
+            input: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} PKT`,
+            convertedBack: backToPKT,
+            mismatch: true
+          });
+        }
         
         return dateWithTimezone; // Date object stores UTC internally
       };
@@ -341,6 +360,8 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
       // Extract time part for comparison
       const inputStartTime = formData.startTime.split('T')[1];
       const verifyStartTime = verifyStartPKT.split(', ')[1]?.substring(0, 5); // HH:MM
+      const inputEndTime = formData.endTime.split('T')[1];
+      const verifyEndTime = verifyEndPKT.split(', ')[1]?.substring(0, 5); // HH:MM
       
       // Debug logging - shows timezone conversion
       console.log('⏰ Time Conversion (PKT → UTC):');
@@ -348,16 +369,27 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
       console.log('  🔄 UTC for backend:', startTimeUTC);
       console.log('  ✅ Verification - UTC back to PKT:', verifyStartPKT, `(${verifyStartTime})`);
       console.log('  🎯 Match:', inputStartTime === verifyStartTime ? '✅ CORRECT' : '❌ MISMATCH');
-      console.log('  📥 Form input (endTime - PKT):', formData.endTime);
+      console.log('  📥 Form input (endTime - PKT):', formData.endTime, `(${inputEndTime})`);
       console.log('  🔄 UTC for backend:', endTimeUTC);
-      console.log('  ✅ Verification - UTC back to PKT:', verifyEndPKT);
+      console.log('  ✅ Verification - UTC back to PKT:', verifyEndPKT, `(${verifyEndTime})`);
+      console.log('  🎯 Match:', inputEndTime === verifyEndTime ? '✅ CORRECT' : '❌ MISMATCH');
       
-      // Warn if conversion doesn't match
+      // Warn if conversion doesn't match - this is critical!
       if (inputStartTime !== verifyStartTime) {
-        console.warn('⚠️ TIMEZONE CONVERSION MISMATCH!');
-        console.warn('   Input time:', inputStartTime);
-        console.warn('   Converted back:', verifyStartTime);
-        console.warn('   This means the time will display incorrectly!');
+        console.error('❌ TIMEZONE CONVERSION MISMATCH FOR START TIME!');
+        console.error('   Input time (PKT):', inputStartTime);
+        console.error('   Converted back (PKT):', verifyStartTime);
+        console.error('   UTC stored:', startTimeUTC);
+        console.error('   This means the time will display incorrectly!');
+        toast.error(`Time conversion error: ${inputStartTime} PKT converted incorrectly`);
+      }
+      
+      if (inputEndTime !== verifyEndTime) {
+        console.error('❌ TIMEZONE CONVERSION MISMATCH FOR END TIME!');
+        console.error('   Input time (PKT):', inputEndTime);
+        console.error('   Converted back (PKT):', verifyEndTime);
+        console.error('   UTC stored:', endTimeUTC);
+        toast.error(`Time conversion error: ${inputEndTime} PKT converted incorrectly`);
       }
     } else {
       // For recurring events, use dummy startTime/endTime (required by backend validation)

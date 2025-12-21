@@ -3,7 +3,7 @@ const Organization = require("../../../models/Organization/organization");
 const AC = require("../../../models/AC/ac");
 const Manager = require("../../../models/Roleaccess/manager");
 const Venue = require("../../../models/Venue/venue");
-const { Op } = require("sequelize");
+const { Op, Sequelize } = require("sequelize");
 const Services = require("../../../services");
 const ESPService = Services.getESPService();
 const timezoneUtils = require("../../../utils/timezone");
@@ -167,32 +167,120 @@ class ManagerEventService {
         // We MUST ensure they are parsed as UTC, not local time
         let startTimeStr = String(eventData.startTime).trim();
         let endTimeStr = String(eventData.endTime).trim();
-        
+
+        // CRITICAL FIX: Frontend already sends UTC time (e.g., "2025-12-21T03:40:00.000Z")
+        // We must parse it as UTC and store it as-is, without any timezone conversion
         // Ensure ISO strings are treated as UTC
         // If no timezone indicator, assume it's UTC and add 'Z'
-        if (startTimeStr.includes('T') && !startTimeStr.endsWith('Z') && !startTimeStr.match(/[+-]\d{2}:?\d{2}$/)) {
-          startTimeStr = startTimeStr.replace(/\.\d{3}$/, '') + 'Z';
+        if (
+          startTimeStr.includes("T") &&
+          !startTimeStr.endsWith("Z") &&
+          !startTimeStr.match(/[+-]\d{2}:?\d{2}$/)
+        ) {
+          startTimeStr = startTimeStr.replace(/\.\d{3,}$/, "") + "Z";
         }
-        if (endTimeStr.includes('T') && !endTimeStr.endsWith('Z') && !endTimeStr.match(/[+-]\d{2}:?\d{2}$/)) {
-          endTimeStr = endTimeStr.replace(/\.\d{3}$/, '') + 'Z';
+        if (
+          endTimeStr.includes("T") &&
+          !endTimeStr.endsWith("Z") &&
+          !endTimeStr.match(/[+-]\d{2}:?\d{2}$/)
+        ) {
+          endTimeStr = endTimeStr.replace(/\.\d{3,}$/, "") + "Z";
         }
-        
+
+        // CRITICAL: Parse as UTC explicitly
         startTime = new Date(startTimeStr);
         endTime = new Date(endTimeStr);
+
+        // CRITICAL: Verify the parsed times are correct UTC
+        // Extract expected UTC time from the ISO string
+        const startTimeMatch = startTimeStr.match(/T(\d{2}):(\d{2})/);
+        const endTimeMatch = endTimeStr.match(/T(\d{2}):(\d{2})/);
+
+        if (startTimeMatch && endTimeMatch) {
+          const expectedStartHour = parseInt(startTimeMatch[1], 10);
+          const expectedStartMin = parseInt(startTimeMatch[2], 10);
+          const expectedEndHour = parseInt(endTimeMatch[1], 10);
+          const expectedEndMin = parseInt(endTimeMatch[2], 10);
+
+          // Verify parsing is correct
+          if (
+            startTime.getUTCHours() !== expectedStartHour ||
+            startTime.getUTCMinutes() !== expectedStartMin
+          ) {
+            console.error("❌ CRITICAL: Start time parsing mismatch!", {
+              received: startTimeStr,
+              expectedUTC: `${String(expectedStartHour).padStart(
+                2,
+                "0"
+              )}:${String(expectedStartMin).padStart(2, "0")} UTC`,
+              parsedUTC: `${String(startTime.getUTCHours()).padStart(
+                2,
+                "0"
+              )}:${String(startTime.getUTCMinutes()).padStart(2, "0")} UTC`,
+            });
+            // Force correct UTC time
+            startTime = new Date(
+              Date.UTC(
+                startTime.getUTCFullYear(),
+                startTime.getUTCMonth(),
+                startTime.getUTCDate(),
+                expectedStartHour,
+                expectedStartMin,
+                0,
+                0
+              )
+            );
+          }
+
+          if (
+            endTime.getUTCHours() !== expectedEndHour ||
+            endTime.getUTCMinutes() !== expectedEndMin
+          ) {
+            console.error("❌ CRITICAL: End time parsing mismatch!", {
+              received: endTimeStr,
+              expectedUTC: `${String(expectedEndHour).padStart(
+                2,
+                "0"
+              )}:${String(expectedEndMin).padStart(2, "0")} UTC`,
+              parsedUTC: `${String(endTime.getUTCHours()).padStart(
+                2,
+                "0"
+              )}:${String(endTime.getUTCMinutes()).padStart(2, "0")} UTC`,
+            });
+            // Force correct UTC time
+            endTime = new Date(
+              Date.UTC(
+                endTime.getUTCFullYear(),
+                endTime.getUTCMonth(),
+                endTime.getUTCDate(),
+                expectedEndHour,
+                expectedEndMin,
+                0,
+                0
+              )
+            );
+          }
+        }
 
         // Verify dates are valid
         if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
           throw new Error("Invalid startTime or endTime format");
         }
-        
+
         // Log for debugging - show what was received and how it was parsed
-        console.log('📅 Manager Event time parsing (non-recurring):', {
+        console.log("📅 Manager Event time parsing (non-recurring):", {
           receivedStartTime: eventData.startTime,
           parsedStartTime: startTime.toISOString(),
           receivedEndTime: eventData.endTime,
           parsedEndTime: endTime.toISOString(),
-          startTimePKT: timezoneUtils.formatPakistanTime(startTime, "YYYY-MM-DD HH:mm:ss"),
-          endTimePKT: timezoneUtils.formatPakistanTime(endTime, "YYYY-MM-DD HH:mm:ss")
+          startTimePKT: timezoneUtils.formatPakistanTime(
+            startTime,
+            "YYYY-MM-DD HH:mm:ss"
+          ),
+          endTimePKT: timezoneUtils.formatPakistanTime(
+            endTime,
+            "YYYY-MM-DD HH:mm:ss"
+          ),
         });
 
         if (endTime <= startTime) {
@@ -244,7 +332,10 @@ class ManagerEventService {
 
       const orgIds = managerOrgs.map((org) => org.id);
 
-      console.log(`🔍 [EVENT-CREATE] Manager ${managerId} has ${orgIds.length} organizations:`, orgIds);
+      console.log(
+        `🔍 [EVENT-CREATE] Manager ${managerId} has ${orgIds.length} organizations:`,
+        orgIds
+      );
 
       if (orgIds.length === 0) {
         throw new Error("No organizations assigned to this manager");
@@ -267,33 +358,52 @@ class ManagerEventService {
         transaction,
       });
       const venueIds = venues.map((v) => v.id);
-      console.log(`🔍 [EVENT-CREATE] Found ${venueIds.length} venues:`, venueIds);
+      console.log(
+        `🔍 [EVENT-CREATE] Found ${venueIds.length} venues:`,
+        venueIds
+      );
 
       // ACs have venueId which references organizations table
       // But to be safe, check both orgIds and venueIds (in case of data inconsistency)
       // Combine both for lookup
       const allPossibleIds = [...orgIds, ...venueIds];
       const uniqueIds = [...new Set(allPossibleIds)];
-      console.log(`🔍 [EVENT-CREATE] Checking device with venueId in:`, uniqueIds);
+      console.log(
+        `🔍 [EVENT-CREATE] Checking device with venueId in:`,
+        uniqueIds
+      );
 
       // Verify device belongs to manager if deviceId is provided
       if (eventData.deviceId) {
-        console.log(`🔍 [EVENT-CREATE] Looking for device ${eventData.deviceId} with venueId in:`, uniqueIds);
-        
+        console.log(
+          `🔍 [EVENT-CREATE] Looking for device ${eventData.deviceId} with venueId in:`,
+          uniqueIds
+        );
+
         // First, check if device exists at all
         const deviceExists = await AC.findByPk(eventData.deviceId, {
           attributes: ["id", "name", "venueId"],
           transaction,
         });
-        
+
         if (deviceExists) {
-          console.log(`🔍 [EVENT-CREATE] Device ${eventData.deviceId} exists with venueId: ${deviceExists.venueId}`);
-          console.log(`🔍 [EVENT-CREATE] Checking if venueId ${deviceExists.venueId} is in orgIds:`, orgIds.includes(deviceExists.venueId));
-          console.log(`🔍 [EVENT-CREATE] Checking if venueId ${deviceExists.venueId} is in venueIds:`, venueIds.includes(deviceExists.venueId));
+          console.log(
+            `🔍 [EVENT-CREATE] Device ${eventData.deviceId} exists with venueId: ${deviceExists.venueId}`
+          );
+          console.log(
+            `🔍 [EVENT-CREATE] Checking if venueId ${deviceExists.venueId} is in orgIds:`,
+            orgIds.includes(deviceExists.venueId)
+          );
+          console.log(
+            `🔍 [EVENT-CREATE] Checking if venueId ${deviceExists.venueId} is in venueIds:`,
+            venueIds.includes(deviceExists.venueId)
+          );
         } else {
-          console.log(`❌ [EVENT-CREATE] Device ${eventData.deviceId} does not exist in database`);
+          console.log(
+            `❌ [EVENT-CREATE] Device ${eventData.deviceId} does not exist in database`
+          );
         }
-        
+
         // Find AC where venueId matches manager's organizations OR venues
         const device = await AC.findOne({
           where: {
@@ -318,11 +428,16 @@ class ManagerEventService {
         });
 
         if (!device) {
-          console.error(`❌ [EVENT-CREATE] Device ${eventData.deviceId} not found or venueId (${deviceExists?.venueId}) does not match manager's orgIds:`, orgIds);
+          console.error(
+            `❌ [EVENT-CREATE] Device ${eventData.deviceId} not found or venueId (${deviceExists?.venueId}) does not match manager's orgIds:`,
+            orgIds
+          );
           throw new Error("Device not found or not assigned to this manager");
         }
-        
-        console.log(`✅ [EVENT-CREATE] Device ${device.id} (${device.name}) found with venueId: ${device.venueId}`);
+
+        console.log(
+          `✅ [EVENT-CREATE] Device ${device.id} (${device.name}) found with venueId: ${device.venueId}`
+        );
       }
 
       // No organization events - only device events are allowed
@@ -416,6 +531,42 @@ class ManagerEventService {
         await device.save({ transaction });
       }
 
+      // CRITICAL: Sequelize's timezone: "+05:00" setting causes it to convert dates
+      // When storing a Date object, Sequelize interprets it in the configured timezone
+      // and converts to UTC. This causes a 5-hour offset.
+      // Solution: Use Sequelize.literal with explicit UTC timestamp
+
+      // Get UTC timestamps as ISO strings (already in UTC format)
+      const startTimeUTCString = startTime.toISOString();
+      const endTimeUTCString = endTime.toISOString();
+
+      // CRITICAL: Verify the UTC times are correct before storing
+      console.log("🔍 [MANAGER] Pre-storage UTC verification:", {
+        startTimeISO: startTimeUTCString,
+        startTimeUTC: `${String(startTime.getUTCHours()).padStart(
+          2,
+          "0"
+        )}:${String(startTime.getUTCMinutes()).padStart(2, "0")} UTC`,
+        endTimeISO: endTimeUTCString,
+        endTimeUTC: `${String(endTime.getUTCHours()).padStart(2, "0")}:${String(
+          endTime.getUTCMinutes()
+        ).padStart(2, "0")} UTC`,
+        receivedFromFrontend: {
+          startTime: eventData.startTime,
+          endTime: eventData.endTime,
+        },
+      });
+
+      // CRITICAL: Store exactly what frontend sends - no timezone conversion
+      // Extract date-time part: '2025-12-21 04:12:00' (without timezone)
+      // PostgreSQL timestamp type stores as-is without timezone conversion
+      const startTimeSQL = startTimeUTCString
+        .replace("T", " ")
+        .replace(/\.\d{3}Z$/, "");
+      const endTimeSQL = endTimeUTCString
+        .replace("T", " ")
+        .replace(/\.\d{3}Z$/, "");
+
       // Create manager event - ONLY device events
       const eventDataToCreate = {
         name: eventData.name,
@@ -425,9 +576,9 @@ class ManagerEventService {
         createdBy: "manager",
         adminId: manager.adminId,
         managerId: managerId,
-        startTime: startTime,
-        endTime: endTime,
-        originalEndTime: endTime, // Store original end time
+        startTime: Sequelize.literal(`'${startTimeSQL}'::timestamp`),
+        endTime: Sequelize.literal(`'${endTimeSQL}'::timestamp`),
+        originalEndTime: Sequelize.literal(`'${endTimeSQL}'::timestamp`), // Store original end time
         temperature: temperature, // Temperature is required
         powerOn: true, // Event will turn device ON when it starts
         status: initialStatus, // "active" for immediate start, "scheduled" for recurring
@@ -451,7 +602,57 @@ class ManagerEventService {
         eventDataToCreate.parentRecurringEventId = null; // This is the parent template
       }
 
+      // CRITICAL: Log what we're about to store
+      console.log("📅 Storing manager event with times:", {
+        startTime: startTimeUTC.toISOString(),
+        endTime: endTimeUTC.toISOString(),
+        startTimeUTC: `${String(startTimeUTC.getUTCHours()).padStart(
+          2,
+          "0"
+        )}:${String(startTimeUTC.getUTCMinutes()).padStart(2, "0")} UTC`,
+        endTimeUTC: `${String(endTimeUTC.getUTCHours()).padStart(
+          2,
+          "0"
+        )}:${String(endTimeUTC.getUTCMinutes()).padStart(2, "0")} UTC`,
+        startTimePKT: timezoneUtils.formatPakistanTime(
+          startTimeUTC,
+          "YYYY-MM-DD HH:mm:ss"
+        ),
+        endTimePKT: timezoneUtils.formatPakistanTime(
+          endTimeUTC,
+          "YYYY-MM-DD HH:mm:ss"
+        ),
+      });
+
       const event = await Event.create(eventDataToCreate, { transaction });
+
+      // CRITICAL: Log what was actually stored
+      console.log("📅 Manager event stored, retrieved times:", {
+        startTime: event.startTime ? event.startTime.toISOString() : "null",
+        endTime: event.endTime ? event.endTime.toISOString() : "null",
+        startTimeUTC: event.startTime
+          ? `${String(event.startTime.getUTCHours()).padStart(2, "0")}:${String(
+              event.startTime.getUTCMinutes()
+            ).padStart(2, "0")} UTC`
+          : "null",
+        endTimeUTC: event.endTime
+          ? `${String(event.endTime.getUTCHours()).padStart(2, "0")}:${String(
+              event.endTime.getUTCMinutes()
+            ).padStart(2, "0")} UTC`
+          : "null",
+        startTimePKT: event.startTime
+          ? timezoneUtils.formatPakistanTime(
+              event.startTime,
+              "YYYY-MM-DD HH:mm:ss"
+            )
+          : "null",
+        endTimePKT: event.endTime
+          ? timezoneUtils.formatPakistanTime(
+              event.endTime,
+              "YYYY-MM-DD HH:mm:ss"
+            )
+          : "null",
+      });
 
       // If event should start immediately, apply event settings
       if (shouldStartImmediately) {
@@ -500,10 +701,14 @@ class ManagerEventService {
                 temperature: temperature,
               }
             );
-            await ESPService.sendEventStatusMessage(device.serialNumber, "event temp", {
-              eventId: event.id,
-              temperature: temperature,
-            });
+            await ESPService.sendEventStatusMessage(
+              device.serialNumber,
+              "event temp",
+              {
+                eventId: event.id,
+                temperature: temperature,
+              }
+            );
             console.log(
               `✅ [EVENT-CREATE] Event temperature ${temperature}°C rendered on device ${device.serialNumber}`
             );
@@ -653,10 +858,58 @@ class ManagerEventService {
         `📅 [MANAGER-EVENTS] Found ${events.length} events for manager ${managerId}`
       );
 
+      // CRITICAL: Convert Sequelize instances to plain objects and ensure dates are UTC
+      const plainEvents = events.map((event) => {
+        const plainEvent = event.get({ plain: true });
+
+        // CRITICAL FIX: Ensure dates are in UTC format
+        // Sequelize might return dates with timezone conversion applied
+        // We need to ensure they're returned as UTC ISO strings
+        if (plainEvent.startTime) {
+          // If it's a Date object, convert to UTC ISO string
+          if (plainEvent.startTime instanceof Date) {
+            plainEvent.startTime = plainEvent.startTime.toISOString();
+          } else if (typeof plainEvent.startTime === "string") {
+            // If it's already a string, ensure it's UTC (ends with 'Z')
+            if (
+              !plainEvent.startTime.endsWith("Z") &&
+              !plainEvent.startTime.match(/[+-]\d{2}:?\d{2}$/)
+            ) {
+              // Parse and convert to UTC ISO string
+              const date = new Date(plainEvent.startTime);
+              if (!isNaN(date.getTime())) {
+                plainEvent.startTime = date.toISOString();
+              }
+            }
+          }
+        }
+
+        if (plainEvent.endTime) {
+          // If it's a Date object, convert to UTC ISO string
+          if (plainEvent.endTime instanceof Date) {
+            plainEvent.endTime = plainEvent.endTime.toISOString();
+          } else if (typeof plainEvent.endTime === "string") {
+            // If it's already a string, ensure it's UTC (ends with 'Z')
+            if (
+              !plainEvent.endTime.endsWith("Z") &&
+              !plainEvent.endTime.match(/[+-]\d{2}:?\d{2}$/)
+            ) {
+              // Parse and convert to UTC ISO string
+              const date = new Date(plainEvent.endTime);
+              if (!isNaN(date.getTime())) {
+                plainEvent.endTime = date.toISOString();
+              }
+            }
+          }
+        }
+
+        return plainEvent;
+      });
+
       return {
         success: true,
         message: `Found ${events.length} event(s)`,
-        data: { events },
+        data: { events: plainEvents },
         count: events.length,
       };
     } catch (error) {
@@ -848,9 +1101,7 @@ class ManagerEventService {
           // Send OFF command to ESP device
           if (device.serialNumber) {
             ESPService.sendPowerCommand(device.serialNumber, false);
-            console.log(
-              `✅ [EVENT] Turned OFF device ${device.serialNumber}`
-            );
+            console.log(`✅ [EVENT] Turned OFF device ${device.serialNumber}`);
           }
         }
       }

@@ -336,11 +336,11 @@ const ManagerDashboard = () => {
           }));
           
           // Show notification
-          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 1 minute.`, {
-            duration: 4000,
+          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 5 seconds.`, {
+            duration: 3000,
           });
           
-          // Auto-delete after 1 minute (60000ms) - only if still completed
+          // Auto-delete after 5 seconds (5000ms) - only if still completed
           setTimeout(() => {
             setData(prevData => {
               const event = prevData.events.find(e => e && e.id === eventData.eventId);
@@ -356,19 +356,23 @@ const ManagerDashboard = () => {
                 return prevData; // Don't remove if status changed
               }
             });
-          }, 60000); // 1 minute instead of 5 minutes
+          }, 5000); // 5 seconds
         }
 
-        // Handle event deleted - remove immediately
+        // Handle event deleted - remove immediately (REAL-TIME)
         if (message.type === 'EVENT_DELETED' || (message.type === 'ESP32_UPDATE' && message.data && message.data.type === 'EVENT_DELETED')) {
           const eventData = message.type === 'EVENT_DELETED' ? message : message.data;
-          console.log('🗑️ Event deleted received:', eventData);
+          console.log('🗑️ [REAL-TIME] Event deleted received:', eventData);
           
-          // Remove event from list immediately
-          setData(prevData => ({
-            ...prevData,
-            events: prevData.events.filter(event => event && event.id !== eventData.eventId)
-          }));
+          // Remove event from list immediately - no reload needed
+          setData(prevData => {
+            const filteredEvents = prevData.events.filter(event => event && event.id !== eventData.eventId);
+            console.log(`🗑️ [REAL-TIME] Removed event ${eventData.eventId} from list. Remaining: ${filteredEvents.length}`);
+            return {
+              ...prevData,
+              events: filteredEvents
+            };
+          });
           
           toast.success(`Event "${eventData.eventName || 'Unknown'}" has been removed.`, {
             duration: 2000,
@@ -2422,7 +2426,7 @@ const ManagerDashboard = () => {
       }
     };
 
-    // Format time only (HH:MM AM/PM) in PKT
+    // Format time only (HH:MM AM/PM) - Display UTC time directly from backend, no conversion
     const formatTime = (dateString) => {
       if (!dateString) return 'N/A';
       try {
@@ -2472,43 +2476,16 @@ const ManagerDashboard = () => {
           return 'N/A';
         }
         
-        // CRITICAL: Verify the date is actually in UTC
-        // Get UTC hours to verify
+        // Get UTC time directly from backend (no PKT conversion)
         const utcHours = date.getUTCHours();
         const utcMinutes = date.getUTCMinutes();
         
-        // Convert UTC to Pakistan/Karachi time - TIME ONLY
-        // Use 24-hour format first to avoid AM/PM confusion, then convert to 12-hour
-        const timeFormatter24 = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'Asia/Karachi',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false // Get 24-hour format first
-        });
-        
-        const pktTime24 = timeFormatter24.format(date);
-        const [pktHour24, pktMinute] = pktTime24.split(':').map(Number);
-        
-        // Expected PKT time: UTC + 5 hours
-        const expectedPKTHour = (utcHours + 5) % 24;
-        
-        // Debug log to verify conversion (only log normalized value if it exists)
-        const normalizedValue = typeof dateString === 'string' ? dateString.replace(/\s+/, 'T').replace(/\.\d{3}$/, '') + (dateString.includes('T') && !dateString.endsWith('Z') && !dateString.match(/[+-]\d{2}:?\d{2}$/) ? 'Z' : '') : dateString.toString();
-        console.log('🕐 formatTime conversion:', {
-          original: dateString,
-          normalized: normalizedValue,
-          utcTime: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
-          pktTime: `${String(pktHour24).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} PKT`,
-          expectedPKT: `${String(expectedPKTHour).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} PKT`,
-          match: pktHour24 === expectedPKTHour ? '✅ CORRECT' : '❌ MISMATCH'
-        });
-        
         // Convert to 12-hour format with AM/PM
-        const pktHour12 = pktHour24 === 0 ? 12 : (pktHour24 > 12 ? pktHour24 - 12 : pktHour24);
-        const ampm = pktHour24 >= 12 ? 'PM' : 'AM';
-        const pktTime = `${String(pktHour12).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} ${ampm}`;
+        const utcHour12 = utcHours === 0 ? 12 : (utcHours > 12 ? utcHours - 12 : utcHours);
+        const ampm = utcHours >= 12 ? 'PM' : 'AM';
+        const utcTime = `${String(utcHour12).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} ${ampm}`;
         
-        return pktTime;
+        return utcTime;
       } catch (e) {
         console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';
@@ -2521,16 +2498,18 @@ const ManagerDashboard = () => {
       }
       
       // Check if event is waiting to start (startTime is in future)
+      // CRITICAL: Use UTC time for comparison since events are stored in UTC
       const now = new Date();
+      const nowUTC = new Date(now.toISOString());
       const eventStartTime = startTime ? new Date(startTime) : null;
       const eventEndTime = endTime ? new Date(endTime) : null;
       
-      // If event is scheduled and startTime is in future, show "Waiting for Starting Time"
-      // If event is active but startTime hasn't arrived yet, also show "Waiting for Starting Time"
-      const isWaitingToStart = eventStartTime && eventStartTime > now;
+      // If event is scheduled and startTime is in future (UTC), show "Waiting"
+      // Compare in UTC to match backend logic
+      const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
       
-      // If event is active but endTime has passed, show "Complete"
-      const isCompleted = eventEndTime && eventEndTime <= now && status === 'active';
+      // If event is active but endTime has passed (UTC), show "Complete"
+      const isCompleted = eventEndTime && eventEndTime.getTime() <= nowUTC.getTime() && status === 'active';
       
       // Determine actual status based on time
       let actualStatus = status;
@@ -2637,14 +2616,18 @@ const ManagerDashboard = () => {
               const isLoading = eventActionLoading[event.id];
               const canStart = event.status === 'scheduled' && !event.isDisabled;
               const canStop = event.status === 'active' && !event.isDisabled;
-              const canEdit = !event.isDisabled && event.status !== 'active';
-              const canDelete = event.status !== 'active';
+              const canEdit = !event.isDisabled && event.status !== 'active' && event.status !== 'completed';
+              const canDelete = event.status !== 'active' && event.status !== 'completed';
+              const canEnable = event.isDisabled && (event.status === 'scheduled' || event.status === 'active');
+              const canDisable = !event.isDisabled && (event.status === 'scheduled' || event.status === 'active');
               
+              // CRITICAL: Use UTC time for comparison since events are stored in UTC
               const now = new Date();
+              const nowUTC = new Date(now.toISOString());
               const eventStartTime = event.startTime ? new Date(event.startTime) : null;
               const eventEndTime = event.endTime ? new Date(event.endTime) : null;
-              const isWaitingToStart = eventStartTime && eventStartTime > now;
-              const isCompleted = eventEndTime && eventEndTime <= now && event.status === 'active';
+              const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
+              const isCompleted = eventEndTime && eventEndTime.getTime() <= nowUTC.getTime() && event.status === 'active';
               
               let actualStatus = event.status;
               if (isWaitingToStart && (event.status === 'scheduled' || event.status === 'active')) {
@@ -2740,12 +2723,12 @@ const ManagerDashboard = () => {
                     </div>
 
                     {/* Action Buttons - Compact */}
-                    <div className="flex gap-1.5 mt-auto">
+                    <div className="flex flex-wrap gap-1.5 mt-auto">
                       {canStart && (
                         <button
                           onClick={() => handleEventAction(event.id, 'start')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Start event"
                         >
                           <Play className="w-3 h-3" />
@@ -2756,11 +2739,33 @@ const ManagerDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'stop')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Stop event"
                         >
                           <Square className="w-3 h-3" />
                           <span>Stop</span>
+                        </button>
+                      )}
+                      {canEnable && (
+                        <button
+                          onClick={() => handleEventAction(event.id, 'enable')}
+                          disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          title="Enable event"
+                        >
+                          <Play className="w-3 h-3" />
+                          <span>Enable</span>
+                        </button>
+                      )}
+                      {canDisable && (
+                        <button
+                          onClick={() => handleEventAction(event.id, 'disable')}
+                          disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          title="Disable event"
+                        >
+                          <Square className="w-3 h-3" />
+                          <span>Disable</span>
                         </button>
                       )}
                       {canEdit && (
@@ -2770,7 +2775,7 @@ const ManagerDashboard = () => {
                             setShowEventModal(true);
                           }}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Edit event"
                         >
                           <Edit className="w-3 h-3" />
@@ -2781,7 +2786,7 @@ const ManagerDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'delete')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Delete event"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -2789,7 +2794,7 @@ const ManagerDashboard = () => {
                         </button>
                       )}
                       {isLoading && (
-                        <div className="flex-1 flex items-center justify-center">
+                        <div className="flex-1 flex items-center justify-center min-w-[70px]">
                           <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                         </div>
                       )}
