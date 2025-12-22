@@ -5689,8 +5689,9 @@ const AdminDashboard = () => {
                 const formData = new FormData(e.target);
                 const acData = {
                   name: formData.get('name'),
-                  brand: formData.get('brand') || '',
-                  model: formData.get('model') || '',
+                  brand: formData.get('brand'),
+                  model: formData.get('model'),
+                  ton: formData.get('ton'),
                   serialNumber: formData.get('serialNumber'),
                   venueId: parseInt(formData.get('venueId')),
                   temperature: parseInt(formData.get('temperature')) || 22
@@ -5727,23 +5728,39 @@ const AdminDashboard = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
                   <input
                     type="text"
                     name="brand"
+                    required
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Enter brand"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Model *</label>
                   <input
                     type="text"
                     name="model"
+                    required
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Enter model"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">AC Capacity (Ton) *</label>
+                <select
+                  name="ton"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select Capacity</option>
+                  <option value="0.5">0.5 Ton</option>
+                  <option value="1">1 Ton</option>
+                  <option value="1.5">1.5 Ton</option>
+                  <option value="2">2 Ton</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Venue *</label>
