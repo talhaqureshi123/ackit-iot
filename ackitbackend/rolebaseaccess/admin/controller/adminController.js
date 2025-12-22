@@ -1375,6 +1375,215 @@ class AdminController {
       });
     }
   }
+
+  // 16B. ASSIGN MANAGER TO VENUES
+  async assignManagerToVenues(req, res) {
+    try {
+      // Session validated by authenticateAdmin middleware
+      const { managerId } = req.params;
+      const { venueIds } = req.body;
+      const adminId = req.admin.id;
+
+      console.log("🔍 Assign Manager to Venues - Request received:", {
+        managerId,
+        venueIds,
+        adminId,
+        managerIdType: typeof managerId,
+        venueIdsType: Array.isArray(venueIds)
+          ? venueIds.map((id) => typeof id)
+          : typeof venueIds,
+      });
+
+      // Convert managerId to integer
+      const managerIdInt = parseInt(managerId, 10);
+      if (isNaN(managerIdInt)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid manager ID",
+        });
+      }
+
+      if (!venueIds || !Array.isArray(venueIds)) {
+        return res.status(400).json({
+          success: false,
+          message: "venueIds array is required",
+        });
+      }
+
+      // Convert venueIds to integers
+      const venueIdsInt = venueIds
+        .map((id) => parseInt(id, 10))
+        .filter((id) => !isNaN(id));
+      if (venueIdsInt.length !== venueIds.length) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid venue IDs provided",
+        });
+      }
+
+      // Verify manager belongs to admin
+      const manager = await Manager.findOne({
+        where: { id: managerIdInt, adminId: adminId },
+      });
+      if (!manager) {
+        console.error("❌ Manager not found:", {
+          managerId: managerIdInt,
+          adminId,
+        });
+        return res.status(404).json({
+          success: false,
+          message: "Manager not found or unauthorized",
+        });
+      }
+
+      console.log("✅ Manager found:", { id: manager.id, name: manager.name });
+
+      // Verify venues belong to admin
+      const venues = await Venue.findAll({
+        where: {
+          id: { [Op.in]: venueIdsInt },
+          adminId: adminId,
+          status: { [Op.ne]: "split" }, // Exclude split venues
+        },
+        attributes: [
+          "id",
+          "name",
+          "organizationId",
+          "adminId",
+          "managerId",
+          "status",
+          "createdAt",
+          "updatedAt",
+        ],
+      });
+
+      console.log("📊 Venues found:", {
+        requested: venueIdsInt.length,
+        found: venues.length,
+        foundIds: venues.map((venue) => venue.id),
+      });
+
+      if (venues.length !== venueIdsInt.length) {
+        const foundIds = venues.map((venue) => venue.id);
+        const missingIds = venueIdsInt.filter((id) => !foundIds.includes(id));
+        console.error("❌ Some venues not found:", {
+          missingIds,
+          adminId,
+        });
+        return res.status(400).json({
+          success: false,
+          message: `Some venues not found or unauthorized. Missing IDs: ${missingIds.join(
+            ", "
+          )}`,
+        });
+      }
+
+      // Update venues with manager assignment
+      const updateResult = await Venue.update(
+        { managerId: managerIdInt },
+        {
+          where: {
+            id: { [Op.in]: venueIdsInt },
+            adminId: adminId,
+          },
+        }
+      );
+      console.log("✅ Venue.update result:", updateResult);
+      console.log("✅ Venues updated:", {
+        rowsAffected: updateResult[0],
+        managerId: managerIdInt,
+        venueIds: venueIdsInt,
+      });
+
+      // Log activity
+      await ActivityLog.create({
+        adminId: adminId,
+        action: "ASSIGN_MANAGER_TO_VENUES",
+        targetType: "manager",
+        targetId: managerIdInt,
+        details: `Assigned manager ${manager.name} to ${venueIdsInt.length} venue(s)`,
+      });
+
+      // Broadcast assignment change to all frontend clients (admin and manager)
+      try {
+        const Services = require("../../../services");
+        const ESPService = Services.getESPService();
+        ESPService.broadcastToFrontend({
+          type: "VENUE_ASSIGNED",
+          managerId: managerIdInt,
+          managerName: manager.name,
+          venueIds: venueIdsInt,
+          venues: venues.map((venue) => ({
+            id: venue.id,
+            name: venue.name,
+          })),
+          timestamp: new Date().toISOString(),
+        });
+        console.log(
+          `📡 [ADMIN-CONTROLLER] Broadcasted venue assignment to all frontend clients`
+        );
+      } catch (broadcastError) {
+        console.error(
+          "⚠️ Error broadcasting assignment change:",
+          broadcastError
+        );
+        // Don't fail the operation if broadcast fails
+      }
+
+      console.log("✅ Manager venue assignment successful:", {
+        managerId: managerIdInt,
+        managerName: manager.name,
+        venuesCount: venueIdsInt.length,
+      });
+
+      res.json({
+        success: true,
+        message: `Manager assigned to ${venueIdsInt.length} venue(s)`,
+        manager: {
+          id: manager.id,
+          name: manager.name,
+          email: manager.email,
+        },
+        venues: venues.map((venue) => ({
+          id: venue.id,
+          name: venue.name,
+          managerId: managerIdInt,
+        })),
+      });
+    } catch (error) {
+      console.error("❌ Assign manager to venues error:", error);
+      console.error("Error stack:", error.stack);
+      console.error("Error details:", {
+        message: error.message,
+        name: error.name,
+        original: error.original?.message,
+        sql: error.sql,
+        parameters: error.parameters,
+      });
+
+      // Provide more detailed error message
+      let errorMessage = "Error assigning manager to venues";
+      if (error.original?.message) {
+        errorMessage = error.original.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      res.status(500).json({
+        success: false,
+        message: errorMessage,
+        error: error.message,
+        details:
+          process.env.NODE_ENV === "development"
+            ? {
+                original: error.original?.message,
+                sql: error.sql,
+              }
+            : undefined,
+      });
+    }
+  }
+
   // 17. SYSTEM LOCK/UNLOCK (ADMIN CONTROL)
   async lockSystem(req, res) {
     try {

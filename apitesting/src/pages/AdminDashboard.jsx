@@ -932,6 +932,23 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleAssignVenues = async (managerId, venueIds) => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.assignManagerToVenues(managerId, venueIds);
+      toast.success(response.data?.message || 'Venues assigned to manager successfully');
+      await loadData(false);
+      return response;
+    } catch (error) {
+      console.error('Assign venues error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to assign venues';
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Create Organization Handler
   const handleCreateOrganization = async (orgData) => {
     try {
@@ -4365,7 +4382,7 @@ const AdminDashboard = () => {
                       </div>
                     )}
                     
-                    {/* Assign Organizations Button */}
+                    {/* Assign Button */}
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <button
                         onClick={() => {
@@ -4373,10 +4390,10 @@ const AdminDashboard = () => {
                           setShowAssignOrgModal(true);
                         }}
                         className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors shadow-sm hover:shadow"
-                        title="Assign organizations to this manager"
+                        title="Assign organizations and venues to this manager"
                       >
                         <UserPlus className="w-4 h-4" />
-                        <span>Assign Organizations</span>
+                        <span>Assign</span>
                       </button>
                     </div>
                     
@@ -5867,14 +5884,14 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Assign Organization to Manager Modal */}
+      {/* Assign Organizations and Venues to Manager Modal */}
       {showAssignOrgModal && selectedOrgForAssign && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-900">
-                  {selectedOrgForAssign.id ? 'Assign Organization to Manager' : 'Assign Organizations to Manager'}
+                  {selectedOrgForAssign.id ? 'Assign Organization to Manager' : 'Assign to Manager'}
                 </h3>
                 <button
                   onClick={() => {
@@ -5893,31 +5910,50 @@ const AdminDashboard = () => {
                 const formData = new FormData(e.target);
                 let managerId;
                 let organizationIds = [];
+                let venueIds = [];
                 
                 // If coming from manager card, use that managerId
                 if (selectedOrgForAssign.managerId) {
                   managerId = selectedOrgForAssign.managerId;
                   // Get selected organization IDs from checkboxes
-                  const checkboxes = formData.getAll('organizationIds');
-                  organizationIds = checkboxes.map(id => parseInt(id));
+                  const orgCheckboxes = formData.getAll('organizationIds');
+                  organizationIds = orgCheckboxes.map(id => parseInt(id));
+                  // Get selected venue IDs from checkboxes
+                  const venueCheckboxes = formData.getAll('venueIds');
+                  venueIds = venueCheckboxes.map(id => parseInt(id));
                 } else {
                   // If coming from organization card, use selected organization
                   managerId = parseInt(formData.get('managerId'));
                   organizationIds = [selectedOrgForAssign.id];
                 }
                 
-                if (organizationIds.length === 0) {
-                  toast.error('Please select at least one organization');
+                if (organizationIds.length === 0 && venueIds.length === 0) {
+                  toast.error('Please select at least one organization or venue');
                   return;
                 }
                 
                 try {
-                  await handleAssignOrganization(managerId, organizationIds);
+                  setLoading(true);
+                  const promises = [];
+                  
+                  // Assign organizations if any selected
+                  if (organizationIds.length > 0) {
+                    promises.push(handleAssignOrganization(managerId, organizationIds));
+                  }
+                  
+                  // Assign venues if any selected
+                  if (venueIds.length > 0) {
+                    promises.push(handleAssignVenues(managerId, venueIds));
+                  }
+                  
+                  await Promise.all(promises);
                   setShowAssignOrgModal(false);
                   setSelectedOrgForAssign(null);
                   e.target.reset();
                 } catch (error) {
-                  // Error already handled in handleAssignOrganization
+                  // Error already handled in handlers
+                } finally {
+                  setLoading(false);
                 }
               }}
               className="p-6 space-y-4"
@@ -5945,7 +5981,7 @@ const AdminDashboard = () => {
                   </div>
                 </>
               ) : (
-                // Multiple organizations assignment (from manager card)
+                // Multiple organizations and venues assignment (from manager card)
                 <>
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                     <p className="text-sm font-semibold text-green-900 mb-1">Manager:</p>
@@ -5954,11 +5990,12 @@ const AdminDashboard = () => {
                     </p>
                   </div>
                   
+                  {/* Organizations Section */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Organizations to Assign *
+                      Select Organizations to Assign
                     </label>
-                    <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
                       {data.organizations.filter(org => !org.managerId || org.managerId !== selectedOrgForAssign.managerId).map(org => (
                         <label key={org.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
                           <input
@@ -5975,7 +6012,33 @@ const AdminDashboard = () => {
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      This will assign the selected organizations including all existing and future venues to the manager.
+                      Assigning an organization will also assign all existing and future venues in that organization.
+                    </p>
+                  </div>
+
+                  {/* Venues Section */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Venues to Assign
+                    </label>
+                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                      {data.venues.filter(venue => !venue.managerId || venue.managerId !== selectedOrgForAssign.managerId).map(venue => (
+                        <label key={venue.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="venueIds"
+                            value={venue.id}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700">{venue.name}</span>
+                        </label>
+                      ))}
+                      {data.venues.filter(venue => !venue.managerId || venue.managerId !== selectedOrgForAssign.managerId).length === 0 && (
+                        <p className="text-sm text-gray-500 text-center py-4">All venues are already assigned</p>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      You can assign individual venues or entire organizations to the manager.
                     </p>
                   </div>
                 </>
@@ -5997,7 +6060,7 @@ const AdminDashboard = () => {
                   disabled={loading}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
                 >
-                  {loading ? 'Assigning...' : 'Assign Organization'}
+                  {loading ? 'Assigning...' : selectedOrgForAssign.id ? 'Assign Organization' : 'Assign'}
                 </button>
               </div>
             </form>
