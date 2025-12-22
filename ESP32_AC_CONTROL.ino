@@ -9,9 +9,12 @@
 // ==================== CONFIGURATION ====================
 const char* ssid = "Talha";
 const char* password = "1234567890";
-const char* websocket_server = "10.165.92.140";
-const int websocket_port = 5050;
+
+// Railway Configuration
+const char* websocket_server = "ackit-iot-production.up.railway.app";
+const int websocket_port = 443;  // WSS uses port 443 (HTTPS port)
 const char* websocket_path = "/esp32";
+
 const char* serial_number = "AC-919834-359";
 
 // ==================== PINS ====================
@@ -152,13 +155,12 @@ void setup() {
   }
 
   webSocket.onEvent(webSocketEvent);
-  IPAddress serverIP;
-  bool ipParsed = serverIP.fromString(websocket_server);
-  if (ipParsed) {
-    webSocket.begin(serverIP, websocket_port, websocket_path);
-  } else {
-    webSocket.begin(websocket_server, websocket_port, websocket_path);
-  }
+  
+  // Railway: Use SSL (WSS - secure WebSocket)
+  // Note: WebSocketsClient library automatically handles SSL when using beginSSL
+  webSocket.beginSSL(websocket_server, websocket_port, websocket_path);
+  Serial.printf("🔐 [WS] Connecting to Railway (WSS): wss://%s:%d%s\n", websocket_server, websocket_port, websocket_path);
+  
   webSocket.setReconnectInterval(5000);
   
   // Initial display update

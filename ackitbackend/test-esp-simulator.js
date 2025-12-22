@@ -23,7 +23,9 @@ const WEBSOCKET_PATH = "/esp32";
 // Railway Configuration
 // Default: Use Railway if RAILWAY_BACKEND_URL is set, otherwise use local
 // Override: --railway (force Railway), --local (force local)
-const RAILWAY_BACKEND_URL = process.env.RAILWAY_BACKEND_URL || "https://ackit-iot-production.up.railway.app";
+const RAILWAY_BACKEND_URL =
+  process.env.RAILWAY_BACKEND_URL ||
+  "https://ackit-iot-production.up.railway.app";
 const USE_RAILWAY = (() => {
   // Explicit flags take priority
   if (process.argv.includes("--local")) return false;
@@ -40,7 +42,8 @@ const USE_RAILWAY = (() => {
 const getWebSocketURL = () => {
   if (USE_RAILWAY) {
     // Railway uses WSS (secure WebSocket)
-    const wsUrl = RAILWAY_BACKEND_URL.replace(/^https?/, "wss") + WEBSOCKET_PATH;
+    const wsUrl =
+      RAILWAY_BACKEND_URL.replace(/^https?/, "wss") + WEBSOCKET_PATH;
     return wsUrl;
   }
   // Local development uses WS (unencrypted WebSocket)
@@ -51,8 +54,14 @@ const WS_URL = getWebSocketURL();
 
 // Debug: Log configuration
 console.log("\n📋 Simulator Configuration:");
-console.log(`   └─ Mode: ${USE_RAILWAY ? "🚂 Railway (Production)" : "💻 Local (Development)"}`);
-console.log(`   └─ Server IP: ${USE_RAILWAY ? RAILWAY_BACKEND_URL : SERVER_IP}`);
+console.log(
+  `   └─ Mode: ${
+    USE_RAILWAY ? "🚂 Railway (Production)" : "💻 Local (Development)"
+  }`
+);
+console.log(
+  `   └─ Server IP: ${USE_RAILWAY ? RAILWAY_BACKEND_URL : SERVER_IP}`
+);
 console.log(`   └─ Server Port: ${USE_RAILWAY ? "443 (WSS)" : SERVER_PORT}`);
 console.log(`   └─ WebSocket Path: ${WEBSOCKET_PATH}`);
 console.log(`   └─ Serial Number: ${SERIAL_NUMBER}`);
@@ -62,19 +71,33 @@ console.log("🔗 Device Testing Links:");
 if (USE_RAILWAY) {
   console.log(`   └─ Railway Backend: ${RAILWAY_BACKEND_URL}`);
   console.log(`   └─ Railway WebSocket: ${WS_URL}`);
-  console.log(`   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`);
-  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`);
-  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`);
+  console.log(
+    `   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`
+  );
+  console.log(
+    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`
+  );
+  console.log(
+    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`
+  );
 } else {
   console.log(`   └─ Local Backend: http://${SERVER_IP}:${SERVER_PORT}`);
   console.log(`   └─ Local WebSocket: ${WS_URL}`);
   console.log(`   └─ Railway Backend: ${RAILWAY_BACKEND_URL}`);
-  console.log(`   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`);
-  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`);
-  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`);
+  console.log(
+    `   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`
+  );
+  console.log(
+    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`
+  );
+  console.log(
+    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`
+  );
 }
 console.log("");
-console.log("💡 Tip: Use --railway flag or set USE_RAILWAY=true to connect to Railway");
+console.log(
+  "💡 Tip: Use --railway flag or set USE_RAILWAY=true to connect to Railway"
+);
 console.log("");
 
 let deviceState = {
@@ -149,7 +172,9 @@ function connect() {
   console.log(`📡 Server: ${USE_RAILWAY ? RAILWAY_BACKEND_URL : SERVER_IP}`);
   console.log(`📡 Port: ${USE_RAILWAY ? "443 (WSS)" : SERVER_PORT}`);
   console.log(`📡 Path: ${WEBSOCKET_PATH}`);
-  console.log(`📡 Protocol: ${USE_RAILWAY ? "wss:// (secure)" : "ws:// (unencrypted)"}`);
+  console.log(
+    `📡 Protocol: ${USE_RAILWAY ? "wss:// (secure)" : "ws:// (unencrypted)"}`
+  );
   console.log(`📡 Full URL: ${wsUrl}`);
 
   ws = new WebSocket(wsUrl, {

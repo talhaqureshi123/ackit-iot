@@ -2415,7 +2415,7 @@ const AdminDashboard = () => {
                 step="1"
                 value={hasEvent && eventTemp ? eventTemp : (localTemperatures[`ac-${ac.id}`] !== undefined ? localTemperatures[`ac-${ac.id}`] : (ac.temperature ?? 16))}
                 disabled={hasEvent || temperatureLoading[`ac-${ac.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                className={`w-16 px-1 py-1 text-sm text-center font-bold border rounded bg-white transition-colors ${
+                className={`w-20 sm:w-16 px-2 sm:px-1 py-1.5 sm:py-1 text-base sm:text-sm text-center font-bold border rounded bg-white transition-colors ${
                   hasEvent || temperatureLoading[`ac-${ac.id}`] || user?.status === 'restricted' || user?.status === 'locked'
                     ? 'opacity-50 cursor-not-allowed border-gray-200' 
                     : 'border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
