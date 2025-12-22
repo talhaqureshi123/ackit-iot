@@ -96,6 +96,15 @@ const LoginPage = () => {
       <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col lg:flex-row border border-gray-200">
         {/* Left Side - Login Form */}
         <div className="w-full lg:w-1/2 p-8 lg:p-12 flex flex-col justify-center">
+          {/* Top Image */}
+          <div className="mb-6">
+            <img
+              src="/assets/top image.png"
+              alt="Decoration"
+              className="w-full max-w-sm mx-auto object-contain"
+            />
+          </div>
+          
           {/* Logo */}
           <div className="flex items-center space-x-2 mb-8">
             <div className="bg-blue-600 rounded-lg p-2">
@@ -213,7 +222,7 @@ const LoginPage = () => {
         {/* Right Side - Illustration Image */}
         <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 lg:p-12">
           <img
-            src="/assets/rightside.png"
+            src="/assets/Frame.png"
             alt="Smart Home IoT Devices"
             className="w-full h-full object-contain rounded-lg"
           />
