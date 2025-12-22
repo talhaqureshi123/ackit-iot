@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { Shield, User, Users, Mail, Lock, Eye, EyeOff, Cloud } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Cloud } from 'lucide-react';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    role: 'superadmin',
+    role: 'admin', // Default to admin
     rememberMe: true
   });
   const [loading, setLoading] = useState(false);
@@ -90,15 +90,10 @@ const LoginPage = () => {
     }
   };
 
-  const roleOptions = [
-    { value: 'superadmin', label: 'Super Admin', icon: Shield, color: 'text-red-600' },
-    { value: 'admin', label: 'Admin', icon: User, color: 'text-blue-600' },
-    { value: 'manager', label: 'Manager', icon: Users, color: 'text-green-600' }
-  ];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-6xl w-full flex flex-col lg:flex-row">
+    <div className="min-h-screen flex items-center justify-center bg-white p-4">
+      <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-6xl w-full flex flex-col lg:flex-row border border-gray-200">
         {/* Left Side - Login Form */}
         <div className="w-full lg:w-1/2 p-8 lg:p-12 flex flex-col justify-center">
           {/* Logo */}
@@ -118,32 +113,6 @@ const LoginPage = () => {
           </p>
 
           <form className="space-y-6" onSubmit={handleSubmit}>
-            {/* Role Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Role
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {roleOptions.map((option) => {
-                  const Icon = option.icon;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, role: option.value })}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        formData.role === option.value
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <Icon className={`w-6 h-6 mx-auto ${option.color}`} />
-                      <p className="text-xs mt-1 text-gray-700">{option.label}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
             {/* Email */}
             <div>
@@ -242,9 +211,9 @@ const LoginPage = () => {
         </div>
 
         {/* Right Side - Illustration Image */}
-        <div className="w-full lg:w-1/2 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-8 lg:p-12">
+        <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 lg:p-12">
           <img
-            src="/assets/loginrightsideimage.jpg"
+            src="/assets/rightside.png"
             alt="Smart Home IoT Devices"
             className="w-full h-full object-contain rounded-lg"
           />
