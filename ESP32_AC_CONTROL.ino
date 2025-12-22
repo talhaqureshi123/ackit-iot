@@ -26,8 +26,8 @@ const char* serial_number = "AC-919834-359";
 
 // Display configuration (16x2 LCD with I2C)
 // I2C pins for ESP32: SDA=21, SCL=22 (default)
-// If you don't have display, comment out USE_DISPLAY
-#define USE_DISPLAY true  // Set to false if no display connected
+// If you don't have display, set USE_DISPLAY to false
+#define USE_DISPLAY false  // Set to true if LCD display is connected, false to disable
 #define LCD_I2C_ADDRESS 0x27  // Common I2C address (try 0x3F if 0x27 doesn't work)
 #define LCD_COLS 16
 #define LCD_ROWS 2
