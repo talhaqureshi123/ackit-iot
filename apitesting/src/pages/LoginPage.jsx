@@ -93,7 +93,7 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white p-4">
-      <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-6xl w-full min-h-[600px] flex flex-col lg:flex-row border border-gray-200">
+      <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-6xl w-full flex flex-col lg:flex-row border border-gray-200">
         {/* Left Side - Login Form */}
         <div className="w-full lg:w-1/2 p-8 lg:p-12 flex flex-col justify-center">
           {/* Logo */}
@@ -211,11 +211,11 @@ const LoginPage = () => {
         </div>
 
         {/* Right Side - Illustration Image */}
-        <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 lg:p-12 min-h-[500px]">
+        <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 lg:p-12">
           <img
             src="/assets/rightside.png"
             alt="Smart Home IoT Devices"
-            className="w-full h-full max-h-[600px] object-contain rounded-lg"
+            className="w-full h-full object-contain rounded-lg"
           />
         </div>
       </div>
