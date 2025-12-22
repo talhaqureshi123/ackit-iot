@@ -5483,6 +5483,7 @@ const AdminDashboard = () => {
                   name: formData.get('name'),
                   address: formData.get('address') || '',
                   organizationId: parseInt(formData.get('organizationId')),
+                  organizationSize: formData.get('organizationSize'),
                   description: formData.get('description') || ''
                 };
                 try {
@@ -5516,6 +5517,20 @@ const AdminDashboard = () => {
                   {data.organizations.map(org => (
                     <option key={org.id} value={org.id}>{org.name}</option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Organization Size *</label>
+                <select
+                  name="organizationSize"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select Size</option>
+                  <option value="Small">Small</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Large">Large</option>
+                  <option value="Enterprise">Enterprise</option>
                 </select>
               </div>
               <div>
