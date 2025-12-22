@@ -904,6 +904,78 @@ const AdminDashboard = () => {
     }
   };
 
+  // Create Organization Handler
+  const handleCreateOrganization = async (orgData) => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.createOrganization(orgData);
+      toast.success(response.data?.message || 'Organization created successfully');
+      await loadData(false);
+      return response;
+    } catch (error) {
+      console.error('Create organization error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to create organization';
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create Venue Handler
+  const handleCreateVenue = async (venueData) => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.createVenue(venueData);
+      toast.success(response.data?.message || 'Venue created successfully');
+      await loadData(false);
+      return response;
+    } catch (error) {
+      console.error('Create venue error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to create venue';
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create Manager Handler
+  const handleCreateManager = async (managerData) => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.createManager(managerData);
+      toast.success(response.data?.message || 'Manager created successfully');
+      await loadData(false);
+      return response;
+    } catch (error) {
+      console.error('Create manager error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to create manager';
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create AC Device Handler
+  const handleCreateAC = async (acData) => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.createAC(acData);
+      toast.success(response.data?.message || 'AC device created successfully');
+      await loadData(false);
+      return response;
+    } catch (error) {
+      console.error('Create AC error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to create AC device';
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadAlerts = async () => {
     try {
       setAlertsLoading(true);
