@@ -67,10 +67,8 @@ export const FRONTEND_WS_PORT = "5050";
 export const WS_URL = (() => {
   if (RAILWAY_BACKEND_URL) {
     // Convert Railway HTTPS URL to WSS for WebSocket
-    const wsProtocol =
-      typeof window !== "undefined" && window.location?.protocol === "https:"
-        ? "wss"
-        : "ws";
+    // Always use secure WebSocket (wss) for Railway, just like ESP simulator
+    const wsProtocol = "wss";
     return RAILWAY_BACKEND_URL.replace(/^https?/, wsProtocol) + "/frontend";
   }
   return `ws://${BACKEND_IP}:${FRONTEND_WS_PORT}/frontend`;

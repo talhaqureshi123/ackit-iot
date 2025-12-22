@@ -21,8 +21,20 @@ const SERIAL_NUMBER = "AC-541281-637";
 const WEBSOCKET_PATH = "/esp32";
 
 // Railway Configuration
+// Default: Use Railway if RAILWAY_BACKEND_URL is set, otherwise use local
+// Override: --railway (force Railway), --local (force local)
 const RAILWAY_BACKEND_URL = process.env.RAILWAY_BACKEND_URL || "https://ackit-iot-production.up.railway.app";
-const USE_RAILWAY = process.env.USE_RAILWAY === "true" || process.argv.includes("--railway");
+const USE_RAILWAY = (() => {
+  // Explicit flags take priority
+  if (process.argv.includes("--local")) return false;
+  if (process.argv.includes("--railway")) return true;
+  // If RAILWAY_BACKEND_URL env var is set, use Railway by default
+  if (process.env.RAILWAY_BACKEND_URL) return true;
+  // Otherwise check USE_RAILWAY env var
+  if (process.env.USE_RAILWAY === "true") return true;
+  // Default: Use Railway (production-ready)
+  return true;
+})();
 
 // Determine WebSocket URL
 const getWebSocketURL = () => {
