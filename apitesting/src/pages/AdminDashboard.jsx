@@ -52,6 +52,10 @@ const AdminDashboard = () => {
   const [showCreateVenueModal, setShowCreateVenueModal] = useState(false);
   const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
   const [showCreateACModal, setShowCreateACModal] = useState(false);
+  
+  // Assign organization modal state
+  const [showAssignOrgModal, setShowAssignOrgModal] = useState(false);
+  const [selectedOrgForAssign, setSelectedOrgForAssign] = useState(null);
 
   // Helper functions to check if device/org is actually locked
   // Note: admin dashboard only has remote lock, restricted, and unlocked status
@@ -87,7 +91,7 @@ const AdminDashboard = () => {
     if (!venue || !venue.acs || !Array.isArray(venue.acs)) {
       // If venue doesn't have acs array, check if it's in the data.acs
       const venueACs = Array.isArray(data.acs) ? data.acs.filter(ac => ac.venueId === venue.id) : [];
-      return venueACs.some(ac => ac.currentState === "locked");
+    return venueACs.some(ac => ac.currentState === "locked");
     }
     // Check if any AC in the venue has currentState === "locked"
     return venue.acs.some(ac => ac.currentState === "locked");
@@ -280,17 +284,17 @@ const AdminDashboard = () => {
           
           // Update event status to active in real-time
           setData(prevData => ({
-            ...prevData,
-            events: prevData.events.map(event => {
-              if (event && event.id === eventData.eventId) {
-                return { 
-                  ...event, 
-                  status: 'active', 
-                  startedAt: eventData.startedAt || eventData.timestamp 
-                };
-              }
-              return event;
-            })
+              ...prevData,
+              events: prevData.events.map(event => {
+                if (event && event.id === eventData.eventId) {
+                  return { 
+                    ...event, 
+                    status: 'active', 
+                    startedAt: eventData.startedAt || eventData.timestamp 
+                  };
+                }
+                return event;
+              })
           }));
           
           // Show notification
@@ -306,13 +310,13 @@ const AdminDashboard = () => {
           
           // Update event status to stopped in real-time
           setData(prevData => ({
-            ...prevData,
-            events: prevData.events.map(event => {
-              if (event && event.id === eventData.eventId) {
-                return { ...event, status: 'stopped', stoppedAt: eventData.timestamp };
-              }
-              return event;
-            })
+              ...prevData,
+              events: prevData.events.map(event => {
+                if (event && event.id === eventData.eventId) {
+                  return { ...event, status: 'stopped', stoppedAt: eventData.timestamp };
+                }
+                return event;
+              })
           }));
           
           // Show notification
@@ -337,13 +341,13 @@ const AdminDashboard = () => {
           
           // Update event status to completed in real-time
           setData(prevData => ({
-            ...prevData,
-            events: prevData.events.map(event => {
-              if (event && event.id === eventData.eventId) {
-                return { ...event, status: 'completed', completedAt: eventData.timestamp };
-              }
-              return event;
-            })
+              ...prevData,
+              events: prevData.events.map(event => {
+                if (event && event.id === eventData.eventId) {
+                  return { ...event, status: 'completed', completedAt: eventData.timestamp };
+                }
+                return event;
+              })
           }));
           
           // Show notification
@@ -647,12 +651,12 @@ const AdminDashboard = () => {
             };
           });
           
-          return {
+        return {
             ...org,
             hasMixedTemperatures: hasMixedTemperatures || org.hasMixedTemperatures || false,
             venues: venuesWithMixed.length > 0 ? venuesWithMixed : (org.venues || [])
-          };
-        });
+        };
+      });
 
         // CRITICAL: Backend already includes venues in organizations response
         // But if organizations don't have venues, try loading from separate venues API
@@ -910,6 +914,24 @@ const AdminDashboard = () => {
     }
   };
 
+  // Assign Organization to Manager Handler
+  const handleAssignOrganization = async (managerId, organizationIds, reason) => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.assignManagerToOrganizations(managerId, organizationIds);
+      toast.success(response.data?.message || 'Organization assigned to manager successfully');
+      await loadData(false);
+      return response;
+    } catch (error) {
+      console.error('Assign organization error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to assign organization';
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Create Organization Handler
   const handleCreateOrganization = async (orgData) => {
     try {
@@ -1136,7 +1158,7 @@ const AdminDashboard = () => {
       
       setShowEventModal(false);
       setSelectedEvent(null);
-      await loadEvents();
+        await loadEvents();
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to update event';
       toast.error(errorMessage);
@@ -1332,7 +1354,7 @@ const AdminDashboard = () => {
     if (!window.confirm(`Are you sure you want to delete "${acName}"?\n\nThis will:\n- Delete the AC device permanently\n- Delete all related events\n- Delete all related activity logs\n- Delete all related system states\n\nThis action CANNOT be undone!`)) {
       return;
     }
-
+    
     try {
       // Note: admin delete AC endpoint may not exist - this will show an error if not implemented
       toast.error('Delete AC functionality is only available for admins. Please contact an admin to delete this device.');
@@ -1583,7 +1605,7 @@ const AdminDashboard = () => {
             setData(prev => ({
               ...prev,
               organizations: prev.organizations.map(org => ({
-                ...org,
+            ...org,
                 venues: (org.venues || []).map(v => 
                   v.id === updatedAC.venueId 
                     ? { ...v, hasMixedTemperatures: venueHasMixed }
@@ -1617,8 +1639,8 @@ const AdminDashboard = () => {
                     o.id === venue.organizationId
                       ? { ...o, hasMixedTemperatures: orgHasMixed }
                       : o
-                  )
-                }));
+        )
+      }));
               }
             }
           }
@@ -1779,7 +1801,7 @@ const AdminDashboard = () => {
       const ac = data.acs.find(a => a.id === acId);
       if (ac && ac.venueId) {
         const result = await adminAPI.remoteLockVenue(ac.venueId, reason);
-        toast.success(result.data?.message || 'Device remote locked successfully');
+      toast.success(result.data?.message || 'Device remote locked successfully');
         await loadData(false);
       } else {
         toast.error('Device venue not found');
@@ -1797,14 +1819,14 @@ const AdminDashboard = () => {
       const ac = data.acs.find(a => a.id === acId);
       if (ac && ac.venueId) {
         const result = await adminAPI.remoteUnlockVenue(ac.venueId);
-        toast.success(result.data?.message || 'Device remote unlocked successfully');
+      toast.success(result.data?.message || 'Device remote unlocked successfully');
         await loadData(false);
       } else {
         toast.error('Device venue not found');
       }
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to remote unlock device';
-      toast.error(errorMessage);
+        toast.error(errorMessage);
       console.error('Remote unlock AC error:', error);
     }
   };
@@ -1860,7 +1882,7 @@ const AdminDashboard = () => {
     } finally {
       setEnergyLoading(prev => ({ ...prev, [`org-${organizationId}`]: false }));
     }
-  };
+};
 
   const OrganizationCard = ({ org }) => {
     // Find device events for devices in this organization
@@ -1879,8 +1901,12 @@ const AdminDashboard = () => {
     
     const hasAlert = orgAlert || orgDeviceAlerts.length > 0;
     
+    // Check if organization is assigned to a manager
+    const isAssignedToManager = org.managerId !== null && org.managerId !== undefined;
+    const assignedManager = isAssignedToManager ? data.managers.find(m => m.id === org.managerId) : null;
+    
     return (
-      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`rounded-xl sm:rounded-2xl shadow-xl border-2 ${isAssignedToManager ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-400' : hasAlert ? 'bg-white border-blue-400' : 'bg-white border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -1899,15 +1925,20 @@ const AdminDashboard = () => {
           <div className="mb-1.5 pb-1.5 border-b border-gray-200">
             <div className="flex items-center justify-between gap-2">
               <div className="flex-1 min-w-0">
-                <h3 className={`text-sm font-extrabold ${hasAlert ? 'text-blue-900' : 'text-gray-900'} truncate`}>
+                <h3 className={`text-sm font-extrabold ${isAssignedToManager ? 'text-green-900' : hasAlert ? 'text-blue-900' : 'text-gray-900'} truncate`}>
                   {org.name}
                 </h3>
-              </div>
-              <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-500 rounded-lg p-1.5 flex-shrink-0 shadow-md">
+                {isAssignedToManager && assignedManager && (
+                  <p className="text-xs font-semibold text-green-700 mt-0.5">
+                    Fully assigned to {assignedManager.name}
+                  </p>
+                )}
+                  </div>
+              <div className={`rounded-lg p-1.5 flex-shrink-0 shadow-md ${isAssignedToManager ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 'bg-gradient-to-br from-blue-500 via-blue-600 to-blue-500'}`}>
                 <Building className="w-4 h-4 text-white" />
               </div>
+              </div>
             </div>
-          </div>
           {/* Status Badges - Compact */}
           <div className="flex items-center flex-wrap gap-1 mb-1.5">
             <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold ${
@@ -1916,7 +1947,7 @@ const AdminDashboard = () => {
                 : 'bg-gray-500 text-white'
             }`}>
               {org.status || 'active'}
-              </span>
+            </span>
             {org.hasMixedTemperatures && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-400 text-white">
                 Mixed
@@ -1941,10 +1972,10 @@ const AdminDashboard = () => {
               <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-500 text-white">
                 <Calendar className="w-3 h-3 mr-0.5" />
                 {orgEvents.length}
-            </span>
+              </span>
             )}
-      </div>
-      
+          </div>
+
           {/* Temperature Control - Compact */}
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-2 sm:p-1.5 mb-1.5 border border-blue-200">
             <div className="flex items-center justify-between mb-1">
@@ -1953,37 +1984,37 @@ const AdminDashboard = () => {
                 <span className="hidden sm:inline">Temp</span>
                 <span className="sm:hidden">Temperature: <span className="text-blue-600 font-bold">{localTemperatures[`organization-${org.id}`] !== undefined ? localTemperatures[`organization-${org.id}`] : (org.temperature ?? 16)}°C</span></span>
               </span>
-            {temperatureLoading[`organization-${org.id}`] && (
-              <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
-            )}
-          </div>
-              {org.hasMixedTemperatures ? (
-              <button
-                onClick={() => {
-                  const currentTemp = org.temperature || 22;
-                  handleSetTemperature('organization', org.id, currentTemp);
-                }}
-                disabled={user?.status === 'restricted' || user?.status === 'locked' || temperatureLoading[`organization-${org.id}`]}
-                className="w-full px-2 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Set All
-              </button>
-              ) : (
-              <div className="flex items-center justify-center space-x-1.5">
+              {temperatureLoading[`organization-${org.id}`] && (
+                <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+              )}
+            </div>
+            {org.hasMixedTemperatures ? (
                 <button
                   onClick={() => {
-                    const currentTemp = localTemperatures[`organization-${org.id}`] !== undefined 
-                      ? localTemperatures[`organization-${org.id}`] 
-                      : (org.temperature ?? 16);
-                    const newTemp = Math.max(16, currentTemp - 1);
-                    handleTemperatureChange('organization', org.id, newTemp);
-                    handleSetTemperature('organization', org.id, newTemp);
+                    const currentTemp = org.temperature || 22;
+                    handleSetTemperature('organization', org.id, currentTemp);
                   }}
+                disabled={user?.status === 'restricted' || user?.status === 'locked' || temperatureLoading[`organization-${org.id}`]}
+                className="w-full px-2 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Set All
+                </button>
+            ) : (
+              <div className="flex items-center justify-center space-x-1.5">
+                  <button
+                    onClick={() => {
+                      const currentTemp = localTemperatures[`organization-${org.id}`] !== undefined 
+                        ? localTemperatures[`organization-${org.id}`] 
+                        : (org.temperature ?? 16);
+                      const newTemp = Math.max(16, currentTemp - 1);
+                      handleTemperatureChange('organization', org.id, newTemp);
+                      handleSetTemperature('organization', org.id, newTemp);
+                    }}
                   disabled={user?.status === 'restricted' || user?.status === 'locked' || temperatureLoading[`organization-${org.id}`] || (localTemperatures[`organization-${org.id}`] !== undefined ? localTemperatures[`organization-${org.id}`] : (org.temperature ?? 16)) <= 16}
                   className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
-                >
+                  >
                   <Minus className="w-3 h-3" />
-                </button>
+                  </button>
                 <input
                   type="number"
                   min="16"
@@ -2034,23 +2065,23 @@ const AdminDashboard = () => {
                     }
                   }}
                 />
-                <button
-                  onClick={() => {
-                    const currentTemp = localTemperatures[`organization-${org.id}`] !== undefined 
-                      ? localTemperatures[`organization-${org.id}`] 
-                      : (org.temperature ?? 16);
-                    const newTemp = Math.min(30, currentTemp + 1);
-                    handleTemperatureChange('organization', org.id, newTemp);
-                    handleSetTemperature('organization', org.id, newTemp);
-                  }}
+                  <button
+                    onClick={() => {
+                      const currentTemp = localTemperatures[`organization-${org.id}`] !== undefined 
+                        ? localTemperatures[`organization-${org.id}`] 
+                        : (org.temperature ?? 16);
+                      const newTemp = Math.min(30, currentTemp + 1);
+                      handleTemperatureChange('organization', org.id, newTemp);
+                      handleSetTemperature('organization', org.id, newTemp);
+                    }}
                   disabled={user?.status === 'restricted' || user?.status === 'locked' || temperatureLoading[`organization-${org.id}`] || (localTemperatures[`organization-${org.id}`] !== undefined ? localTemperatures[`organization-${org.id}`] : (org.temperature ?? 16)) >= 30}
                   className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
-                >
+                  >
                   <Plus className="w-3 h-3" />
-                </button>
-              </div>
-              )}
-            </div>
+                  </button>
+                </div>
+            )}
+          </div>
 
           {/* Organization Info - Compact */}
           <div className="bg-gray-50 rounded-lg p-1.5 mb-1.5 border border-gray-200">
@@ -2060,23 +2091,23 @@ const AdminDashboard = () => {
                   <div className="flex items-center space-x-1">
                     <MapPin className="w-3 h-3 text-blue-600" />
                     <span className="text-xs font-semibold text-gray-700">Venues</span>
-              </div>
+                </div>
               <span className="text-xs font-bold text-gray-900">{org.venues.length}</span>
-            </div>
-          )}
-            </div>
-        </div>
+              </div>
+            )}
+                  </div>
+          </div>
 
           {/* Organization Power Control - Compact */}
         {user?.status === 'unlocked' && (
-            <div className="bg-blue-50 rounded-lg p-1.5 border border-blue-200 mb-1.5">
+          <div className="bg-blue-50 rounded-lg p-1.5 border border-blue-200 mb-1.5">
             <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700 flex items-center">
-                  <Power className="w-3 h-3 mr-0.5 text-blue-600" />
-                  Power
+              <span className="text-xs font-bold text-gray-700 flex items-center">
+                <Power className="w-3 h-3 mr-0.5 text-blue-600" />
+                Power
               </span>
-                <div className="flex items-center space-x-1.5">
-                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+              <div className="flex items-center space-x-1.5">
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                     (org.isOrganizationOn === true || org.isOrganizationOn === 'true') ? 'bg-blue-500 text-white' : 'bg-gray-400 text-white'
                 }`}>
                   {(org.isOrganizationOn === true || org.isOrganizationOn === 'true') ? 'ON' : 'OFF'}
@@ -2085,13 +2116,13 @@ const AdminDashboard = () => {
                   onClick={() => handleToggleOrganizationPower(org.id, org.isOrganizationOn || false)}
                     className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
                     (org.isOrganizationOn === true || org.isOrganizationOn === 'true')
-                        ? 'bg-blue-500' 
-                        : 'bg-gray-400'
+                      ? 'bg-blue-500' 
+                      : 'bg-gray-400'
                   }`}
                   title={(org.isOrganizationOn === true || org.isOrganizationOn === 'true') ? 'Turn Organization OFF' : 'Turn Organization ON'}
                 >
                   <span
-                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
                         (org.isOrganizationOn === true || org.isOrganizationOn === 'true') ? 'translate-x-5' : 'translate-x-0.5'
                     }`}
                   />
@@ -2103,17 +2134,30 @@ const AdminDashboard = () => {
 
           {/* Action Buttons - Compact */}
           <div className="flex gap-1.5 mt-auto">
+          {!isAssignedToManager && (
+            <button
+              onClick={() => {
+                setSelectedOrgForAssign(org);
+                setShowAssignOrgModal(true);
+              }}
+              className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-green-500 hover:bg-green-600 transition-colors shadow-sm"
+              title="Assign organization to manager"
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>Assign</span>
+            </button>
+          )}
           <button
             onClick={() => handleViewOrganizationDetails(org.id)}
-              className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
+              className={`flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white ${isAssignedToManager ? 'flex-1' : 'flex-1'} bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm`}
               title="View description, events, remote lock, and more"
           >
             <Eye className="w-3 h-3" />
               <span>View</span>
           </button>
-            </div>
+          </div>
+        </div>
       </div>
-    </div>
     );
   };
 
@@ -2123,9 +2167,9 @@ const AdminDashboard = () => {
     const isVenueOn = venue.isVenueOn === true || venue.isVenueOn === 'true' || venue.isVenueOn === 1;
     
     // Get device-level alerts for this venue
-    const venueDeviceAlertsFromAPI = Array.isArray(allAlerts) ? allAlerts.filter(alert => {
-      return alert.acId && venueDeviceIds.includes(alert.acId);
-    }) : [];
+        const venueDeviceAlertsFromAPI = Array.isArray(allAlerts) ? allAlerts.filter(alert => {
+          return alert.acId && venueDeviceIds.includes(alert.acId);
+        }) : [];
     
     // Also check ACs directly for alert status
     const venueACsWithAlerts = venueACs.filter(ac => 
@@ -2169,8 +2213,8 @@ const AdminDashboard = () => {
                 {venueDeviceAlerts.length} Alert{venueDeviceAlerts.length !== 1 ? 's' : ''}
               </p>
             </div>
-              </div>
-            )}
+          </div>
+        )}
 
         {/* Product Card Style Layout */}
         <div className="p-3 flex-1 flex flex-col">
@@ -2181,10 +2225,10 @@ const AdminDashboard = () => {
                 <h3 className={`text-sm font-extrabold ${hasAlert ? 'text-blue-900' : 'text-gray-900'} truncate`}>
                   {venue.name}
                 </h3>
-              </div>
+                  </div>
               <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-500 rounded-lg p-1.5 flex-shrink-0 shadow-md">
                 <MapPin className="w-4 h-4 text-white" />
-        </div>
+              </div>
             </div>
           </div>
 
@@ -2225,10 +2269,10 @@ const AdminDashboard = () => {
                     <span className="text-xs font-semibold text-gray-700">ACs</span>
                   </div>
                   <span className="text-xs font-bold text-gray-900">{venueACs.length}</span>
-            </div>
-          )}
-            </div>
               </div>
+            )}
+                  </div>
+          </div>
 
           {/* Temperature Control - Compact */}
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-2 sm:p-1.5 mb-1.5 border border-blue-200">
@@ -2243,7 +2287,7 @@ const AdminDashboard = () => {
               )}
             </div>
             {venue.hasMixedTemperatures ? (
-            <button
+                <button
                   onClick={() => {
                     const currentTemp = venue.temperature || 22;
                     handleSetTemperature('venue', venue.id, currentTemp);
@@ -2350,7 +2394,7 @@ const AdminDashboard = () => {
                 }`}>
                   {isVenueOn ? 'ON' : 'OFF'}
                 </span>
-                <button
+          <button
                   onClick={() => handleToggleVenuePower(venue.id, venue.isVenueOn || false)}
                   disabled={user?.status === 'restricted' || user?.status === 'locked'}
                   className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -2363,24 +2407,24 @@ const AdminDashboard = () => {
                       isVenueOn ? 'translate-x-5' : 'translate-x-0.5'
                     }`}
                   />
-                </button>
+          </button>
               </div>
             </div>
           </div>
 
           {/* Action Buttons - Compact */}
           <div className="flex gap-1.5 mt-auto">
-          <button
-            onClick={() => handleViewVenueDetails(venue.id)}
+            <button
+              onClick={() => handleViewVenueDetails(venue.id)}
               className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
               title="View organization, size, and more details"
-          >
+            >
               <Eye className="w-3 h-3" />
               <span>View</span>
-            </button>
-          </div>
+          </button>
           </div>
         </div>
+      </div>
     );
   };
 
@@ -2431,21 +2475,21 @@ const AdminDashboard = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Status Badges - Compact */}
           <div className="flex items-center flex-wrap gap-1 mb-1.5">
             <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold ${
               ac.isOn ? 'bg-blue-500 text-white' : 'bg-gray-400 text-white'
             }`}>
               <Power className="w-3 h-3 mr-0.5" />
-                {ac.isOn ? 'ON' : 'OFF'}
-              </span>
+              {ac.isOn ? 'ON' : 'OFF'}
+            </span>
             {hasAlert && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-600 text-white">
                 <AlertCircle className="w-3 h-3 mr-0.5" />
               </span>
             )}
-            </div>
+          </div>
 
           {/* Device Info - Compact */}
           <div className="bg-gray-50 rounded-lg p-1.5 mb-1.5 border border-gray-200">
@@ -2472,7 +2516,7 @@ const AdminDashboard = () => {
               )}
             </div>
             <div className="flex items-center justify-center space-x-1.5">
-            <button
+              <button
                 onClick={() => {
                   const currentTemp = localTemperatures[`ac-${ac.id}`] !== undefined 
                     ? localTemperatures[`ac-${ac.id}`] 
@@ -2485,7 +2529,7 @@ const AdminDashboard = () => {
                 className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
               >
                 <Minus className="w-3 h-3" />
-            </button>
+              </button>
               <input
                 type="number"
                 min="16"
@@ -2560,7 +2604,7 @@ const AdminDashboard = () => {
                 <Power className="w-3 h-3 mr-0.5 text-blue-600" />
                 Power
               </span>
-              <button
+          <button
             onClick={() => handleToggleACPower(ac.id, !ac.isOn)}
                 disabled={user?.status === 'restricted' || user?.status === 'locked'}
                 className={`px-2 py-1 rounded text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -2570,7 +2614,7 @@ const AdminDashboard = () => {
             }`}
           >
                 {ac.isOn ? 'OFF' : 'ON'}
-              </button>
+          </button>
             </div>
           </div>
 
@@ -2596,14 +2640,14 @@ const AdminDashboard = () => {
               <Plus className="w-2.5 h-2.5" />
               <span>Event</span>
             </button>
-              <button
+          <button
             onClick={() => handleViewACDetails(ac.id)}
               className="flex-1 flex items-center justify-center space-x-0.5 px-1.5 py-1 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
               title="View brand, model, serial number, organization, and more"
           >
               <Eye className="w-2.5 h-2.5" />
               <span>View</span>
-              </button>
+          </button>
           <button
             onClick={() => handleDeleteAC(ac.id, ac.name)}
             disabled={user?.status === 'locked' || user?.status === 'restricted'}
@@ -2614,8 +2658,8 @@ const AdminDashboard = () => {
             <span>Delete</span>
           </button>
           </div>
+        </div>
       </div>
-    </div>
     );
   };
 
@@ -2911,7 +2955,7 @@ const AdminDashboard = () => {
                     {/* Event Name - Enhanced */}
                     <div className="mb-1.5 pb-1.5 border-b border-gray-200">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
                           <h3 className="text-sm font-extrabold text-gray-900 truncate">
                             {event.name}
                           </h3>
@@ -2925,12 +2969,12 @@ const AdminDashboard = () => {
                     {/* Status Badges - Compact */}
                     <div className="flex items-center flex-wrap gap-1 mb-1.5">
                       {getStatusBadge(event.status, event.isDisabled, event.startTime, event.endTime)}
-                        {event.isRecurring && (
+                      {event.isRecurring && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-500 text-white">
                           🔁
-                          </span>
-                        )}
-                        {event.parentRecurringEventId && (
+                        </span>
+                      )}
+                      {event.parentRecurringEventId && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-500 text-white">
                           Inst
                           </span>
@@ -2956,10 +3000,10 @@ const AdminDashboard = () => {
                               <span className="text-xs font-semibold text-gray-700">Temp</span>
                         </div>
                             <span className="text-xs font-bold text-gray-900">{event.temperature}°C</span>
-                            </div>
+                        </div>
                         )}
-                            </div>
-                            </div>
+                        </div>
+                    </div>
 
                     {/* Time Info - Compact */}
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-1.5 mb-1.5 border border-blue-200">
@@ -2969,9 +3013,9 @@ const AdminDashboard = () => {
                           {event.timeStart && event.timeEnd && (
                             <div className="text-xs font-bold text-gray-900">
                               {event.timeStart} - {event.timeEnd}
-                            </div>
-                        )}
                           </div>
+                        )}
+                        </div>
                       ) : (
                         <div className="space-y-1">
                           <div>
@@ -2979,16 +3023,16 @@ const AdminDashboard = () => {
                             <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.startTime)}>
                               {formatTime(event.startTime)}
                           </div>
-                          </div>
+                      </div>
                           <div>
                             <div className="text-xs font-semibold text-gray-700">End</div>
                             <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.endTime)}>
                               {formatTime(event.endTime)}
-                          </div>
-                      </div>
                         </div>
-                      )}
-                    </div>
+                          </div>
+                          </div>
+                        )}
+                      </div>
 
                     {/* Action Buttons - Compact */}
                     <div className="flex flex-wrap gap-1.5 mt-auto">
@@ -3080,12 +3124,12 @@ const AdminDashboard = () => {
   const DashboardView = () => {
     // Show loading spinner during initial load
     if (initialLoading) {
-      return (
+          return (
         <div className="flex items-center justify-center min-h-[400px] w-full">
           <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
-        </div>
-      );
-    }
+            </div>
+          );
+        }
     
     const totalVenues = data.organizations.reduce((sum, org) => sum + (org.venues?.length || 0), 0);
     const activeACs = data.acs.filter(ac => ac.isOn === true || ac.isOn === 'true' || ac.isOn === 1).length;
@@ -3100,7 +3144,7 @@ const AdminDashboard = () => {
             <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
             <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-white opacity-5 rounded-full -ml-8 -mb-8 sm:-ml-12 sm:-mb-12"></div>
             <div className="relative flex items-center justify-between">
-              <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0">
                 <p className="text-blue-100 text-xs sm:text-sm font-semibold mb-1 sm:mb-2 uppercase tracking-wide">Organizations</p>
                 <p className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-1 drop-shadow-lg">{data.organizations.length}</p>
                 <p className="text-blue-100 text-xs font-medium flex items-center">
@@ -3108,12 +3152,12 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">Assigned to you</span>
                   <span className="sm:hidden">Assigned</span>
                 </p>
-              </div>
+          </div>
               <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
                 <Building className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
-              </div>
-            </div>
           </div>
+        </div>
+      </div>
           
           <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 text-white transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
@@ -3127,13 +3171,13 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">Active venues</span>
                   <span className="sm:hidden">Active</span>
                 </p>
-              </div>
+        </div>
               <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
                 <MapPin className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
+                  </div>
               </div>
             </div>
-          </div>
-          
+            
           <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 text-white transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
             <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-white opacity-5 rounded-full -ml-8 -mb-8 sm:-ml-12 sm:-mb-12"></div>
@@ -3146,13 +3190,13 @@ const AdminDashboard = () => {
                   <span className="hidden sm:inline">{activeACs} powered ON</span>
                   <span className="sm:hidden">{activeACs} ON</span>
                 </p>
-              </div>
+                </div>
               <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
                 <Thermometer className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
               </div>
-            </div>
-          </div>
-          
+                </div>
+                        </div>
+                        
           <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 text-white transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
             <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-white opacity-5 rounded-full -ml-8 -mb-8 sm:-ml-12 sm:-mb-12"></div>
@@ -3164,14 +3208,14 @@ const AdminDashboard = () => {
                   <span className="w-2 h-2 bg-blue-300 rounded-full mr-2 animate-pulse"></span>
                   <span className="hidden sm:inline">{activeEvents} active</span>
                   <span className="sm:hidden">{activeEvents} active</span>
-                </p>
-              </div>
+                              </p>
+                            </div>
               <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
                 <Calendar className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
-              </div>
-            </div>
-          </div>
-        </div>
+                            </div>
+                            </div>
+                            </div>
+                          </div>
 
         {/* Alerts Section - Ultra Enhanced */}
         {alerts.length > 0 && (
@@ -3187,9 +3231,9 @@ const AdminDashboard = () => {
                   </h3>
                   <p className="text-sm text-blue-700 font-semibold mt-1">
                     {alerts.length} alert{alerts.length !== 1 ? 's' : ''} require immediate attention
-                  </p>
-                </div>
-              </div>
+                                  </p>
+                                </div>
+                              </div>
               <button
                 onClick={handleCheckAlerts}
                 disabled={alertsLoading}
@@ -3198,7 +3242,7 @@ const AdminDashboard = () => {
                 <RefreshCw className={`w-5 h-5 mr-2 ${alertsLoading ? 'animate-spin' : ''}`} />
                 Check Now
               </button>
-            </div>
+                            </div>
             <div className="space-y-4 max-h-80 overflow-y-auto custom-scrollbar">
               {alerts.slice(0, 3).map((alert, idx) => (
                 <div key={idx} className="bg-white rounded-xl p-5 border-2 border-blue-200 shadow-md hover:shadow-xl transition-all transform hover:-translate-y-1 hover:border-blue-400">
@@ -3212,24 +3256,24 @@ const AdminDashboard = () => {
                             Org: {alert.organizationName}
                           </span>
                         )}
-                      </div>
+                              </div>
                       {alert.issue && (
                         <div className="flex items-start space-x-2 text-sm text-blue-700">
                           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-600" />
                           <span className="font-medium">{alert.issue}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                                </div>
+                              )}
+                              </div>
+                              </div>
+                            </div>
               ))}
               {alerts.length > 3 && (
                 <p className="text-center text-sm text-blue-600 font-semibold pt-2">
                   +{alerts.length - 3} more alerts
                 </p>
               )}
-            </div>
-          </div>
+                              </div>
+                            </div>
         )}
 
         {/* Quick Stats Grid - Enhanced */}
@@ -3240,42 +3284,42 @@ const AdminDashboard = () => {
               <div className="flex items-center space-x-3">
                 <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-3 shadow-lg transform group-hover:scale-110 transition-transform duration-300">
                   <Thermometer className="w-7 h-7 text-white" />
-                </div>
+                                </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">AC Devices</h3>
                   <p className="text-sm text-gray-500 font-medium">Status Overview</p>
-                </div>
-              </div>
-            </div>
+                                </div>
+                                </div>
+                                </div>
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 bg-white rounded-xl shadow-sm">
                 <span className="text-sm font-semibold text-gray-700">Total Devices</span>
                 <span className="text-2xl font-extrabold text-gray-900">{data.acs.length}</span>
-              </div>
+                              </div>
               <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-blue-50 rounded-xl shadow-sm border border-blue-200">
                 <span className="text-sm font-semibold text-gray-700">Powered ON</span>
                 <span className="text-2xl font-extrabold text-blue-600">{activeACs}</span>
-              </div>
+                                        </div>
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl shadow-sm">
                 <span className="text-sm font-semibold text-gray-700">Powered OFF</span>
                 <span className="text-2xl font-extrabold text-gray-600">{data.acs.length - activeACs}</span>
-              </div>
-            </div>
-          </div>
-
+                                  </div>
+                                </div>
+                              </div>
+                              
           {/* Recent Events */}
           <div className="group bg-gradient-to-br from-white to-blue-50 rounded-2xl shadow-xl p-6 border-2 border-blue-100 hover:border-blue-300 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-3">
                 <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-3 shadow-lg transform group-hover:scale-110 transition-transform duration-300">
                   <Calendar className="w-7 h-7 text-white" />
-                </div>
+                                  </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">Recent Events</h3>
                   <p className="text-sm text-gray-500 font-medium">Latest Activities</p>
-                </div>
-              </div>
-            </div>
+                                </div>
+                            </div>
+                          </div>
             <div className="space-y-3">
               {Array.isArray(data.events) && data.events.length > 0 ? (
                 <>
@@ -3293,15 +3337,15 @@ const AdminDashboard = () => {
                         'bg-gradient-to-r from-gray-400 to-gray-500 text-white'
                       }`}>
                         {event.status || 'inactive'}
-                      </span>
-                    </div>
-                  ))}
+                                        </span>
+                                    </div>
+                                  ))}
                   {data.events.length > 3 && (
                     <p className="text-xs text-gray-500 text-center pt-2 font-semibold">
                       +{data.events.length - 3} more events
                     </p>
-                  )}
-                </>
+                            )}
+                          </>
               ) : (
                 <div className="text-center py-8">
                   <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-2" />
@@ -3317,31 +3361,31 @@ const AdminDashboard = () => {
               <div className="flex items-center space-x-3">
                 <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-3 shadow-lg transform group-hover:scale-110 transition-transform duration-300">
                   <BarChart3 className="w-7 h-7 text-white" />
-                </div>
+                                  </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">System Overview</h3>
                   <p className="text-sm text-gray-500 font-medium">Quick Stats</p>
-                </div>
-              </div>
-            </div>
+                                </div>
+                            </div>
+                          </div>
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-blue-50 rounded-xl shadow-sm border border-blue-200">
                 <span className="text-sm font-semibold text-gray-700">Total Venues</span>
                 <span className="text-2xl font-extrabold text-blue-600">{totalVenues}</span>
-              </div>
+                      </div>
               <div className="flex items-center justify-between p-3 bg-white rounded-xl shadow-sm">
                 <span className="text-sm font-semibold text-gray-700">Active Events</span>
                 <span className="text-2xl font-extrabold text-gray-900">{activeEvents}</span>
-              </div>
+                    </div>
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl shadow-sm">
                 <span className="text-sm font-semibold text-gray-700">Total Alerts</span>
                 <span className="text-2xl font-extrabold text-gray-600">{alerts.length}</span>
+                  </div>
               </div>
-            </div>
           </div>
         </div>
-      </div>
-    );
+          </div>
+        );
   };
 
   const renderContent = () => {
@@ -3455,7 +3499,7 @@ const AdminDashboard = () => {
                 </button>
               </div>
             </div>
-
+            
             {/* Alerts Section */}
             {alerts.length > 0 && (
               <div className="bg-gradient-to-br from-blue-50 via-blue-50 to-blue-50 border-l-4 border-blue-500 rounded-xl shadow-lg p-6">
@@ -3463,7 +3507,7 @@ const AdminDashboard = () => {
                   <div className="flex items-center space-x-3">
                     <div className="p-2 bg-blue-100 rounded-lg">
                       <AlertCircle className="w-6 h-6 text-blue-600" />
-                    </div>
+                </div>
                     <div>
                       <h3 className="text-xl font-bold text-gray-900">
                         Active Alerts ({alerts.length})
@@ -3473,15 +3517,15 @@ const AdminDashboard = () => {
                       </p>
                     </div>
                   </div>
-                  <button
+                <button
                     onClick={handleCheckAlerts}
                     disabled={alertsLoading}
                     className="flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-md hover:shadow-lg"
-                  >
+                >
                     <RefreshCw className={`w-4 h-4 mr-2 ${alertsLoading ? 'animate-spin' : ''}`} />
                     Refresh Alerts
-                  </button>
-                </div>
+                </button>
+              </div>
 
                 <div className="space-y-4">
                   {alerts.map((alert, idx) => {
@@ -3582,9 +3626,9 @@ const AdminDashboard = () => {
                                       {issue.message}
                                     </span>
                                   </div>
-                                ))}
-                              </div>
-                            )}
+                ))}
+              </div>
+            )}
 
                             {alert.alertAt && (
                               <p className="text-xs text-gray-500 flex items-center space-x-1">
@@ -3592,8 +3636,8 @@ const AdminDashboard = () => {
                                 <span>Alert triggered: {new Date(alert.alertAt).toLocaleString()}</span>
                               </p>
                             )}
-                          </div>
-                        </div>
+          </div>
+                  </div>
 
                         {/* Show Device and Organization Cards */}
                         <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
@@ -3604,14 +3648,14 @@ const AdminDashboard = () => {
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center space-x-3">
                                   <Thermometer className="w-5 h-5 text-blue-600" />
-                                  <div>
+                  <div>
                                     <p className="font-semibold text-gray-900">{relatedDevice.name}</p>
                                     <p className="text-xs text-gray-600">
                                       {relatedDevice.brand} {relatedDevice.model} • {relatedDevice.temperature}°C
                                     </p>
-                                  </div>
-                                </div>
-                                <button
+                  </div>
+                </div>
+                <button
                                   onClick={() => {
                                     setActiveTab('acs');
                                     // Scroll to the device if needed
@@ -3619,9 +3663,9 @@ const AdminDashboard = () => {
                                   className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
                                 >
                                   <Eye className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
+                </button>
+              </div>
+            </div>
                           )}
 
                           {relatedOrg && (
@@ -3632,15 +3676,15 @@ const AdminDashboard = () => {
                                   <div>
                                     <p className="font-semibold text-gray-900">{relatedOrg.name}</p>
                                     <p className="text-xs text-gray-600">Status: {relatedOrg.status || 'active'}</p>
-                                  </div>
+                </div>
                                 </div>
-                                <button
+                <button
                                   onClick={() => handleViewOrganizationDetails(relatedOrg.id)}
                                   className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                                >
+                >
                                   <Eye className="w-4 h-4" />
-                                </button>
-                              </div>
+                </button>
+              </div>
                             </div>
                           )}
                         </div>
@@ -3686,7 +3730,7 @@ const AdminDashboard = () => {
                     <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage all AC devices in your organizations</p>
                     <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
                       {data.acs.length} Total AC Device{data.acs.length !== 1 ? 's' : ''}
-                    </span>
+                      </span>
                   </div>
                 </div>
                 <button
@@ -3698,7 +3742,7 @@ const AdminDashboard = () => {
                 </button>
               </div>
             </div>
-
+            
             {data.acs.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.acs.map(ac => (
@@ -3730,19 +3774,19 @@ const AdminDashboard = () => {
                   Energy Consumption
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">Monitor and track energy usage across all AC devices</p>
-              </div>
-              <button
-                onClick={() => {
-                  // Refresh energy data for all ACs and organizations
-                  data.acs.forEach(ac => loadACEnergy(ac.id));
-                  data.organizations.forEach(org => loadOrganizationEnergy(org.id));
-                  toast.success('Refreshing energy data...');
-                }}
+                </div>
+                <button
+                  onClick={() => {
+                    // Refresh energy data for all ACs and organizations
+                    data.acs.forEach(ac => loadACEnergy(ac.id));
+                    data.organizations.forEach(org => loadOrganizationEnergy(org.id));
+                    toast.success('Refreshing energy data...');
+                  }}
                 className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
+                >
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh All
-              </button>
+                </button>
             </div>
 
             {/* Summary Cards */}
@@ -3903,17 +3947,17 @@ const AdminDashboard = () => {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className={`px-2 py-1 text-xs font-medium rounded ${
-                                ac.isOn 
-                                  ? 'bg-green-100 text-green-800' 
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {ac.isOn ? 'ON' : 'OFF'}
-                              </span>
-                              {acEnergy?.isOnStartup && (
-                                <span className="ml-2 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
-                                  Startup
+                                  ac.isOn 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {ac.isOn ? 'ON' : 'OFF'}
                                 </span>
-                              )}
+                                {acEnergy?.isOnStartup && (
+                                <span className="ml-2 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
+                                    Startup
+                                  </span>
+                                )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-semibold text-blue-600">
@@ -4254,16 +4298,16 @@ const AdminDashboard = () => {
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                 <div className="flex items-center space-x-5">
-                  <div className="bg-white bg-opacity-25 rounded-2xl p-4 shadow-xl transform group-hover:rotate-12 transition-transform duration-300">
+                <div className="bg-white bg-opacity-25 rounded-2xl p-4 shadow-xl transform group-hover:rotate-12 transition-transform duration-300">
                     <Users className="w-10 h-10 text-white" />
-                  </div>
-                  <div>
+                </div>
+                <div>
                     <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Managers</h2>
                     <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage and monitor all managers</p>
                     <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
                       {data.managers?.length || 0} Total Manager{(data.managers?.length || 0) !== 1 ? 's' : ''}
-                    </span>
-                  </div>
+                  </span>
+                </div>
                 </div>
                 <button
                   onClick={() => setShowCreateManagerModal(true)}
@@ -4463,18 +4507,18 @@ const AdminDashboard = () => {
                       </div>
                     );
                   })}
-                </div>
-              ) : (
+              </div>
+            ) : (
                 <div className="bg-gradient-to-br from-white to-blue-50 p-6 sm:p-8 lg:p-12 xl:p-16 rounded-lg sm:rounded-xl lg:rounded-2xl shadow-xl lg:shadow-2xl text-center border-2 border-blue-200">
                   <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-4 sm:p-5 lg:p-6 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 mx-auto mb-4 sm:mb-6 flex items-center justify-center shadow-lg">
                     <Activity className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 text-blue-600" />
-                  </div>
+                </div>
                   <p className="text-gray-800 text-base sm:text-lg lg:text-xl xl:text-2xl font-bold mb-2 sm:mb-3">No Activity Logs Found</p>
                   <p className="text-gray-600 text-sm sm:text-base font-medium">Activity logs will appear here as actions are performed</p>
-                </div>
-              )}
-            </div>
-          );
+              </div>
+            )}
+          </div>
+        );
         } catch (error) {
           console.error('❌ Error rendering activity logs:', error);
           return (
@@ -4597,7 +4641,7 @@ const AdminDashboard = () => {
                     {user.status}
                   </span>
                 )}
-              </div>
+                </div>
               )}
             </div>
           </div>
@@ -4635,31 +4679,31 @@ const AdminDashboard = () => {
                   </span>
                 </div>
               )}
-              <button
-                onClick={loadData}
+                <button
+                  onClick={loadData}
                   className="p-2 sm:p-2.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Refresh Data"
-              >
+                  title="Refresh Data"
+                >
                   <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-              </button>
-              <button
-                onClick={logout}
+                </button>
+                <button
+                  onClick={logout}
                   className="flex items-center px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-              >
+                >
                   <LogOut className="w-4 h-4 sm:mr-2" />
                   <span className="hidden sm:inline">Logout</span>
-              </button>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
         {/* Content */}
         <main className="p-4 sm:p-6 w-full overflow-x-hidden">
           <div className="w-full max-w-none">
             {/* Main Content */}
-          {renderContent()}
-        </div>
+            {renderContent()}
+          </div>
         </main>
       </div>
 
@@ -4681,10 +4725,10 @@ const AdminDashboard = () => {
             </div>
             
             <div className="p-6">
-              <EventForm 
+                <EventForm 
                 onSubmit={handleEventSubmit}
                 onCancel={handleCloseEventModal}
-                event={selectedEvent}
+                  event={selectedEvent}
                 acs={memoizedAcs}
               />
             </div>
@@ -4710,17 +4754,17 @@ const AdminDashboard = () => {
             
             <div className="p-6 space-y-6">
               {/* Organization Info */}
-              <div>
+                  <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">{selectedOrgDetails.name}</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                   <div>
                     <span className="text-sm text-gray-600">Status:</span>
                     <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
-                      selectedOrgDetails.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {selectedOrgDetails.status}
-                    </span>
-                  </div>
+                          selectedOrgDetails.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {selectedOrgDetails.status}
+                        </span>
+                      </div>
                   <div>
                     <span className="text-sm text-gray-600">Size:</span>
                     <span className="ml-2 text-sm font-medium">{selectedOrgDetails.organizationSize}</span>
@@ -4731,134 +4775,134 @@ const AdminDashboard = () => {
                       <span className="ml-2 text-sm font-medium text-red-600">Mixed</span>
                     ) : (
                       <div className="flex items-center space-x-2 ml-2">
-                        <input
-                          type="number"
-                          min="16"
-                          max="30"
-                          step="1"
-                          value={localTemperatures[`organization-${selectedOrgDetails.id}`] !== undefined ? localTemperatures[`organization-${selectedOrgDetails.id}`] : (selectedOrgDetails.temperature ?? 16)}
+                            <input
+                              type="number"
+                              min="16"
+                              max="30"
+                              step="1"
+                              value={localTemperatures[`organization-${selectedOrgDetails.id}`] !== undefined ? localTemperatures[`organization-${selectedOrgDetails.id}`] : (selectedOrgDetails.temperature ?? 16)}
                           disabled={temperatureLoading[`organization-${selectedOrgDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                          className={`w-20 px-2 py-1 text-sm border rounded-lg text-center font-medium transition-colors ${
+                              className={`w-20 px-2 py-1 text-sm border rounded-lg text-center font-medium transition-colors ${
                             temperatureLoading[`organization-${selectedOrgDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'
-                              ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-100' 
-                              : 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'
-                          }`}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '') {
-                              handleTemperatureChange('organization', selectedOrgDetails.id, '');
-                            } else {
-                              const temp = parseInt(value);
-                              if (!isNaN(temp)) {
-                                handleTemperatureChange('organization', selectedOrgDetails.id, temp);
-                              }
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value;
-                            if (value === '') {
-                              handleTemperatureChange('organization', selectedOrgDetails.id, selectedOrgDetails.temperature ?? 16);
-                            } else {
-                              const temp = parseInt(value);
-                              if (!isNaN(temp) && temp >= 16 && temp <= 30) {
-                                handleTemperatureSubmit('organization', selectedOrgDetails.id, temp);
-                              } else {
-                                handleTemperatureChange('organization', selectedOrgDetails.id, selectedOrgDetails.temperature ?? 16);
-                              }
-                            }
-                          }}
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              const value = e.target.value;
-                              if (value === '') {
-                                handleTemperatureChange('organization', selectedOrgDetails.id, selectedOrgDetails.temperature ?? 16);
-                              } else {
-                                const temp = parseInt(value);
-                                if (!isNaN(temp) && temp >= 16 && temp <= 30) {
-                                  handleTemperatureSubmit('organization', selectedOrgDetails.id, temp);
+                                  ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-100' 
+                                  : 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'
+                              }`}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '') {
+                                  handleTemperatureChange('organization', selectedOrgDetails.id, '');
+                                } else {
+                                  const temp = parseInt(value);
+                                  if (!isNaN(temp)) {
+                                    handleTemperatureChange('organization', selectedOrgDetails.id, temp);
+                                  }
                                 }
-                              }
-                            }
-                          }}
-                        />
-                        <span className="text-sm font-medium text-gray-600">°C</span>
-                        {temperatureLoading[`organization-${selectedOrgDetails.id}`] && (
-                          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '') {
+                                  handleTemperatureChange('organization', selectedOrgDetails.id, selectedOrgDetails.temperature ?? 16);
+                                } else {
+                                  const temp = parseInt(value);
+                                  if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                    handleTemperatureSubmit('organization', selectedOrgDetails.id, temp);
+                                  } else {
+                                    handleTemperatureChange('organization', selectedOrgDetails.id, selectedOrgDetails.temperature ?? 16);
+                                  }
+                                }
+                              }}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  const value = e.target.value;
+                                  if (value === '') {
+                                    handleTemperatureChange('organization', selectedOrgDetails.id, selectedOrgDetails.temperature ?? 16);
+                                  } else {
+                                    const temp = parseInt(value);
+                                    if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                      handleTemperatureSubmit('organization', selectedOrgDetails.id, temp);
+                                    }
+                                  }
+                                }
+                              }}
+                            />
+                            <span className="text-sm font-medium text-gray-600">°C</span>
+                            {temperatureLoading[`organization-${selectedOrgDetails.id}`] && (
+                              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
                   <div>
                     <span className="text-sm text-gray-600">Locked:</span>
                     <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
                       selectedOrgDetails.isLocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                     }`}>
                       {selectedOrgDetails.isLocked ? 'Yes' : 'No'}
-                    </span>
-                  </div>
-                  {(() => {
-                    const orgEnergy = energyData.organizations[selectedOrgDetails.id];
+                        </span>
+                      </div>
+                      {(() => {
+                        const orgEnergy = energyData.organizations[selectedOrgDetails.id];
                     // Filter ACs by organizationId (direct field or from organization relationship)
                     const orgACs = data.acs.filter(ac => 
                       ac.organizationId === selectedOrgDetails.id || ac.organization?.id === selectedOrgDetails.id
                     );
-                    const orgTotalEnergy = orgEnergy?.totalEnergyConsumed || 
-                      orgACs.reduce((sum, ac) => sum + (ac.totalEnergyConsumed || 0), 0);
-                    return (
-                      <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <Zap className="w-4 h-4 text-blue-600" />
-                            <span className="font-medium text-gray-900">Energy Consumption</span>
-                          </div>
-                          {energyLoading[`org-${selectedOrgDetails.id}`] && (
-                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-gray-600">Total Energy:</span>
-                            <span className="text-lg font-bold text-blue-600">
-                              {orgTotalEnergy.toFixed(2)} kWh
-                            </span>
-                          </div>
-                          {orgEnergy && (
-                            <>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Total ACs:</span>
-                                <span className="text-sm font-medium text-gray-900">
-                                  {orgEnergy.totalACs || orgACs.length}
-                                </span>
+                        const orgTotalEnergy = orgEnergy?.totalEnergyConsumed || 
+                          orgACs.reduce((sum, ac) => sum + (ac.totalEnergyConsumed || 0), 0);
+                        return (
+                          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <Zap className="w-4 h-4 text-blue-600" />
+                                <span className="font-medium text-gray-900">Energy Consumption</span>
                               </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Active ACs:</span>
-                                <span className={`text-sm font-medium ${orgEnergy.activeACs > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                                  {orgEnergy.activeACs || orgACs.filter(ac => ac.isOn).length}
-                                </span>
-                              </div>
-                              {orgEnergy.lastEnergyCalculation && (
-                                <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-blue-200">
-                                  <span>Last Updated:</span>
-                                  <span>{new Date(orgEnergy.lastEnergyCalculation).toLocaleString()}</span>
-                                </div>
+                              {energyLoading[`org-${selectedOrgDetails.id}`] && (
+                                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                               )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-600">Total Energy:</span>
+                                <span className="text-lg font-bold text-blue-600">
+                                  {orgTotalEnergy.toFixed(2)} kWh
+                                </span>
+                              </div>
+                              {orgEnergy && (
+                                <>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm text-gray-600">Total ACs:</span>
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {orgEnergy.totalACs || orgACs.length}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm text-gray-600">Active ACs:</span>
+                                    <span className={`text-sm font-medium ${orgEnergy.activeACs > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                      {orgEnergy.activeACs || orgACs.filter(ac => ac.isOn).length}
+                                    </span>
+                                  </div>
+                                  {orgEnergy.lastEnergyCalculation && (
+                                    <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-blue-200">
+                                      <span>Last Updated:</span>
+                                      <span>{new Date(orgEnergy.lastEnergyCalculation).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                   {selectedOrgDetails.createdAt && (
                     <div>
                       <span className="text-sm text-gray-600">Created:</span>
                       <span className="ml-2 text-sm font-medium">{new Date(selectedOrgDetails.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                        </div>
+                          )}
+                        </div>
+                      </div>
 
               {/* AC Devices */}
-              <div>
+                        <div>
                 <h4 className="text-md font-semibold text-gray-900 mb-3">
                   AC Devices ({selectedOrgDetails.acs?.length || 0})
                 </h4>
@@ -4870,54 +4914,54 @@ const AdminDashboard = () => {
                           <div>
                             <span className="text-xs text-gray-600">Name:</span>
                             <p className="text-sm font-medium">{ac.name}</p>
-                          </div>
+                                    </div>
                           <div>
                             <span className="text-xs text-gray-600">Brand/Model:</span>
                             <p className="text-sm font-medium">{ac.brand} {ac.model}</p>
-                          </div>
+                                  </div>
                           <div>
                             <span className="text-xs text-gray-600">Temperature:</span>
                             <p className="text-sm font-medium">{ac.temperature}°C</p>
-                          </div>
+                                      </div>
                           <div>
                             <span className="text-xs text-gray-600">Status:</span>
                             <p className={`text-sm font-medium ${ac.isOn ? 'text-green-600' : 'text-gray-500'}`}>
                               {ac.isOn ? 'ON' : 'OFF'}
                             </p>
-                          </div>
+                                  </div>
                           {ac.ton && (
                             <div>
                               <span className="text-xs text-gray-600">Capacity:</span>
                               <p className="text-sm font-medium">{ac.ton} ton</p>
-                            </div>
+                                </div>
                           )}
                           {ac.currentMode && (
                             <div>
                               <span className="text-xs text-gray-600">Mode:</span>
                               <p className="text-sm font-medium capitalize">{ac.currentMode}</p>
-                            </div>
+                          </div>
                           )}
                           {ac.serialNumber && (
                             <div>
                               <span className="text-xs text-gray-600">Serial:</span>
                               <p className="text-sm font-medium">{ac.serialNumber}</p>
-                            </div>
-                          )}
+                        </div>
+                      )}
                           <div>
                             <span className="text-xs text-gray-600">Working:</span>
                             <p className={`text-sm font-medium ${ac.isWorking ? 'text-green-600' : 'text-red-600'}`}>
                               {ac.isWorking ? 'Yes' : 'No'}
                             </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    </div>
+                                        </div>
+                                              </div>
+                                            ))}
+                                          </div>
                 ) : (
                   <p className="text-gray-500 text-sm">No AC devices in this organization</p>
-                )}
-              </div>
-            </div>
+                                        )}
+                                      </div>
+                                    </div>
 
             <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end">
               <button
@@ -4929,9 +4973,9 @@ const AdminDashboard = () => {
               >
                 Close
               </button>
-            </div>
-          </div>
-        </div>
+                              </div>
+                                          </div>
+                                        </div>
       )}
 
       {/* Venue Details Modal */}
@@ -4940,7 +4984,7 @@ const AdminDashboard = () => {
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">Venue Details</h2>
-              <button
+                  <button
                 onClick={() => {
                   setShowVenueDetailsModal(false);
                   setSelectedVenueDetails(null);
@@ -4948,110 +4992,110 @@ const AdminDashboard = () => {
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <X className="w-6 h-6 text-gray-500" />
-              </button>
-            </div>
+                  </button>
+                </div>
             
             <div className="p-6 space-y-4">
-              <div>
-                <h4 className="font-semibold text-gray-900 mb-4 text-lg">{selectedVenueDetails.name}</h4>
-                
-                {/* Venue Information */}
-                <div className="space-y-2 text-sm mb-4">
-                  {selectedVenueDetails.organization && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">Organization:</span>
-                      <span>{selectedVenueDetails.organization.name}</span>
-                    </div>
-                  )}
-                  {selectedVenueDetails.organizationSize && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">Size:</span>
-                      <span>{selectedVenueDetails.organizationSize}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium">Status:</span>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      selectedVenueDetails.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-                    }`}>
-                      {selectedVenueDetails.status || 'active'}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium">Temperature:</span>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        min="16"
-                        max="30"
-                        step="1"
-                        value={localTemperatures[`venue-${selectedVenueDetails.id}`] !== undefined ? localTemperatures[`venue-${selectedVenueDetails.id}`] : (selectedVenueDetails.temperature ?? 16)}
-                        disabled={temperatureLoading[`venue-${selectedVenueDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                        className={`w-20 px-2 py-1 text-sm border rounded-lg text-center font-medium transition-colors ${
-                          temperatureLoading[`venue-${selectedVenueDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'
-                            ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-100' 
-                            : 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'
-                        }`}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value === '') {
-                            handleTemperatureChange('venue', selectedVenueDetails.id, '');
-                          } else {
-                            const temp = parseInt(value);
-                            if (!isNaN(temp)) {
-                              handleTemperatureChange('venue', selectedVenueDetails.id, temp);
-                            }
-                          }
-                        }}
-                        onBlur={(e) => {
-                          const value = e.target.value;
-                          if (value === '') {
-                            handleTemperatureChange('venue', selectedVenueDetails.id, selectedVenueDetails.temperature ?? 16);
-                          } else {
-                            const temp = parseInt(value);
-                            if (!isNaN(temp) && temp >= 16 && temp <= 30) {
-                              handleTemperatureSubmit('venue', selectedVenueDetails.id, temp);
-                            } else {
-                              handleTemperatureChange('venue', selectedVenueDetails.id, selectedVenueDetails.temperature ?? 16);
-                            }
-                          }
-                        }}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter') {
-                            const value = e.target.value;
-                            if (value === '') {
-                              handleTemperatureChange('venue', selectedVenueDetails.id, selectedVenueDetails.temperature ?? 16);
-                            } else {
-                              const temp = parseInt(value);
-                              if (!isNaN(temp) && temp >= 16 && temp <= 30) {
-                                handleTemperatureSubmit('venue', selectedVenueDetails.id, temp);
-                              }
-                            }
-                          }
-                        }}
-                      />
-                      <span className="text-sm font-medium text-gray-600">°C</span>
-                      {temperatureLoading[`venue-${selectedVenueDetails.id}`] && (
-                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-4 text-lg">{selectedVenueDetails.name}</h4>
+                    
+                    {/* Venue Information */}
+                    <div className="space-y-2 text-sm mb-4">
+                      {selectedVenueDetails.organization && (
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">Organization:</span>
+                          <span>{selectedVenueDetails.organization.name}</span>
+                        </div>
                       )}
+                      {selectedVenueDetails.organizationSize && (
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">Size:</span>
+                          <span>{selectedVenueDetails.organizationSize}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">Status:</span>
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          selectedVenueDetails.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
+                        }`}>
+                          {selectedVenueDetails.status || 'active'}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">Temperature:</span>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="number"
+                            min="16"
+                            max="30"
+                            step="1"
+                            value={localTemperatures[`venue-${selectedVenueDetails.id}`] !== undefined ? localTemperatures[`venue-${selectedVenueDetails.id}`] : (selectedVenueDetails.temperature ?? 16)}
+                        disabled={temperatureLoading[`venue-${selectedVenueDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
+                            className={`w-20 px-2 py-1 text-sm border rounded-lg text-center font-medium transition-colors ${
+                          temperatureLoading[`venue-${selectedVenueDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'
+                                ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-100' 
+                                : 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'
+                            }`}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                handleTemperatureChange('venue', selectedVenueDetails.id, '');
+                              } else {
+                                const temp = parseInt(value);
+                                if (!isNaN(temp)) {
+                                  handleTemperatureChange('venue', selectedVenueDetails.id, temp);
+                                }
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                handleTemperatureChange('venue', selectedVenueDetails.id, selectedVenueDetails.temperature ?? 16);
+                              } else {
+                                const temp = parseInt(value);
+                                if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                  handleTemperatureSubmit('venue', selectedVenueDetails.id, temp);
+                                } else {
+                                  handleTemperatureChange('venue', selectedVenueDetails.id, selectedVenueDetails.temperature ?? 16);
+                                }
+                              }
+                            }}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                const value = e.target.value;
+                                if (value === '') {
+                                  handleTemperatureChange('venue', selectedVenueDetails.id, selectedVenueDetails.temperature ?? 16);
+                                } else {
+                                  const temp = parseInt(value);
+                                  if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                    handleTemperatureSubmit('venue', selectedVenueDetails.id, temp);
+                                  }
+                                }
+                              }
+                            }}
+                          />
+                          <span className="text-sm font-medium text-gray-600">°C</span>
+                          {temperatureLoading[`venue-${selectedVenueDetails.id}`] && (
+                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Remote Lock Control Section */}
-                <div className="bg-yellow-50 rounded-lg p-4 mb-4 border border-yellow-200 mt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-gray-800 flex items-center">
-                      <Lock className="w-4 h-4 mr-2" />
-                      Remote Lock Control
-                    </span>
-                  </div>
-                  {isVenueDevicesRemoteLocked(selectedVenueDetails) ? (
-                    <div className="space-y-2">
-                      <p className="text-xs text-yellow-800 mb-2">
-                        All devices in this venue are remote locked
-                      </p>
-                      <button
+                    {/* Remote Lock Control Section */}
+                    <div className="bg-yellow-50 rounded-lg p-4 mb-4 border border-yellow-200 mt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-gray-800 flex items-center">
+                          <Lock className="w-4 h-4 mr-2" />
+                          Remote Lock Control
+                        </span>
+                      </div>
+                      {isVenueDevicesRemoteLocked(selectedVenueDetails) ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-yellow-800 mb-2">
+                            All devices in this venue are remote locked
+                          </p>
+                          <button
                         onClick={() => {
                           handleRemoteUnlockVenue(selectedVenueDetails.id);
                           setShowVenueDetailsModal(false);
@@ -5059,14 +5103,14 @@ const AdminDashboard = () => {
                         }}
                         disabled={user?.status === 'restricted' || user?.status === 'locked'}
                         className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Remote unlock all devices in this venue"
-                      >
-                        <Unlock className="w-4 h-4" />
-                        <span>Remote Unlock Devices</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
+                            title="Remote unlock all devices in this venue"
+                          >
+                            <Unlock className="w-4 h-4" />
+                            <span>Remote Unlock Devices</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
                       onClick={() => {
                         handleRemoteLockVenue(selectedVenueDetails.id);
                         setShowVenueDetailsModal(false);
@@ -5074,30 +5118,30 @@ const AdminDashboard = () => {
                       }}
                       disabled={user?.status === 'restricted' || user?.status === 'locked'}
                       className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Remote lock all devices in this venue"
-                    >
-                      <Lock className="w-4 h-4" />
-                      <span>Remote Lock Devices</span>
-                    </button>
-                  )}
-                </div>
-              </div>
+                          title="Remote lock all devices in this venue"
+                        >
+                          <Lock className="w-4 h-4" />
+                          <span>Remote Lock Devices</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
             </div>
 
             <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end">
-              <button
+                  <button
                 onClick={() => {
                   setShowVenueDetailsModal(false);
                   setSelectedVenueDetails(null);
                 }}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                Close
-              </button>
+                  >
+                    Close
+                  </button>
             </div>
           </div>
-        </div>
-      )}
+                </div>
+              )}
 
       {/* AC Details Modal */}
       {showACDetailsModal && selectedACDetails && (
@@ -5117,186 +5161,186 @@ const AdminDashboard = () => {
             </div>
             
             <div className="p-6 space-y-4">
-              <div>
-                <h4 className="font-semibold text-gray-900 mb-4 text-lg">{selectedACDetails.name}</h4>
-                
-                {/* AC Information */}
-                <div className="space-y-2 text-sm mb-4">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium">Brand:</span>
-                    <span>{selectedACDetails.brand}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium">Model:</span>
-                    <span>{selectedACDetails.model}</span>
-                  </div>
-                  {selectedACDetails.serialNumber && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">Serial Number:</span>
-                      <span className="font-mono text-xs">{selectedACDetails.serialNumber}</span>
-                    </div>
-                  )}
-                  {selectedACDetails.ton && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">Capacity:</span>
-                      <span>{selectedACDetails.ton} Ton</span>
-                    </div>
-                  )}
-                  {selectedACDetails.venue && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">Venue:</span>
-                      <span>{selectedACDetails.venue.name}</span>
-                      {selectedACDetails.venue.organization && (
-                        <span className="text-gray-500">({selectedACDetails.venue.organization.name})</span>
+                    <div>
+                    <h4 className="font-semibold text-gray-900 mb-4 text-lg">{selectedACDetails.name}</h4>
+                    
+                    {/* AC Information */}
+                    <div className="space-y-2 text-sm mb-4">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">Brand:</span>
+                        <span>{selectedACDetails.brand}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">Model:</span>
+                        <span>{selectedACDetails.model}</span>
+                      </div>
+                      {selectedACDetails.serialNumber && (
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">Serial Number:</span>
+                          <span className="font-mono text-xs">{selectedACDetails.serialNumber}</span>
+                        </div>
+                      )}
+                      {selectedACDetails.ton && (
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">Capacity:</span>
+                          <span>{selectedACDetails.ton} Ton</span>
+                        </div>
+                      )}
+                      {selectedACDetails.venue && (
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">Venue:</span>
+                          <span>{selectedACDetails.venue.name}</span>
+                          {selectedACDetails.venue.organization && (
+                            <span className="text-gray-500">({selectedACDetails.venue.organization.name})</span>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
 
-                {/* Temperature Control */}
-                <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-gray-700">Temperature Control</span>
-                    {temperatureLoading[`ac-${selectedACDetails.id}`] && (
-                      <div className="flex items-center space-x-1 text-blue-600">
-                        <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-xs">Updating...</span>
+                    {/* Temperature Control */}
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-gray-700">Temperature Control</span>
+                        {temperatureLoading[`ac-${selectedACDetails.id}`] && (
+                          <div className="flex items-center space-x-1 text-blue-600">
+                            <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-xs">Updating...</span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-3 mb-3">
-                    <input
-                      type="number"
-                      min="16"
-                      max="30"
+                      <div className="flex items-center space-x-3 mb-3">
+                        <input
+                          type="number"
+                          min="16"
+                          max="30"
                       value={localTemperatures[`ac-${selectedACDetails.id}`] !== undefined ? localTemperatures[`ac-${selectedACDetails.id}`] : (selectedACDetails.temperature ?? 16)}
                       disabled={temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                      className={`w-24 px-3 py-2 text-sm border rounded-lg text-center font-medium transition-colors ${
+                          className={`w-24 px-3 py-2 text-sm border rounded-lg text-center font-medium transition-colors ${
                         temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'
-                          ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-100' 
-                          : 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'
-                      }`}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value === '') {
-                          handleTemperatureChange('ac', selectedACDetails.id, '');
-                        } else {
-                          const temp = parseInt(value);
-                          if (!isNaN(temp)) {
-                            handleTemperatureChange('ac', selectedACDetails.id, temp);
-                          }
-                        }
-                      }}
-                      onBlur={(e) => {
-                        const value = e.target.value;
-                        if (value === '') {
-                          handleTemperatureChange('ac', selectedACDetails.id, selectedACDetails.temperature ?? 16);
-                        } else {
-                          const temp = parseInt(value);
-                          if (!isNaN(temp) && temp >= 16 && temp <= 30) {
-                            handleTemperatureSubmit('ac', selectedACDetails.id, temp);
-                          } else {
-                            handleTemperatureChange('ac', selectedACDetails.id, selectedACDetails.temperature ?? 16);
-                          }
-                        }
-                      }}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          const value = e.target.value;
-                          if (value === '') {
-                            handleTemperatureChange('ac', selectedACDetails.id, selectedACDetails.temperature ?? 16);
-                          } else {
-                            const temp = parseInt(value);
-                            if (!isNaN(temp) && temp >= 16 && temp <= 30) {
-                              handleTemperatureSubmit('ac', selectedACDetails.id, temp);
+                              ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-100' 
+                              : 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'
+                          }`}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '') {
+                              handleTemperatureChange('ac', selectedACDetails.id, '');
+                            } else {
+                              const temp = parseInt(value);
+                              if (!isNaN(temp)) {
+                                handleTemperatureChange('ac', selectedACDetails.id, temp);
+                              }
                             }
-                          }
-                        }
-                      }}
-                    />
-                    <span className="text-sm font-medium text-gray-600">°C</span>
-                  </div>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => {
-                        handleTemperatureChange('ac', selectedACDetails.id, 16);
-                        handleSetTemperature('ac', selectedACDetails.id, 16);
-                      }}
-                      disabled={temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                      className="px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      16°
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleTemperatureChange('ac', selectedACDetails.id, 22);
-                        handleSetTemperature('ac', selectedACDetails.id, 22);
-                      }}
-                      disabled={temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                      className="px-3 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      22°
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleTemperatureChange('ac', selectedACDetails.id, 26);
-                        handleSetTemperature('ac', selectedACDetails.id, 26);
-                      }}
-                      disabled={temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                      className="px-3 py-1 text-xs font-medium text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      26°
-                    </button>
-                  </div>
-                </div>
-
-                {/* Power Control */}
-                <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-gray-700">Power Control</span>
-                    {acPowerLoading[selectedACDetails.id] && (
-                      <div className="flex items-center space-x-1 text-blue-600">
-                        <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-xs">Updating...</span>
+                          }}
+                          onBlur={(e) => {
+                            const value = e.target.value;
+                            if (value === '') {
+                              handleTemperatureChange('ac', selectedACDetails.id, selectedACDetails.temperature ?? 16);
+                            } else {
+                              const temp = parseInt(value);
+                              if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                handleTemperatureSubmit('ac', selectedACDetails.id, temp);
+                              } else {
+                                handleTemperatureChange('ac', selectedACDetails.id, selectedACDetails.temperature ?? 16);
+                              }
+                            }
+                          }}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              const value = e.target.value;
+                              if (value === '') {
+                                handleTemperatureChange('ac', selectedACDetails.id, selectedACDetails.temperature ?? 16);
+                              } else {
+                                const temp = parseInt(value);
+                                if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                  handleTemperatureSubmit('ac', selectedACDetails.id, temp);
+                                }
+                              }
+                            }
+                          }}
+                        />
+                        <span className="text-sm font-medium text-gray-600">°C</span>
                       </div>
-                    )}
-                  </div>
-                  <button
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            handleTemperatureChange('ac', selectedACDetails.id, 16);
+                            handleSetTemperature('ac', selectedACDetails.id, 16);
+                          }}
+                      disabled={temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
+                          className="px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          16°
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleTemperatureChange('ac', selectedACDetails.id, 22);
+                            handleSetTemperature('ac', selectedACDetails.id, 22);
+                          }}
+                      disabled={temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
+                          className="px-3 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          22°
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleTemperatureChange('ac', selectedACDetails.id, 26);
+                            handleSetTemperature('ac', selectedACDetails.id, 26);
+                          }}
+                      disabled={temperatureLoading[`ac-${selectedACDetails.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
+                          className="px-3 py-1 text-xs font-medium text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          26°
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Power Control */}
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-gray-700">Power Control</span>
+                        {acPowerLoading[selectedACDetails.id] && (
+                          <div className="flex items-center space-x-1 text-blue-600">
+                            <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-xs">Updating...</span>
+                          </div>
+                        )}
+                      </div>
+                      <button
                     onClick={() => handleToggleACPower(selectedACDetails.id, !selectedACDetails.isOn)}
                     disabled={acPowerLoading[selectedACDetails.id] || user?.status === 'restricted' || user?.status === 'locked'}
-                    className={`w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                      selectedACDetails.isOn
-                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                        : 'bg-green-100 text-green-700 hover:bg-green-200'
-                    }`}
-                  >
-                    <Power className="w-4 h-4" />
-                    <span>{selectedACDetails.isOn ? 'Turn OFF' : 'Turn ON'}</span>
-                  </button>
-                  <div className="mt-2 flex items-center space-x-2">
-                    <span className="text-xs text-gray-500">Current Status:</span>
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      selectedACDetails.isOn ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {selectedACDetails.isOn ? 'ON' : 'OFF'}
-                    </span>
-                  </div>
-                </div>
+                        className={`w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                          selectedACDetails.isOn
+                            ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                            : 'bg-green-100 text-green-700 hover:bg-green-200'
+                        }`}
+                      >
+                        <Power className="w-4 h-4" />
+                        <span>{selectedACDetails.isOn ? 'Turn OFF' : 'Turn ON'}</span>
+                      </button>
+                      <div className="mt-2 flex items-center space-x-2">
+                        <span className="text-xs text-gray-500">Current Status:</span>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          selectedACDetails.isOn ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {selectedACDetails.isOn ? 'ON' : 'OFF'}
+                        </span>
+                      </div>
+                    </div>
 
-                {/* Remote Lock Control */}
-                <div className="bg-yellow-50 rounded-lg p-4 mb-4 border border-yellow-200">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-gray-800 flex items-center">
-                      <Lock className="w-4 h-4 mr-2" />
-                      Remote Lock Control
-                    </span>
-                  </div>
-                  {isDeviceRemoteLocked(selectedACDetails) ? (
-                    <div className="space-y-2">
-                      <p className="text-xs text-yellow-800 mb-2">
-                        This device is remote locked
-                      </p>
-                      <button
+                    {/* Remote Lock Control */}
+                    <div className="bg-yellow-50 rounded-lg p-4 mb-4 border border-yellow-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-gray-800 flex items-center">
+                          <Lock className="w-4 h-4 mr-2" />
+                          Remote Lock Control
+                        </span>
+                      </div>
+                      {isDeviceRemoteLocked(selectedACDetails) ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-yellow-800 mb-2">
+                            This device is remote locked
+                          </p>
+                          <button
                         onClick={() => {
                           handleRemoteUnlockAC(selectedACDetails.id);
                           setShowACDetailsModal(false);
@@ -5304,14 +5348,14 @@ const AdminDashboard = () => {
                         }}
                         disabled={user?.status === 'restricted' || user?.status === 'locked'}
                         className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Remote unlock this device"
-                      >
-                        <Unlock className="w-4 h-4" />
-                        <span>Remote Unlock Device</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
+                            title="Remote unlock this device"
+                          >
+                            <Unlock className="w-4 h-4" />
+                            <span>Remote Unlock Device</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
                       onClick={() => {
                         handleRemoteLockAC(selectedACDetails.id);
                         setShowACDetailsModal(false);
@@ -5319,48 +5363,48 @@ const AdminDashboard = () => {
                       }}
                       disabled={user?.status === 'restricted' || user?.status === 'locked'}
                       className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Remote lock this device"
-                    >
-                      <Lock className="w-4 h-4" />
-                      <span>Remote Lock Device</span>
-                    </button>
-                  )}
-                </div>
+                          title="Remote lock this device"
+                        >
+                          <Lock className="w-4 h-4" />
+                          <span>Remote Lock Device</span>
+                        </button>
+                      )}
+                    </div>
 
-                {/* Energy Consumption */}
-                {(() => {
-                  const acEnergy = energyData.acs[selectedACDetails.id];
-                  const acTotalEnergy = acEnergy?.totalEnergyConsumed || selectedACDetails.totalEnergyConsumed || 0;
-                  return (
-                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 mb-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <Zap className="w-4 h-4 text-blue-600" />
-                          <span className="font-medium text-gray-900">Energy Consumption</span>
-                        </div>
-                        {energyLoading[`ac-${selectedACDetails.id}`] && (
-                          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">Total Energy:</span>
-                          <span className="text-lg font-bold text-blue-600">
-                            {acTotalEnergy.toFixed(2)} kWh
-                          </span>
-                        </div>
+                    {/* Energy Consumption */}
+                    {(() => {
+                        const acEnergy = energyData.acs[selectedACDetails.id];
+                        const acTotalEnergy = acEnergy?.totalEnergyConsumed || selectedACDetails.totalEnergyConsumed || 0;
+                        return (
+                          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 mb-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <Zap className="w-4 h-4 text-blue-600" />
+                                <span className="font-medium text-gray-900">Energy Consumption</span>
+                              </div>
+                              {energyLoading[`ac-${selectedACDetails.id}`] && (
+                                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-600">Total Energy:</span>
+                                <span className="text-lg font-bold text-blue-600">
+                                  {acTotalEnergy.toFixed(2)} kWh
+                                </span>
+                              </div>
                         {acEnergy && acEnergy.lastEnergyCalculation && (
                           <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-blue-200">
                             <span>Last Updated:</span>
                             <span>{new Date(acEnergy.lastEnergyCalculation).toLocaleString()}</span>
-                          </div>
+                                      </div>
                         )}
-                      </div>
-                    </div>
+                                    </div>
+                                      </div>
                   );
                 })()}
-              </div>
-            </div>
+                                    </div>
+                                  </div>
 
             <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end">
               <button
@@ -5372,9 +5416,9 @@ const AdminDashboard = () => {
               >
                 Close
               </button>
-            </div>
-          </div>
-        </div>
+                                    </div>
+                                      </div>
+                                  </div>
       )}
 
       {/* Create Organization Modal */}
@@ -5390,8 +5434,8 @@ const AdminDashboard = () => {
                 >
                   <X className="w-6 h-6" />
                 </button>
-              </div>
-            </div>
+                                            </div>
+                                              </div>
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -5420,7 +5464,7 @@ const AdminDashboard = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Enter organization name"
                 />
-              </div>
+                                              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                 <input
@@ -5457,8 +5501,8 @@ const AdminDashboard = () => {
               </div>
             </form>
           </div>
-        </div>
-      )}
+                                    </div>
+                                  )}
 
       {/* Create Venue Modal */}
       {showCreateVenueModal && (
@@ -5473,8 +5517,8 @@ const AdminDashboard = () => {
                 >
                   <X className="w-6 h-6" />
                 </button>
-              </div>
-            </div>
+                                    </div>
+                            </div>
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -5505,7 +5549,7 @@ const AdminDashboard = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Enter venue name"
                 />
-              </div>
+                          </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Organization *</label>
                 <select
@@ -5664,9 +5708,9 @@ const AdminDashboard = () => {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+                        </div>
+                      </div>
+                    )}
 
       {/* Create AC Device Modal */}
       {showCreateACModal && (
@@ -5675,13 +5719,13 @@ const AdminDashboard = () => {
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-900">Create AC Device</h3>
-                <button
+                    <button
                   onClick={() => setShowCreateACModal(false)}
                   className="text-gray-400 hover:text-gray-600"
-                >
+                    >
                   <X className="w-6 h-6" />
-                </button>
-              </div>
+                    </button>
+                  </div>
             </div>
             <form
               onSubmit={async (e) => {
@@ -5800,6 +5844,106 @@ const AdminDashboard = () => {
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
                 >
                   {loading ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Organization to Manager Modal */}
+      {showAssignOrgModal && selectedOrgForAssign && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-gray-900">Assign Organization to Manager</h3>
+                <button
+                  onClick={() => {
+                    setShowAssignOrgModal(false);
+                    setSelectedOrgForAssign(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const managerId = parseInt(formData.get('managerId'));
+                const reason = formData.get('reason') || '';
+                
+                if (!reason.trim()) {
+                  toast.error('Please provide a reason for assigning this organization');
+                  return;
+                }
+                
+                try {
+                  await handleAssignOrganization(managerId, [selectedOrgForAssign.id], reason);
+                  setShowAssignOrgModal(false);
+                  setSelectedOrgForAssign(null);
+                  e.target.reset();
+                } catch (error) {
+                  // Error already handled in handleAssignOrganization
+                }
+              }}
+              className="p-6 space-y-4"
+            >
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <p className="text-sm font-semibold text-blue-900 mb-1">Organization:</p>
+                <p className="text-lg font-bold text-blue-700">{selectedOrgForAssign.name}</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Manager *</label>
+                <select
+                  name="managerId"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select Manager</option>
+                  {data.managers.map(manager => (
+                    <option key={manager.id} value={manager.id}>{manager.name} ({manager.email})</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason for Assigning Full Organization *
+                </label>
+                <textarea
+                  name="reason"
+                  required
+                  rows="4"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Explain why you want to assign this full organization to the manager..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This will assign the entire organization including all existing and future venues to the manager.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAssignOrgModal(false);
+                    setSelectedOrgForAssign(null);
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+                >
+                  {loading ? 'Assigning...' : 'Assign Organization'}
                 </button>
               </div>
             </form>

@@ -204,7 +204,7 @@ export const adminAPI = {
     apiAdmin.post("/admin/unassign-organization", { organizationId }),
   assignManagerToOrganizations: (managerId, organizationIds) =>
     apiAdmin.post(`/admin/managers/${managerId}/assign`, { organizationIds }),
-  
+
   // Manager Status Management
   lockManager: (managerId, reason) =>
     apiAdmin.post("/admin/managers/lock", { managerId, reason }),

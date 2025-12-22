@@ -52,6 +52,15 @@ class VenueService {
         );
       }
 
+      // AUTO-ASSIGNMENT: If organization has a manager assigned, automatically assign venue to same manager
+      // This ensures that when a new venue is added to an organization, it automatically goes to the manager
+      if (organization.managerId && !venueData.managerId) {
+        venueData.managerId = organization.managerId;
+        console.log(
+          `✅ [AUTO-ASSIGN] Venue will be auto-assigned to manager ${organization.managerId} (from organization)`
+        );
+      }
+
       // IMPORTANT: Check if a Venue entry already exists with this name and adminId
       // Venue model uses "organizations" table, so we need to prevent duplicate organizations
       // Also check if this is a temperature entry for the parent organization (same name as organization)
@@ -568,7 +577,7 @@ class VenueService {
                 `🔌 [VENUE-POWER] Sending WebSocket command to device ${ac.serialNumber}`
               );
               console.log(`   └─ Power state: ${newPowerState ? "ON" : "OFF"}`);
-              
+
               const wsResult = await ESPService.sendPowerCommand(
                 ac.serialNumber, // ESP32 connections are keyed by serialNumber
                 newPowerState
@@ -612,9 +621,7 @@ class VenueService {
           });
         }
 
-        console.log(
-          `📡 [VENUE-POWER] WebSocket commands completed:`
-        );
+        console.log(`📡 [VENUE-POWER] WebSocket commands completed:`);
         console.log(`   └─ Commands sent: ${wsCommandsSent}`);
         console.log(`   └─ Commands skipped: ${wsCommandsSkipped}`);
         console.log(

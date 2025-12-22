@@ -463,7 +463,7 @@ class ManagerACService {
 
       if (orgIds.length === 0) {
         if (transaction && !transaction.finished) {
-          await transaction.rollback();
+        await transaction.rollback();
         }
         throw new Error("AC device not found or unauthorized");
       }
@@ -474,7 +474,7 @@ class ManagerACService {
 
       if (!adminId) {
         if (transaction && !transaction.finished) {
-          await transaction.rollback();
+        await transaction.rollback();
         }
         throw new Error("AC device not found or unauthorized");
       }
@@ -546,7 +546,7 @@ class ManagerACService {
         }
 
         if (transaction && !transaction.finished) {
-          await transaction.rollback();
+        await transaction.rollback();
         }
         throw new Error("AC device not found or unauthorized");
       }
@@ -567,9 +567,9 @@ class ManagerACService {
       if (orgIds.includes(ac.venueId)) {
         organization = await Organization.findByPk(ac.venueId, {
           attributes: ["id", "name", "isVenueOn", "adminId"],
-          transaction,
-        });
-        
+        transaction,
+      });
+
         // Find venues under this organization
         if (organization) {
           const orgVenues = await Venue.findAll({
@@ -596,7 +596,7 @@ class ManagerACService {
         }
       } else if (venueIds.includes(ac.venueId)) {
         // If venueId is in venueIds, it's a venue ID
-        if (!venue) {
+      if (!venue) {
           venue = await Venue.findOne({
             where: { id: ac.venueId },
             attributes: ["id", "name", "isVenueOn", "organizationId", "adminId"],
@@ -606,31 +606,31 @@ class ManagerACService {
         
         if (!venue) {
           if (transaction && !transaction.finished) {
-            await transaction.rollback();
+        await transaction.rollback();
           }
-          throw new Error("Venue not found for this AC");
-        }
-        
-        // Check venue power state
-        if (!venue.isVenueOn && powerState) {
+        throw new Error("Venue not found for this AC");
+      }
+
+      // Check venue power state
+      if (!venue.isVenueOn && powerState) {
           if (transaction && !transaction.finished) {
-            await transaction.rollback();
+        await transaction.rollback();
           }
-          throw new Error(
-            "Cannot turn ON AC: Venue is currently OFF. Please turn on the venue first."
-          );
-        }
-        
-        // Check organization power state if venue belongs to an organization
-        if (venue.organizationId) {
+        throw new Error(
+          "Cannot turn ON AC: Venue is currently OFF. Please turn on the venue first."
+        );
+      }
+
+      // Check organization power state if venue belongs to an organization
+      if (venue.organizationId) {
           organization = await Organization.findByPk(venue.organizationId, {
             attributes: ["id", "name", "isVenueOn"],
-            transaction,
-          });
-          
-          if (organization && !organization.isVenueOn && powerState) {
+          transaction,
+        });
+
+        if (organization && !organization.isVenueOn && powerState) {
             if (transaction && !transaction.finished) {
-              await transaction.rollback();
+          await transaction.rollback();
             }
             throw new Error(
               "Cannot turn ON AC: Organization is currently OFF. Please turn on the organization first."
@@ -811,7 +811,7 @@ class ManagerACService {
     } catch (error) {
       // Only rollback if transaction hasn't been finished
       if (transaction && !transaction.finished) {
-        await transaction.rollback();
+      await transaction.rollback();
       }
       throw error;
     }
@@ -1128,7 +1128,7 @@ class ManagerACService {
     } catch (error) {
       // Only rollback if transaction hasn't been finished
       if (transaction && !transaction.finished) {
-        await transaction.rollback();
+      await transaction.rollback();
       }
       throw error;
     }
@@ -1222,7 +1222,7 @@ class ManagerACService {
     } catch (error) {
       // Only rollback if transaction hasn't been finished
       if (transaction && !transaction.finished) {
-        await transaction.rollback();
+      await transaction.rollback();
       }
       throw error;
     }

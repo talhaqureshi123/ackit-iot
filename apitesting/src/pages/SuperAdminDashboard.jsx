@@ -407,13 +407,13 @@ const SuperAdminDashboard = () => {
                     minute: '2-digit'
                   })
                 : 'N/A'}
+          </p>
+          {log.admin && (
+            <p className="text-xs text-blue-600">
+              Admin: {log.admin.name} ({log.admin.email})
             </p>
-            {log.admin && (
-              <p className="text-xs text-blue-600">
-                Admin: {log.admin.name} ({log.admin.email})
-              </p>
-            )}
-          </div>
+          )}
+        </div>
         </div>
         <div className="flex items-center justify-end sm:ml-4 sm:justify-start">
           <span className={`inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${

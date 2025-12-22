@@ -244,7 +244,7 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
     let endTimeUTC = '';
     
     try {
-      if (!formData.isRecurring) {
+    if (!formData.isRecurring) {
       // datetime-local input provides time in format "YYYY-MM-DDTHH:mm" 
       // IMPORTANT: We need to treat this input as Pakistan/Karachi time (PKT, UTC+5)
       // Parse the datetime-local value and explicitly convert from PKT to UTC
@@ -286,12 +286,12 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
         // Verify conversion is correct
         if (utcHours !== expectedUTCHours) {
           console.error('❌ PKT to UTC conversion mismatch!', {
-            input: dateTimeString,
+          input: dateTimeString,
             inputPKT: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} PKT`,
             convertedUTC: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
             expectedUTC: `${String(expectedUTCHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
             isoString: dateWithTimezone.toISOString()
-          });
+        });
         }
         
         // Double-check: Convert back to PKT to verify it matches input
@@ -393,12 +393,12 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
         console.error('   UTC stored:', endTimeUTC);
         toast.error(`Time conversion error: ${inputEndTime} PKT converted incorrectly`);
       }
-      } else {
-        // For recurring events, use dummy startTime/endTime (required by backend validation)
-        // Backend will recalculate these based on first occurrence
-        const now = new Date();
-        startTimeUTC = now.toISOString();
-        endTimeUTC = new Date(now.getTime() + 3600000).toISOString(); // 1 hour later
+    } else {
+      // For recurring events, use dummy startTime/endTime (required by backend validation)
+      // Backend will recalculate these based on first occurrence
+      const now = new Date();
+      startTimeUTC = now.toISOString();
+      endTimeUTC = new Date(now.getTime() + 3600000).toISOString(); // 1 hour later
       }
     } catch (error) {
       console.error('Error processing event times:', error);
