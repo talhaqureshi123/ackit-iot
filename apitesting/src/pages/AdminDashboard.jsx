@@ -4364,6 +4364,22 @@ const AdminDashboard = () => {
                         </div>
                       </div>
                     )}
+                    
+                    {/* Assign Organizations Button */}
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <button
+                        onClick={() => {
+                          setSelectedOrgForAssign({ id: null, managerId: manager.id });
+                          setShowAssignOrgModal(true);
+                        }}
+                        className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors shadow-sm hover:shadow"
+                        title="Assign organizations to this manager"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        <span>Assign Organizations</span>
+                      </button>
+                    </div>
+                    
                     {/* Status Change Buttons */}
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <p className="text-xs text-gray-500 mb-2">Change Status:</p>
