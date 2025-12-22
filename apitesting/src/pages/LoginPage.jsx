@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { Mail, Lock, Eye, EyeOff, Cloud } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -28,9 +28,29 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      const result = await login(formData.email, formData.password, formData.role);
-      
-      if (result && result.success) {
+      // Try all roles to auto-detect the correct one
+      const roles = ['superadmin', 'admin', 'manager'];
+      let result = null;
+      let detectedRole = null;
+      let lastError = null;
+
+      for (const role of roles) {
+        try {
+          console.log(`🔄 Trying login with role: ${role}`);
+          result = await login(formData.email, formData.password, role);
+          if (result && result.success) {
+            detectedRole = role;
+            console.log(`✅ Login successful with role: ${role}`);
+            break;
+          }
+        } catch (error) {
+          console.log(`❌ Login failed for role ${role}:`, error.message);
+          lastError = error;
+          // Continue to next role
+        }
+      }
+
+      if (result && result.success && detectedRole) {
         toast.success(`Welcome back, ${result.user.name}!`);
         
         // Verify user is stored before navigating
@@ -41,6 +61,7 @@ const LoginPage = () => {
         console.log('  Stored user:', storedUser ? 'Present' : 'Missing');
         console.log('  Stored role:', storedRole || 'Missing');
         console.log('  Result user:', result.user);
+        console.log('  Detected role:', detectedRole);
         
         if (!storedUser || !storedRole) {
           console.error('❌ User data not stored properly, cannot navigate');
@@ -66,9 +87,10 @@ const LoginPage = () => {
           return;
         }
         
-        // Navigate based on role
-        console.log('🚀 LoginPage - Navigating to dashboard for role:', formData.role);
-        switch (formData.role) {
+        // Navigate based on detected role
+        const roleToNavigate = storedRole || detectedRole;
+        console.log('🚀 LoginPage - Navigating to dashboard for role:', roleToNavigate);
+        switch (roleToNavigate) {
           case 'superadmin':
             navigate('/superadmin');
             break;
@@ -78,9 +100,15 @@ const LoginPage = () => {
           case 'manager':
             navigate('/manager');
             break;
+          default:
+            console.error('❌ Unknown role:', roleToNavigate);
+            toast.error('Unknown user role. Please contact support.');
         }
       } else {
-        toast.error('Login failed: Invalid response from server');
+        // All roles failed
+        const errorMessage = lastError?.response?.data?.message || lastError?.message || 'Invalid email or password';
+        console.error('LoginPage - All login attempts failed');
+        toast.error(errorMessage);
       }
     } catch (error) {
       console.error('LoginPage - Login error:', error);
@@ -95,22 +123,14 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center bg-white p-4">
       <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col lg:flex-row border border-gray-200">
         {/* Left Side - Login Form */}
-        <div className="w-full lg:w-1/2 p-8 lg:p-12 flex flex-col justify-center">
-          {/* Top Image */}
-          <div className="mb-6">
-            <img
-              src="/assets/top image.png"
-              alt="Decoration"
-              className="w-full max-w-sm mx-auto object-contain"
-            />
-          </div>
-          
+        <div className="w-full lg:w-1/2 p-8 lg:p-12 flex flex-col justify-center border-r" style={{ borderColor: '#eaeaea' }}>
           {/* Logo */}
-          <div className="flex items-center space-x-2 mb-8">
-            <div className="bg-blue-600 rounded-lg p-2">
-              <Cloud className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-2xl font-bold text-gray-900">IOTFIY</span>
+          <div className="flex items-center mb-8">
+            <img 
+              src="/assets/logo.png" 
+              alt="IOTFIY Logo" 
+              className="h-8 object-contain"
+            />
           </div>
 
           {/* Heading */}
@@ -220,9 +240,9 @@ const LoginPage = () => {
         </div>
 
         {/* Right Side - Illustration Image */}
-        <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 lg:p-12">
+        <div className="w-full lg:w-1/2 flex items-center justify-center p-8 lg:p-12" style={{ backgroundColor: '#eaeaea' }}>
           <img
-            src="/assets/Frame.png"
+            src="/assets/rightside.png"
             alt="Smart Home IoT Devices"
             className="w-full h-full object-contain rounded-lg"
           />
