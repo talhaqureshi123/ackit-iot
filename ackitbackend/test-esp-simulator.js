@@ -20,30 +20,49 @@ const SERVER_PORT = 5050; // WebSocket port (not HTTP port)
 const SERIAL_NUMBER = "AC-541281-637";
 const WEBSOCKET_PATH = "/esp32";
 
+// Railway Configuration
+const RAILWAY_BACKEND_URL = process.env.RAILWAY_BACKEND_URL || "https://ackit-iot-production.up.railway.app";
+const USE_RAILWAY = process.env.USE_RAILWAY === "true" || process.argv.includes("--railway");
+
+// Determine WebSocket URL
+const getWebSocketURL = () => {
+  if (USE_RAILWAY) {
+    // Railway uses WSS (secure WebSocket)
+    const wsUrl = RAILWAY_BACKEND_URL.replace(/^https?/, "wss") + WEBSOCKET_PATH;
+    return wsUrl;
+  }
+  // Local development uses WS (unencrypted WebSocket)
+  return `ws://${SERVER_IP}:${SERVER_PORT}${WEBSOCKET_PATH}`;
+};
+
+const WS_URL = getWebSocketURL();
+
 // Debug: Log configuration
 console.log("\n📋 Simulator Configuration:");
-console.log(`   └─ Server IP: ${SERVER_IP}`);
-console.log(`   └─ Server Port: ${SERVER_PORT}`);
+console.log(`   └─ Mode: ${USE_RAILWAY ? "🚂 Railway (Production)" : "💻 Local (Development)"}`);
+console.log(`   └─ Server IP: ${USE_RAILWAY ? RAILWAY_BACKEND_URL : SERVER_IP}`);
+console.log(`   └─ Server Port: ${USE_RAILWAY ? "443 (WSS)" : SERVER_PORT}`);
 console.log(`   └─ WebSocket Path: ${WEBSOCKET_PATH}`);
 console.log(`   └─ Serial Number: ${SERIAL_NUMBER}`);
-console.log(
-  `   └─ Full URL: ws://${SERVER_IP}:${SERVER_PORT}${WEBSOCKET_PATH}`
-);
+console.log(`   └─ Full URL: ${WS_URL}`);
 console.log("");
 console.log("🔗 Device Testing Links:");
-console.log(`   └─ Local Backend: http://${SERVER_IP}:${SERVER_PORT}`);
-console.log(
-  `   └─ Railway Backend: https://ackit-iot-production.up.railway.app`
-);
-console.log(
-  `   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`
-);
-console.log(
-  `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`
-);
-console.log(
-  `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`
-);
+if (USE_RAILWAY) {
+  console.log(`   └─ Railway Backend: ${RAILWAY_BACKEND_URL}`);
+  console.log(`   └─ Railway WebSocket: ${WS_URL}`);
+  console.log(`   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`);
+  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`);
+  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`);
+} else {
+  console.log(`   └─ Local Backend: http://${SERVER_IP}:${SERVER_PORT}`);
+  console.log(`   └─ Local WebSocket: ${WS_URL}`);
+  console.log(`   └─ Railway Backend: ${RAILWAY_BACKEND_URL}`);
+  console.log(`   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`);
+  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`);
+  console.log(`   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`);
+}
+console.log("");
+console.log("💡 Tip: Use --railway flag or set USE_RAILWAY=true to connect to Railway");
 console.log("");
 
 let deviceState = {
@@ -112,12 +131,13 @@ function logRoomTemp(roomTemp, deviceTemp) {
 // CONNECTION
 // ============================================
 function connect() {
-  const wsUrl = `ws://${SERVER_IP}:${SERVER_PORT}${WEBSOCKET_PATH}`;
+  const wsUrl = WS_URL;
   console.log(`\n🔌 Attempting to connect to: ${wsUrl}`);
-  console.log(`📡 Server IP: ${SERVER_IP}`);
-  console.log(`📡 Port: ${SERVER_PORT}`);
+  console.log(`📡 Mode: ${USE_RAILWAY ? "Railway (WSS)" : "Local (WS)"}`);
+  console.log(`📡 Server: ${USE_RAILWAY ? RAILWAY_BACKEND_URL : SERVER_IP}`);
+  console.log(`📡 Port: ${USE_RAILWAY ? "443 (WSS)" : SERVER_PORT}`);
   console.log(`📡 Path: ${WEBSOCKET_PATH}`);
-  console.log(`📡 Protocol: ws:// (unencrypted)`);
+  console.log(`📡 Protocol: ${USE_RAILWAY ? "wss:// (secure)" : "ws:// (unencrypted)"}`);
   console.log(`📡 Full URL: ${wsUrl}`);
 
   ws = new WebSocket(wsUrl, {

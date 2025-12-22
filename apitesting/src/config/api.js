@@ -62,7 +62,7 @@ export const BACKEND_PORT = "5050";
 // ⚠️ MUST MATCH: ackitbackend/services/esp.js -> frontendWSS port (same as ESP32 port 5050)
 export const FRONTEND_WS_PORT = "5050";
 
-// WebSocket URL for real-time connections
+// WebSocket URL for real-time connections (Frontend)
 // Uses Railway WebSocket URL in production, local IP in development
 export const WS_URL = (() => {
   if (RAILWAY_BACKEND_URL) {
@@ -74,6 +74,18 @@ export const WS_URL = (() => {
     return RAILWAY_BACKEND_URL.replace(/^https?/, wsProtocol) + "/frontend";
   }
   return `ws://${BACKEND_IP}:${FRONTEND_WS_PORT}/frontend`;
+})();
+
+// WebSocket URL for ESP32 devices
+// Uses Railway WebSocket URL in production, local IP in development
+export const ESP_WS_URL = (() => {
+  if (RAILWAY_BACKEND_URL) {
+    // Convert Railway HTTPS URL to WSS for WebSocket
+    // ESP32 devices can use wss:// for secure connections
+    const wsProtocol = "wss"; // Always use secure WebSocket for Railway
+    return RAILWAY_BACKEND_URL.replace(/^https?/, wsProtocol) + "/esp32";
+  }
+  return `ws://${BACKEND_IP}:${FRONTEND_WS_PORT}/esp32`;
 })();
 
 // Frontend port (for Vite dev server)

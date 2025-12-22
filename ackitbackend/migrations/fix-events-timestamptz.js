@@ -28,68 +28,68 @@ module.exports = {
 
       console.log("📊 Current column types:", results);
 
-       // Step 2: Convert startTime to TIMESTAMPTZ
-       // CRITICAL: Backend already sends UTC times (e.g., "2025-12-21T12:25:00.000Z")
-       // So we must use 'UTC' timezone, not 'Asia/Karachi'
-       console.log("🔄 Converting startTime to TIMESTAMPTZ...");
-       await queryInterface.sequelize.query(`
+      // Step 2: Convert startTime to TIMESTAMPTZ
+      // CRITICAL: Backend already sends UTC times (e.g., "2025-12-21T12:25:00.000Z")
+      // So we must use 'UTC' timezone, not 'Asia/Karachi'
+      console.log("🔄 Converting startTime to TIMESTAMPTZ...");
+      await queryInterface.sequelize.query(`
          ALTER TABLE events
          ALTER COLUMN "startTime"
          TYPE TIMESTAMPTZ
          USING "startTime" AT TIME ZONE 'UTC';
        `);
-       console.log("✅ startTime converted to TIMESTAMPTZ");
+      console.log("✅ startTime converted to TIMESTAMPTZ");
 
-       // Step 3: Convert endTime to TIMESTAMPTZ
-       console.log("🔄 Converting endTime to TIMESTAMPTZ...");
-       await queryInterface.sequelize.query(`
+      // Step 3: Convert endTime to TIMESTAMPTZ
+      console.log("🔄 Converting endTime to TIMESTAMPTZ...");
+      await queryInterface.sequelize.query(`
          ALTER TABLE events
          ALTER COLUMN "endTime"
          TYPE TIMESTAMPTZ
          USING "endTime" AT TIME ZONE 'UTC';
        `);
-       console.log("✅ endTime converted to TIMESTAMPTZ");
+      console.log("✅ endTime converted to TIMESTAMPTZ");
 
-       // Step 4: Convert originalEndTime to TIMESTAMPTZ (if exists)
-       const hasOriginalEndTime = results.some(
-         (r) => r.column_name === "originalEndTime"
-       );
-       if (hasOriginalEndTime) {
-         console.log("🔄 Converting originalEndTime to TIMESTAMPTZ...");
-         await queryInterface.sequelize.query(`
+      // Step 4: Convert originalEndTime to TIMESTAMPTZ (if exists)
+      const hasOriginalEndTime = results.some(
+        (r) => r.column_name === "originalEndTime"
+      );
+      if (hasOriginalEndTime) {
+        console.log("🔄 Converting originalEndTime to TIMESTAMPTZ...");
+        await queryInterface.sequelize.query(`
            ALTER TABLE events
            ALTER COLUMN "originalEndTime"
            TYPE TIMESTAMPTZ
            USING "originalEndTime" AT TIME ZONE 'UTC';
          `);
-         console.log("✅ originalEndTime converted to TIMESTAMPTZ");
-       }
+        console.log("✅ originalEndTime converted to TIMESTAMPTZ");
+      }
 
-       // Step 5: Convert other timestamp columns to TIMESTAMPTZ (if they exist)
-       const timestampColumns = [
-         "startedAt",
-         "completedAt",
-         "stoppedAt",
-         "disabledAt",
-       ];
-       for (const col of timestampColumns) {
-         const exists = results.some((r) => r.column_name === col);
-         if (exists) {
-           const isTimestamp =
-             results.find((r) => r.column_name === col)?.udt_name ===
-             "timestamp";
-           if (isTimestamp) {
-             console.log(`🔄 Converting ${col} to TIMESTAMPTZ...`);
-             await queryInterface.sequelize.query(`
+      // Step 5: Convert other timestamp columns to TIMESTAMPTZ (if they exist)
+      const timestampColumns = [
+        "startedAt",
+        "completedAt",
+        "stoppedAt",
+        "disabledAt",
+      ];
+      for (const col of timestampColumns) {
+        const exists = results.some((r) => r.column_name === col);
+        if (exists) {
+          const isTimestamp =
+            results.find((r) => r.column_name === col)?.udt_name ===
+            "timestamp";
+          if (isTimestamp) {
+            console.log(`🔄 Converting ${col} to TIMESTAMPTZ...`);
+            await queryInterface.sequelize.query(`
                ALTER TABLE events
                ALTER COLUMN "${col}"
                TYPE TIMESTAMPTZ
                USING "${col}" AT TIME ZONE 'UTC';
              `);
-             console.log(`✅ ${col} converted to TIMESTAMPTZ`);
-           }
-         }
-       }
+            console.log(`✅ ${col} converted to TIMESTAMPTZ`);
+          }
+        }
+      }
 
       // Step 6: Verify the changes
       const [verifyResults] = await queryInterface.sequelize.query(`

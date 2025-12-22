@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { adminAPI } from '../services/apiAdmin';
+import { managerAPI } from '../services/apiManager';
 import { BACKEND_IP, BACKEND_PORT, FRONTEND_WS_PORT, WS_URL } from '../config/api';
 import toast from 'react-hot-toast';
 import EventForm from '../components/EventForm';
@@ -33,11 +33,10 @@ import {
   MapPin,
   Menu,
   BarChart3,
-  User,
-  UserPlus
+  User
 } from 'lucide-react';
 
-const AdminDashboard = () => {
+const ManagerDashboard = () => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
@@ -48,8 +47,8 @@ const AdminDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Helper functions to check if device/org is actually locked
-  // Note: admin dashboard only has remote lock, restricted, and unlocked status
-  // No device/organization lock functionality for admins
+  // Note: Manager dashboard only has remote lock, restricted, and unlocked status
+  // No device/organization lock functionality for managers
 
   // Check if organization devices are remote locked
   const isOrganizationDevicesRemoteLocked = (org) => {
@@ -95,12 +94,8 @@ const AdminDashboard = () => {
   };
 
   const [data, setData] = useState({
-    managers: [],
     organizations: [],
-    venues: [],
     acs: [],
-    logs: [],
-    dashboard: {},
     events: []
   });
   const [showOrgDetailsModal, setShowOrgDetailsModal] = useState(false);
@@ -143,13 +138,13 @@ const AdminDashboard = () => {
   useEffect(() => {
     const loadDataSafely = async () => {
       try {
-        console.log('📊 admin Dashboard - Loading data...');
-        console.log('📊 admin Dashboard - User:', user);
-        console.log('📊 admin Dashboard - User role:', user?.role);
-        console.log('📊 admin Dashboard - localStorage user:', localStorage.getItem('user'));
-        console.log('📊 admin Dashboard - localStorage role:', localStorage.getItem('role'));
+        console.log('📊 Manager Dashboard - Loading data...');
+        console.log('📊 Manager Dashboard - User:', user);
+        console.log('📊 Manager Dashboard - User role:', user?.role);
+        console.log('📊 Manager Dashboard - localStorage user:', localStorage.getItem('user'));
+        console.log('📊 Manager Dashboard - localStorage role:', localStorage.getItem('role'));
 
-        if (user && user.role === 'admin') {
+        if (user && user.role === 'manager') {
           // Longer delay to ensure session cookie is set after login
           await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
           await loadData();
@@ -157,7 +152,7 @@ const AdminDashboard = () => {
           // Load events on initial mount to get accurate count for tab badge
           loadEvents();
         } else {
-          console.warn('⚠️ admin Dashboard - User not authenticated or wrong role');
+          console.warn('⚠️ Manager Dashboard - User not authenticated or wrong role');
         }
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
@@ -314,7 +309,7 @@ const AdminDashboard = () => {
             duration: 4000,
           });
           
-          // Auto-delete after 5 minutes (300000ms) for admin events
+          // Auto-delete after 5 minutes (300000ms) for manager events
           setTimeout(() => {
             setData(prevData => ({
               ...prevData,
@@ -341,11 +336,11 @@ const AdminDashboard = () => {
           }));
           
           // Show notification
-          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 5 seconds.`, {
-            duration: 3000,
+          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 1 minute.`, {
+            duration: 4000,
           });
           
-          // Auto-delete after 5 seconds (5000ms) - only if still completed
+          // Auto-delete after 1 minute (60000ms) - only if still completed
           setTimeout(() => {
             setData(prevData => {
               const event = prevData.events.find(e => e && e.id === eventData.eventId);
@@ -361,23 +356,19 @@ const AdminDashboard = () => {
                 return prevData; // Don't remove if status changed
               }
             });
-          }, 5000); // 5 seconds
+          }, 60000); // 1 minute instead of 5 minutes
         }
 
-        // Handle event deleted - remove immediately (REAL-TIME)
+        // Handle event deleted - remove immediately
         if (message.type === 'EVENT_DELETED' || (message.type === 'ESP32_UPDATE' && message.data && message.data.type === 'EVENT_DELETED')) {
           const eventData = message.type === 'EVENT_DELETED' ? message : message.data;
-          console.log('🗑️ [REAL-TIME] Event deleted received:', eventData);
+          console.log('🗑️ Event deleted received:', eventData);
           
-          // Remove event from list immediately - no reload needed
-          setData(prevData => {
-            const filteredEvents = prevData.events.filter(event => event && event.id !== eventData.eventId);
-            console.log(`🗑️ [REAL-TIME] Removed event ${eventData.eventId} from list. Remaining: ${filteredEvents.length}`);
-            return {
-              ...prevData,
-              events: filteredEvents
-            };
-          });
+          // Remove event from list immediately
+          setData(prevData => ({
+            ...prevData,
+            events: prevData.events.filter(event => event && event.id !== eventData.eventId)
+          }));
           
           toast.success(`Event "${eventData.eventName || 'Unknown'}" has been removed.`, {
             duration: 2000,
@@ -538,14 +529,6 @@ const AdminDashboard = () => {
     }
   }, [activeTab, data.acs.length, data.organizations.length]);
 
-  // Auto-load activity logs when logs tab is active
-  useEffect(() => {
-    if (activeTab === 'logs') {
-      console.log('📋 Activity logs tab opened - reloading activity logs...');
-      loadData(false); // Reload data to get fresh activity logs
-    }
-  }, [activeTab]);
-
   const loadData = async (showLoading = true) => {
     // Only show loading spinner on manual refresh, not during polling
     if (showLoading) {
@@ -553,31 +536,21 @@ const AdminDashboard = () => {
     }
     
     try {
-      const [orgsRes, acsRes, managersRes, logsRes, venuesRes] = await Promise.all([
-        adminAPI.getOrganizations().catch(err => {
+      const [orgsRes, acsRes] = await Promise.all([
+        managerAPI.getAssignedOrganizations().catch(err => {
           console.error('Failed to load organizations:', err);
+          // Return null to indicate error, but don't return empty data
           return null;
         }),
-        adminAPI.getACs().catch(err => {
+        managerAPI.getManagerACs().catch(err => {
           console.error('Failed to load ACs:', err);
-          return null;
-        }),
-        adminAPI.getMyManagers().catch(err => {
-          console.error('Failed to load managers:', err);
-          return null;
-        }),
-        adminAPI.getActivityLogs().catch(err => {
-          console.error('Failed to load logs:', err);
-          return null;
-        }),
-        adminAPI.getVenues().catch(err => {
-          console.error('Failed to load venues:', err);
+          // Return null to indicate error, but don't return empty data
           return null;
         })
       ]);
 
       // Only update data if we got successful responses
-      // This preserves last known good data for restricted/locked admins during errors
+      // This preserves last known good data for restricted/locked managers during errors
       if (orgsRes && acsRes) {
         console.log('Organizations response:', orgsRes?.data);
         console.log('ACs response:', acsRes?.data);
@@ -588,8 +561,8 @@ const AdminDashboard = () => {
                         (Array.isArray(orgsRes?.data?.data) ? orgsRes.data.data : []) ||
                         [];
         
-        // Show ALL organizations (active and inactive) - admin can see everything
-        let organizations = allOrgs;
+        // Only show active organizations
+        let organizations = allOrgs.filter(org => org.status === 'active');
         
         const acs = (acsRes?.data?.acs || 
                     acsRes?.data?.data?.acs || 
@@ -648,189 +621,27 @@ const AdminDashboard = () => {
           };
         });
 
-        // CRITICAL: Backend already includes venues in organizations response
-        // But if organizations don't have venues, try loading from separate venues API
-        let allVenuesFromAPI = [];
-        if (venuesRes && venuesRes.data) {
-          allVenuesFromAPI = venuesRes.data.venues || 
-                            venuesRes.data.data?.venues || 
-                            (Array.isArray(venuesRes.data.data) ? venuesRes.data.data : []) ||
-                            [];
-          console.log('📊 [admin] Loaded Venues from separate API:', allVenuesFromAPI.length);
-        }
+        // Debug logging
+        console.log('📊 [MANAGER] Loaded Data:');
+        console.log('   Organizations:', organizations.length, organizations.map(o => ({ id: o.id, name: o.name, temperature: o.temperature, hasMixedTemperatures: o.hasMixedTemperatures, venues: o.venues?.length || 0 })));
+        console.log('   AC Devices:', acs.length, acs.map(ac => ({ id: ac.id, name: ac.name, venueId: ac.venueId, temperature: ac.temperature })));
         
-        // Collect all venues from organizations first
-        const allVenuesFromOrgs = organizations.flatMap(org => (org.venues || []));
-        
-        // Merge venues from organizations and separate API
-        // Use a Map to avoid duplicates (by venue ID)
-        const venuesMap = new Map();
-        
-        // Add venues from organizations
-        allVenuesFromOrgs.forEach(venue => {
-          venuesMap.set(venue.id, venue);
-        });
-        
-        // Add venues from separate API (will override if duplicate, but should be same data)
-        allVenuesFromAPI.forEach(venue => {
-          if (!venuesMap.has(venue.id)) {
-            // Calculate mixed temperatures for venues from API
-            const venueACs = acs.filter(ac => ac.venueId === venue.id);
-            const venueTemp = venue.temperature || 16;
-            let venueHasMixed = false;
-            
-            if (venueACs.length > 1) {
-              venueHasMixed = venueACs.some(ac => {
-                const acTemp = ac.temperature || 16;
-                return acTemp !== venueTemp;
-              });
-            }
-            
-            venuesMap.set(venue.id, {
-              ...venue,
-              hasMixedTemperatures: venueHasMixed
-            });
-          }
-        });
-        
-        // Convert map to array - this is all venues
-        const allVenues = Array.from(venuesMap.values());
-        
-        // Ensure all organizations have their venues
-        // Backend should already include venues, but if missing, add from separate API call
-        organizations = organizations.map(org => {
-          const existingVenues = org.venues || [];
-          
-          // If organization has no venues, try to get from separate API
-          if (existingVenues.length === 0 && allVenuesFromAPI.length > 0) {
-            const orgVenuesFromAPI = allVenuesFromAPI.filter(v => v.organizationId === org.id);
-            console.log(`📊 [admin] Org "${org.name}" (ID: ${org.id}) has no venues in response, found ${orgVenuesFromAPI.length} from separate API`);
-            
-            // Update venues with mixed temperatures
-            const venuesWithMixed = orgVenuesFromAPI.map(venue => {
-              const venueACs = acs.filter(ac => ac.venueId === venue.id);
-              const venueTemp = venue.temperature || 16;
-              let venueHasMixed = false;
-              
-              if (venueACs.length > 1) {
-                venueHasMixed = venueACs.some(ac => {
-                  const acTemp = ac.temperature || 16;
-                  return acTemp !== venueTemp;
-                });
-              }
-              
-              return {
-                ...venue,
-                hasMixedTemperatures: venueHasMixed
-              };
-            });
-            
-            return {
-              ...org,
-              venues: venuesWithMixed
-            };
-          }
-          
-          // Organization already has venues, just update with mixed temperatures
-          const venuesWithMixed = existingVenues.map(venue => {
-            const venueACs = acs.filter(ac => ac.venueId === venue.id);
-            const venueTemp = venue.temperature || 16;
-            let venueHasMixed = false;
-            
-            if (venueACs.length > 1) {
-              venueHasMixed = venueACs.some(ac => {
-                const acTemp = ac.temperature || 16;
-                return acTemp !== venueTemp;
-              });
-            }
-            
-            return {
-              ...venue,
-              hasMixedTemperatures: venueHasMixed
-            };
-          });
-          
-          return {
-            ...org,
-            venues: venuesWithMixed
-          };
-        });
-        
-        // Enhanced debug logging - Show detailed venue information
-        console.log('📊 [admin] Loaded Data Summary:');
-        console.log('   Total Organizations:', organizations.length);
-        console.log('   Total AC Devices:', acs.length);
-        console.log('   Total Venues from separate API:', allVenuesFromAPI.length);
-        
-        // Detailed organization and venue logging
+        // Check venue-AC mapping
         organizations.forEach(org => {
           const orgACs = acs.filter(ac => ac.organizationId === org.id || ac.venueId === org.id);
-          const venuesCount = org.venues?.length || 0;
-          console.log(`\n   🏢 Org "${org.name}" (ID: ${org.id}):`);
-          console.log(`      - ACs: ${orgACs.length}`);
-          console.log(`      - Temp: ${org.temperature}°C`);
-          console.log(`      - Mixed Temps: ${org.hasMixedTemperatures}`);
-          console.log(`      - Venues: ${venuesCount}`);
-          
-          if (venuesCount > 0) {
-            org.venues.forEach((venue, idx) => {
+          console.log(`   Org "${org.name}" (ID: ${org.id}): ${orgACs.length} ACs, Temp: ${org.temperature}°C, Mixed: ${org.hasMixedTemperatures}`);
+          if (org.venues && org.venues.length > 0) {
+            org.venues.forEach(venue => {
               const venueACs = acs.filter(ac => ac.venueId === venue.id);
-              console.log(`      ✅ Venue ${idx + 1}: "${venue.name}" (ID: ${venue.id}, orgId: ${venue.organizationId || 'N/A'})`);
-              console.log(`         - ACs: ${venueACs.length}`);
-              console.log(`         - Temp: ${venue.temperature}°C`);
-              console.log(`         - Mixed: ${venue.hasMixedTemperatures}`);
+              console.log(`     Venue "${venue.name}" (ID: ${venue.id}): ${venueACs.length} ACs, Temp: ${venue.temperature}°C, Mixed: ${venue.hasMixedTemperatures}`);
             });
-          } else {
-            console.log(`      ⚠️ NO VENUES FOUND for this organization!`);
-            // Check if separate API has venues for this org
-            const orgVenuesFromAPI = allVenuesFromAPI.filter(v => v.organizationId === org.id);
-            if (orgVenuesFromAPI.length > 0) {
-              console.log(`      💡 Found ${orgVenuesFromAPI.length} venues in separate API but not merged!`);
-            }
           }
         });
-
-        // Extract managers and logs
-        const managers = managersRes?.data?.managers || 
-                        managersRes?.data?.data?.managers || 
-                        (Array.isArray(managersRes?.data?.data) ? managersRes.data.data : []) ||
-                        [];
-        
-        // Parse activity logs - backend returns { success: true, data: [...] }
-        let logs = [];
-        if (logsRes?.data) {
-          if (logsRes.data.success === false) {
-            console.error('❌ Activity logs API returned error:', logsRes.data.message);
-          } else if (Array.isArray(logsRes.data.data)) {
-            logs = logsRes.data.data;
-          } else if (Array.isArray(logsRes.data.logs)) {
-            logs = logsRes.data.logs;
-          } else if (Array.isArray(logsRes.data)) {
-            // Handle direct array response
-            logs = logsRes.data;
-          } else {
-            console.warn('⚠️ Unexpected activity logs response structure:', logsRes.data);
-            // Try to extract logs from any nested structure
-            if (logsRes.data.data && typeof logsRes.data.data === 'object') {
-              const dataObj = logsRes.data.data;
-              if (Array.isArray(dataObj.logs)) {
-                logs = dataObj.logs;
-              } else if (Array.isArray(dataObj.data)) {
-                logs = dataObj.data;
-              }
-            }
-          }
-        }
-        console.log('✅ Loaded activity logs:', logs.length);
-        console.log('📋 Activity logs sample:', logs.slice(0, 2));
 
         setData(prev => ({
           ...prev,
           organizations,
           acs,
-          managers,
-          logs,
-          venues: allVenues, // Store all venues (from orgs + separate API)
           // CRITICAL: Preserve events - don't clear them when loading other data
           events: prev.events || []
         }));
@@ -840,11 +651,11 @@ const AdminDashboard = () => {
 
         // Show warning if no data but request succeeded
         if (organizations.length === 0 && acs.length === 0 && orgsRes?.data?.success !== false && acsRes?.data?.success !== false) {
-          console.warn('No organizations or ACs found for this admin');
+          console.warn('No organizations or ACs found for this manager');
         }
       } else {
         // If we got errors, log them but don't update data (preserves last known good state)
-        // This allows restricted/locked admins to continue seeing data even if polling fails
+        // This allows restricted/locked managers to continue seeing data even if polling fails
         if (!orgsRes) {
           console.warn('Organizations fetch failed, preserving last known data');
         }
@@ -869,7 +680,7 @@ const AdminDashboard = () => {
       console.error('Error status:', error.response?.status);
       
       // Don't clear data on error - preserve last known good state
-      // This ensures restricted/locked admins can still see their data
+      // This ensures restricted/locked managers can still see their data
     } finally {
       if (showLoading) {
         setLoading(false);
@@ -877,37 +688,10 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleUpdateManagerStatus = async (managerId, newStatus) => {
-    try {
-      let response;
-      
-      if (newStatus === 'unlocked') {
-        response = await adminAPI.unlockManager(managerId);
-      } else if (newStatus === 'restricted') {
-        response = await adminAPI.restrictedUnlockManager(managerId);
-      } else if (newStatus === 'locked') {
-        const reason = prompt('Enter reason for locking (optional):');
-        response = await adminAPI.lockManager(managerId, reason || 'Locked by admin');
-      } else {
-        toast.error('Invalid status');
-        return;
-      }
-      
-      toast.success(response.data?.message || `Manager status updated to ${newStatus}`);
-      
-      // Reload managers data
-      await loadData(false);
-    } catch (error) {
-      console.error('Update manager status error:', error);
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to update manager status';
-      toast.error(errorMessage);
-    }
-  };
-
   const loadAlerts = async () => {
     try {
       setAlertsLoading(true);
-      const res = await adminAPI.getActiveAlerts();
+      const res = await managerAPI.getManagerActiveAlerts();
       const allAlertsData = res.data.data || res.data || [];
       // Store all alerts (including device-level) for device highlighting
       setAllAlerts(allAlertsData);
@@ -925,7 +709,7 @@ const AdminDashboard = () => {
   const handleCheckAlerts = async () => {
     try {
       setAlertsLoading(true);
-      await adminAPI.checkAlerts();
+      await managerAPI.checkManagerAlerts();
       toast.success('Alert check completed');
       await loadAlerts();
     } catch (error) {
@@ -940,11 +724,11 @@ const AdminDashboard = () => {
   const loadEvents = async () => {
     try {
       setEventsLoading(true);
-      const response = await adminAPI.getEvents();
-      console.log('admin Events API Response:', response);
+      const response = await managerAPI.getEvents();
+      console.log('Manager Events API Response:', response);
       // Backend returns: { success: true, data: { events: [...] } }
       const events = response.data?.data?.events || response.data?.events || (Array.isArray(response.data?.data) ? response.data.data : (Array.isArray(response.data) ? response.data : []));
-      console.log('Parsed admin events:', events);
+      console.log('Parsed manager events:', events);
       setData(prev => ({ ...prev, events: Array.isArray(events) ? events : [] }));
     } catch (error) {
       console.error('Load events error:', error);
@@ -961,7 +745,7 @@ const AdminDashboard = () => {
   const handleCreateEvent = useCallback(async (eventData) => {
     try {
       console.log('Creating event with data:', eventData);
-      const response = await adminAPI.createEvent(eventData);
+      const response = await managerAPI.createEvent(eventData);
       console.log('Create event response:', response);
       
       if (response.data?.success === false) {
@@ -1012,7 +796,7 @@ const AdminDashboard = () => {
           duration: 6000
         });
       } else if (errorMessage.includes('restricted') || errorMessage.includes('Restricted')) {
-        toast.error('⚠️ Restricted admins cannot create events. Contact admin for full permissions.', {
+        toast.error('⚠️ Restricted managers cannot create events. Contact admin for full permissions.', {
           duration: 6000
         });
       } else {
@@ -1026,7 +810,7 @@ const AdminDashboard = () => {
 
   const handleUpdateEvent = useCallback(async (eventId, eventData) => {
     try {
-      const response = await adminAPI.updateEvent(eventId, eventData);
+      const response = await managerAPI.updateEvent(eventId, eventData);
       
       // Check if there were actual changes
       const changes = response.data?.data?.changes || {};
@@ -1092,13 +876,13 @@ const AdminDashboard = () => {
       
       switch (action) {
         case 'start':
-          response = await adminAPI.startEvent(eventId);
+          response = await managerAPI.startEvent(eventId);
           toast.success('Event started successfully. Device/organization settings have been applied.', {
             duration: 4000
           });
           break;
         case 'stop':
-          response = await adminAPI.stopEvent(eventId);
+          response = await managerAPI.stopEvent(eventId);
           const stopMessage = response.data?.message || 'Event stopped successfully';
           if (stopMessage.includes('reverted') || stopMessage.includes('settings')) {
             toast.success(stopMessage, {
@@ -1111,7 +895,7 @@ const AdminDashboard = () => {
           }
           break;
         case 'disable':
-          response = await adminAPI.disableEvent(eventId);
+          response = await managerAPI.disableEvent(eventId);
           const disableMessage = response.data?.message || 'Event disabled successfully';
           if (disableMessage.includes('reverted') || disableMessage.includes('settings')) {
             toast.success(disableMessage, {
@@ -1124,7 +908,7 @@ const AdminDashboard = () => {
           }
           break;
         case 'enable':
-          response = await adminAPI.enableEvent(eventId);
+          response = await managerAPI.enableEvent(eventId);
           if (response.data?.success === false) {
             toast.warning(response.data?.message || 'Event enable failed');
           } else {
@@ -1143,7 +927,7 @@ const AdminDashboard = () => {
           if (!window.confirm('Are you sure you want to delete this event?')) {
             return;
           }
-          response = await adminAPI.deleteEvent(eventId);
+          response = await managerAPI.deleteEvent(eventId);
           if (response.data?.success === false) {
             toast.error(response.data?.message || 'Failed to delete event');
             return;
@@ -1199,7 +983,7 @@ const AdminDashboard = () => {
 
   const handleViewOrganizationDetails = async (orgId) => {
     try {
-      const res = await adminAPI.getOrganizationDetails(orgId);
+      const res = await managerAPI.getOrganizationDetails(orgId);
       setSelectedOrgDetails(res.data.data?.organization || res.data.organization);
       setShowOrgDetailsModal(true);
       // Load energy data for this organization
@@ -1212,7 +996,7 @@ const AdminDashboard = () => {
 
   const handleViewVenueDetails = async (venueId) => {
     try {
-      const res = await adminAPI.getVenueDetails(venueId);
+      const res = await managerAPI.getVenueDetails(venueId);
       const venueData = res.data.data?.venue || res.data.venue || res.data.data;
       if (venueData) {
         setSelectedVenueDetails(venueData);
@@ -1231,7 +1015,7 @@ const AdminDashboard = () => {
 
   const handleViewACDetails = async (acId) => {
     try {
-      const res = await adminAPI.getACDetails(acId);
+      const res = await managerAPI.getACDetails(acId);
       const acData = res.data.data?.ac || res.data.ac || res.data.data;
       if (acData) {
         setSelectedACDetails(acData);
@@ -1256,10 +1040,10 @@ const AdminDashboard = () => {
     }
 
     try {
-      // Note: admin delete AC endpoint may not exist - this will show an error if not implemented
+      // Note: Manager delete AC endpoint may not exist - this will show an error if not implemented
       toast.error('Delete AC functionality is only available for admins. Please contact an admin to delete this device.');
       // If backend endpoint is added later, uncomment below:
-      // const result = await adminAPI.deleteAC(acId);
+      // const result = await managerAPI.deleteAC(acId);
       // toast.success(result.data?.message || `AC device "${acName}" deleted successfully`);
       // await loadData(false);
       // if (showACDetailsModal && selectedACDetails?.id === acId) {
@@ -1273,9 +1057,9 @@ const AdminDashboard = () => {
 
   const handleToggleOrganizationPower = async (orgId, currentPowerState) => {
     try {
-      // Check if admin is unlocked
+      // Check if manager is unlocked
       if (user?.status !== 'unlocked') {
-        toast.error('Only unlocked admins can toggle organization power');
+        toast.error('Only unlocked managers can toggle organization power');
         return;
       }
 
@@ -1289,7 +1073,7 @@ const AdminDashboard = () => {
         newPowerState
       });
 
-      const response = await adminAPI.toggleOrganizationPower(orgId, newPowerState);
+      const response = await managerAPI.toggleOrganizationPower(orgId, newPowerState);
       
       toast.success(response.data?.message || `Organization power ${newPowerState ? 'turned ON' : 'turned OFF'}`);
       
@@ -1304,9 +1088,9 @@ const AdminDashboard = () => {
 
   const handleToggleVenuePower = async (venueId, currentPowerState) => {
     try {
-      // Check if admin is unlocked
+      // Check if manager is unlocked
       if (user?.status !== 'unlocked') {
-        toast.error('Only unlocked admins can toggle venue power');
+        toast.error('Only unlocked managers can toggle venue power');
         return;
       }
 
@@ -1320,7 +1104,7 @@ const AdminDashboard = () => {
         newPowerState
       });
 
-      const response = await adminAPI.toggleVenuePower(venueId, newPowerState);
+      const response = await managerAPI.toggleVenuePower(venueId, newPowerState);
       
       toast.success(response.data?.message || `Venue power ${newPowerState ? 'turned ON' : 'turned OFF'}`);
       
@@ -1355,21 +1139,32 @@ const AdminDashboard = () => {
       let orgIdFromResponse = null;
       
       if (type === 'organization') {
-        // Check admin status only (no organization lock check for admins)
+        // Check manager status only (no organization lock check for managers)
         const org = data.organizations.find(o => o.id === id);
         
-        response = await adminAPI.setAdminOrganizationTemperature(id, temperature);
+        response = await managerAPI.setOrganizationTemperature(id, temperature);
         responseTemp = response?.data?.organization?.temperature ?? response?.data?.temperature ?? temperature;
         responseOrgTemp = responseTemp;
         responseOrgMixed = response?.data?.organization?.hasMixedTemperatures ?? response?.data?.hasMixedTemperatures;
       
-        // Admin actions are logged automatically by backend
+        // Log the action
+        try {
+          await managerAPI.logManagerAction('temperature_change', {
+            type: 'organization',
+            organizationId: id,
+            organizationName: org?.name || 'Unknown',
+            temperature: temperature,
+            timestamp: new Date().toISOString()
+          });
+        } catch (logError) {
+          console.warn('Failed to log action:', logError);
+        }
       
         toast.success('Organization temperature set successfully');
       } else if (type === 'venue') {
-        // Check admin status only (no venue lock check for admins)
+        // Check manager status only (no venue lock check for managers)
         
-        response = await adminAPI.setVenueTemperature(id, temperature);
+        response = await managerAPI.setVenueTemperature(id, temperature);
         responseTemp = response?.data?.venue?.temperature ?? response?.data?.temperature ?? temperature;
         responseOrgTemp = response?.data?.organization?.temperature;
         responseOrgMixed = response?.data?.organization?.hasMixedTemperatures;
@@ -1380,17 +1175,38 @@ const AdminDashboard = () => {
           .flatMap(org => org.venues || [])
           .find(v => v.id === id);
         
-        // Admin actions are logged automatically by backend
+        try {
+          await managerAPI.logManagerAction('temperature_change', {
+            type: 'venue',
+            venueId: id,
+            venueName: venue?.name || 'Unknown',
+            temperature: temperature,
+            timestamp: new Date().toISOString()
+          });
+        } catch (logError) {
+          console.warn('Failed to log action:', logError);
+        }
         
         toast.success('Venue temperature set successfully');
       } else if (type === 'ac') {
-        // Check admin status only (no device lock check for admins)
+        // Check manager status only (no device lock check for managers)
         const ac = data.acs.find(a => a.id === id);
         
-        response = await adminAPI.setAdminACTemperature(id, temperature);
+        response = await managerAPI.setACTemperature(id, temperature);
         responseTemp = response?.data?.ac?.temperature ?? response?.data?.temperature ?? temperature;
       
-        // Admin actions are logged automatically by backend
+        // Log the action
+        try {
+          await managerAPI.logManagerAction('temperature_change', {
+            type: 'ac_device',
+            acId: id,
+            acName: ac?.name || 'Unknown',
+            temperature: temperature,
+            timestamp: new Date().toISOString()
+          });
+        } catch (logError) {
+          console.warn('Failed to log action:', logError);
+        }
         
         toast.success('AC temperature set successfully');
       }
@@ -1584,38 +1400,30 @@ const AdminDashboard = () => {
 
   const handleToggleACPower = async (acId, targetState) => {
     try {
-      // Check admin status only (no device lock check for admins)
+      // Check manager status only (no device lock check for managers)
       
       // If targetState is not provided, toggle to opposite of current state
-      const ac = data.acs.find(a => a.id === acId);
-      if (!ac) {
-        toast.error('AC device not found');
-        console.error('AC not found in data.acs:', acId, 'Available ACs:', data.acs.map(a => a.id));
-        return;
-      }
-      
-      const currentState = ac.isOn || false;
-      const newState = targetState !== undefined ? targetState : !currentState;
-      
-      console.log('🔌 Toggling AC power:', {
-        acId,
-        acName: ac.name,
-        currentState,
-        newState,
-        targetState
-      });
+      const newState = targetState !== undefined ? targetState : !ac?.isOn;
       
       setAcPowerLoading(prev => ({ ...prev, [acId]: true }));
-      const response = await adminAPI.toggleAdminACPower(acId, newState);
-      
-      console.log('✅ Toggle AC power response:', response?.data);
-      
+      const response = await managerAPI.toggleManagerACPower(acId, newState);
       const updatedAC = response?.data?.ac || response?.data?.data?.ac;
       const finalState = updatedAC?.isOn !== undefined ? updatedAC.isOn : newState;
       
       toast.success(`AC ${finalState ? 'turned on' : 'turned off'} successfully`);
       
-      // Admin actions are logged automatically by backend
+      // Log the action
+      try {
+        await managerAPI.logManagerAction('power_toggle', {
+          type: 'ac_device',
+        acId: acId,
+          acName: ac?.name || 'Unknown',
+          powerState: finalState,
+        timestamp: new Date().toISOString()
+      });
+      } catch (logError) {
+        console.warn('Failed to log action:', logError);
+      }
       
       // Update state immediately with response data
       if (updatedAC) {
@@ -1623,37 +1431,32 @@ const AdminDashboard = () => {
           ...prev,
           acs: prev.acs.map(a => a.id === acId ? { ...a, ...updatedAC } : a)
         }));
-      } else {
-        // If response doesn't have updated AC, update manually
-        setData(prev => ({
-          ...prev,
-          acs: prev.acs.map(a => a.id === acId ? { ...a, isOn: finalState } : a)
-        }));
       }
       
       // Refresh data to get latest state
       await loadData(false);
       
       // Update state again after loadData to ensure consistency
-      setData(prev => ({
-        ...prev,
-        acs: prev.acs.map(a => a.id === acId ? { ...a, isOn: finalState } : a)
-      }));
+      if (updatedAC) {
+        setData(prev => ({
+          ...prev,
+          acs: prev.acs.map(a => a.id === acId ? { ...a, ...updatedAC, isOn: finalState } : a)
+        }));
+      }
     } catch (error) {
-      console.error('❌ Toggle AC power error:', error);
-      console.error('Error response:', error.response?.data);
       const errorMessage = getRestrictionMessage(error);
       toast.error(errorMessage);
+      console.error('Toggle AC power error:', error);
     } finally {
       setAcPowerLoading(prev => ({ ...prev, [acId]: false }));
     }
   };
 
-  // Note: Lock/unlock AC functions removed - admins only have remote lock
+  // Note: Lock/unlock AC functions removed - managers only have remote lock
 
   const handleRemoteLockOrganization = async (organizationId, reason = null) => {
     try {
-      const result = await adminAPI.remoteLockOrganization(organizationId, reason);
+      const result = await managerAPI.remoteLockOrganization(organizationId, reason);
       toast.success(result.data?.message || 'Organization devices remote locked successfully');
       loadData(false);
     } catch (error) {
@@ -1663,7 +1466,7 @@ const AdminDashboard = () => {
 
   const handleRemoteUnlockOrganization = async (organizationId) => {
     try {
-      const result = await adminAPI.remoteUnlockOrganization(organizationId);
+      const result = await managerAPI.remoteUnlockOrganization(organizationId);
       toast.success(result.data?.message || 'Organization devices remote unlocked successfully');
       loadData(false);
     } catch (error) {
@@ -1673,7 +1476,7 @@ const AdminDashboard = () => {
 
   const handleRemoteLockVenue = async (venueId, reason = null) => {
     try {
-      const result = await adminAPI.remoteLockVenue(venueId, reason);
+      const result = await managerAPI.remoteLockVenue(venueId, reason);
       toast.success(result.data?.message || 'Venue devices remote locked successfully');
       await loadData(false);
     } catch (error) {
@@ -1685,7 +1488,7 @@ const AdminDashboard = () => {
 
   const handleRemoteUnlockVenue = async (venueId) => {
     try {
-      const result = await adminAPI.remoteUnlockVenue(venueId);
+      const result = await managerAPI.remoteUnlockVenue(venueId);
       toast.success(result.data?.message || 'Venue devices remote unlocked successfully');
       await loadData(false);
     } catch (error) {
@@ -1700,7 +1503,7 @@ const AdminDashboard = () => {
       // Get AC's venueId first
       const ac = data.acs.find(a => a.id === acId);
       if (ac && ac.venueId) {
-        const result = await adminAPI.remoteLockVenue(ac.venueId, reason);
+        const result = await managerAPI.remoteLockVenue(ac.venueId, reason);
         toast.success(result.data?.message || 'Device remote locked successfully');
         await loadData(false);
       } else {
@@ -1718,7 +1521,7 @@ const AdminDashboard = () => {
       // Get AC's venueId first
       const ac = data.acs.find(a => a.id === acId);
       if (ac && ac.venueId) {
-        const result = await adminAPI.remoteUnlockVenue(ac.venueId);
+        const result = await managerAPI.remoteUnlockVenue(ac.venueId);
         toast.success(result.data?.message || 'Device remote unlocked successfully');
         await loadData(false);
       } else {
@@ -1736,20 +1539,18 @@ const AdminDashboard = () => {
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-    { id: 'alerts', label: 'Alerts', icon: AlertCircle, count: alerts.length, badge: alerts.length > 0 ? 'red' : null },
+    { id: 'organizations', label: 'Organizations', icon: Building, count: data.organizations.length },
+    { id: 'venues', label: 'Venues', icon: MapPin, count: data.organizations.reduce((sum, org) => sum + (org.venues?.length || 0), 0) },
+    { id: 'acs', label: 'AC Devices', icon: Thermometer, count: data.acs.length },
     { id: 'events', label: 'Events', icon: Calendar, count: Array.isArray(data.events) ? data.events.length : 0 },
-    { id: 'managers', label: 'Managers', icon: Users, count: data.managers?.length || 0 },
-    { id: 'organizations', label: 'Organizations', icon: Building, count: data.organizations?.length || 0 },
-    { id: 'venues', label: 'Venues', icon: Building, count: data.venues?.length || 0 },
-    { id: 'acs', label: 'AC Devices', icon: Thermometer, count: data.acs?.length || 0 },
     { id: 'energy', label: 'Energy Consumption', icon: Zap },
-    { id: 'logs', label: 'Activity Logs', icon: Activity, count: data.logs?.length || 0 }
+    { id: 'alerts', label: 'Alerts', icon: AlertCircle, count: alerts.length, badge: alerts.length > 0 ? 'red' : null }
   ];
 
   const loadACEnergy = async (acId) => {
     try {
       setEnergyLoading(prev => ({ ...prev, [`ac-${acId}`]: true }));
-      const res = await adminAPI.getACEnergy(acId);
+      const res = await managerAPI.getACEnergy(acId);
       const energy = res.data.data || res.data;
       setEnergyData(prev => ({
         ...prev,
@@ -1768,7 +1569,7 @@ const AdminDashboard = () => {
   const loadOrganizationEnergy = async (organizationId) => {
     try {
       setEnergyLoading(prev => ({ ...prev, [`org-${organizationId}`]: true }));
-      const res = await adminAPI.getOrganizationEnergy(organizationId);
+      const res = await managerAPI.getOrganizationEnergy(organizationId);
       const energy = res.data.data || res.data;
       setEnergyData(prev => ({
         ...prev,
@@ -1802,7 +1603,7 @@ const AdminDashboard = () => {
     const hasAlert = orgAlert || orgDeviceAlerts.length > 0;
     
     return (
-      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -1868,12 +1669,11 @@ const AdminDashboard = () => {
       </div>
       
           {/* Temperature Control - Compact */}
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-2 sm:p-1.5 mb-1.5 border border-blue-200">
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-1.5 mb-1.5 border border-blue-200">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs sm:text-xs font-bold text-gray-700 flex items-center">
-                <Thermometer className="w-3 h-3 sm:w-3 sm:h-3 mr-1 sm:mr-0.5 text-blue-600" />
-                <span className="hidden sm:inline">Temp</span>
-                <span className="sm:hidden">Temperature: <span className="text-blue-600 font-bold">{localTemperatures[`organization-${org.id}`] !== undefined ? localTemperatures[`organization-${org.id}`] : (org.temperature ?? 16)}°C</span></span>
+              <span className="text-xs font-bold text-gray-700 flex items-center">
+                <Thermometer className="w-3 h-3 mr-0.5 text-blue-600" />
+                Temp
               </span>
             {temperatureLoading[`organization-${org.id}`] && (
               <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
@@ -1913,7 +1713,7 @@ const AdminDashboard = () => {
                   step="1"
                   value={localTemperatures[`organization-${org.id}`] !== undefined ? localTemperatures[`organization-${org.id}`] : (org.temperature ?? 16)}
                   disabled={temperatureLoading[`organization-${org.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                  className={`w-14 sm:w-16 px-1 py-1 text-xs sm:text-sm text-center font-bold border rounded bg-white transition-colors ${
+                  className={`w-16 px-1 py-1 text-sm text-center font-bold border rounded bg-white transition-colors ${
                     temperatureLoading[`organization-${org.id}`] || user?.status === 'restricted' || user?.status === 'locked'
                       ? 'opacity-50 cursor-not-allowed border-gray-200' 
                       : 'border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
@@ -2081,7 +1881,7 @@ const AdminDashboard = () => {
     const hasAlert = venueDeviceAlerts.length > 0;
     
     return (
-      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -2153,12 +1953,11 @@ const AdminDashboard = () => {
               </div>
 
           {/* Temperature Control - Compact */}
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-2 sm:p-1.5 mb-1.5 border border-blue-200">
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-1.5 mb-1.5 border border-blue-200">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs sm:text-xs font-bold text-gray-700 flex items-center">
-                <Thermometer className="w-3 h-3 sm:w-3 sm:h-3 mr-1 sm:mr-0.5 text-blue-600" />
-                <span className="hidden sm:inline">Temp</span>
-                <span className="sm:hidden">Temperature: <span className="text-blue-600 font-bold">{localTemperatures[`venue-${venue.id}`] !== undefined ? localTemperatures[`venue-${venue.id}`] : (venue.temperature ?? 16)}°C</span></span>
+              <span className="text-xs font-bold text-gray-700 flex items-center">
+                <Thermometer className="w-3 h-3 mr-0.5 text-blue-600" />
+                Temp
               </span>
               {temperatureLoading[`venue-${venue.id}`] && (
                 <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
@@ -2198,7 +1997,7 @@ const AdminDashboard = () => {
                   step="1"
                   value={localTemperatures[`venue-${venue.id}`] !== undefined ? localTemperatures[`venue-${venue.id}`] : (venue.temperature ?? 16)}
                   disabled={temperatureLoading[`venue-${venue.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                  className={`w-14 sm:w-16 px-1 py-1 text-xs sm:text-sm text-center font-bold border rounded bg-white transition-colors ${
+                  className={`w-16 px-1 py-1 text-sm text-center font-bold border rounded bg-white transition-colors ${
                     temperatureLoading[`venue-${venue.id}`] || user?.status === 'restricted' || user?.status === 'locked'
                       ? 'opacity-50 cursor-not-allowed border-gray-200' 
                       : 'border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
@@ -2325,7 +2124,7 @@ const AdminDashboard = () => {
     const eventTemp = hasEvent ? (activeEvent?.temperature || scheduledEvent?.temperature) : null;
     
     return (
-      <div className={`bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
+      <div className={`bg-white rounded-2xl shadow-xl border-2 ${hasAlert ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
         {/* Alert Banner */}
         {hasAlert && (
           <div className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 px-4 py-2 shadow-lg">
@@ -2511,7 +2310,7 @@ const AdminDashboard = () => {
               className="flex-1 flex items-center justify-center space-x-0.5 px-1.5 py-1 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               title={
                 user?.status === 'locked' || user?.status === 'restricted'
-                  ? 'Restricted/Locked admins cannot create events'
+                  ? 'Restricted/Locked managers cannot create events'
                   : 'Create Event for this device'
               }
             >
@@ -2542,7 +2341,7 @@ const AdminDashboard = () => {
   };
 
   // Events View Component
-  const AdminEventsView = () => {
+  const ManagerEventsView = () => {
     const formatDateTime = (dateString) => {
       if (!dateString) return 'N/A';
       try {
@@ -2566,16 +2365,15 @@ const AdminDashboard = () => {
           }
           
           // Step 2: Check if it has timezone indicator
-          const hasZ = dateValue.endsWith('Z');
-          const hasOffset = dateValue.match(/[+-]\d{2}:?\d{2}$/);
-          const hasPKTOffset = dateValue.includes('+05:00') || dateValue.includes('+0500');
-          const hasTimezone = hasZ || hasOffset || hasPKTOffset;
+          const hasTimezone = dateValue.endsWith('Z') || 
+                             dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
+                             dateValue.includes('+05:00') ||
+                             dateValue.includes('+0500');
           
           // Step 3: If NO timezone, add 'Z' to force UTC parsing
-          // CRITICAL: Without 'Z', JavaScript parses as LOCAL time, causing 5-hour offset
-          if (!hasTimezone && (dateValue.includes('T') || dateValue.match(/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}/))) {
-            // Remove trailing spaces and milliseconds, then append 'Z'
-            dateValue = dateValue.replace(/\s+$/, '').replace(/\.\d{3,}$/, '');
+          if (!hasTimezone) {
+            // Remove trailing spaces and append 'Z'
+            dateValue = dateValue.replace(/\s+$/, '');
             if (!dateValue.endsWith('Z')) {
               dateValue = dateValue + 'Z';
             }
@@ -2625,16 +2423,12 @@ const AdminDashboard = () => {
     };
 
     // Format time only (HH:MM AM/PM) in PKT
-    // CRITICAL: Backend stores UTC, but UI must display PKT
     const formatTime = (dateString) => {
       if (!dateString) return 'N/A';
       try {
         let date;
         
         if (dateString instanceof Date) {
-          if (isNaN(dateString.getTime())) {
-            return 'N/A';
-          }
           date = dateString;
         } else if (typeof dateString === 'string') {
           let dateValue = String(dateString).trim();
@@ -2644,28 +2438,77 @@ const AdminDashboard = () => {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
-          // CRITICAL: Ensure UTC parsing - add 'Z' if no timezone
-          if (dateValue.includes('T') && !dateValue.endsWith('Z') && !dateValue.match(/[+-]\d{2}:?\d{2}$/)) {
-            dateValue = dateValue.replace(/\.\d{3,}$/, '') + 'Z';
+          // CRITICAL FIX: Backend returns UTC time strings from Sequelize
+          // Sequelize DATE fields are stored as UTC but may be returned without 'Z'
+          // Check if it has timezone indicator
+          const hasTimezone = dateValue.endsWith('Z') || 
+                             dateValue.match(/[+-]\d{2}:?\d{2}$/) ||
+                             dateValue.includes('+05:00') ||
+                             dateValue.includes('+0500');
+          
+          // If NO timezone but has ISO format (YYYY-MM-DDTHH:mm:ss), treat as UTC
+          // Sequelize returns dates in ISO format but may not include 'Z'
+          if (!hasTimezone && dateValue.includes('T')) {
+            // Remove milliseconds if present for cleaner parsing
+            dateValue = dateValue.replace(/\.\d{3}$/, '');
+            // CRITICAL: Ensure it ends with 'Z' to force UTC parsing
+            // Without 'Z', JavaScript may interpret as local time, causing 5-hour offset
+            if (!dateValue.endsWith('Z')) {
+              dateValue = dateValue + 'Z';
+            }
           }
           
           date = new Date(dateValue);
           
           if (isNaN(date.getTime())) {
+            console.error('❌ Invalid date string:', dateString);
             return 'N/A';
           }
         } else {
           return 'N/A';
         }
         
-        // FINAL FIX: Use toLocaleTimeString with Asia/Karachi timezone
-        // This ensures UTC time is displayed as PKT
-        return date.toLocaleTimeString('en-PK', {
+        if (isNaN(date.getTime())) {
+          return 'N/A';
+        }
+        
+        // CRITICAL: Verify the date is actually in UTC
+        // Get UTC hours to verify
+        const utcHours = date.getUTCHours();
+        const utcMinutes = date.getUTCMinutes();
+        
+        // Convert UTC to Pakistan/Karachi time - TIME ONLY
+        // Use 24-hour format first to avoid AM/PM confusion, then convert to 12-hour
+        const timeFormatter24 = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Karachi',
           hour: '2-digit',
           minute: '2-digit',
-          hour12: true
+          hour12: false // Get 24-hour format first
         });
+        
+        const pktTime24 = timeFormatter24.format(date);
+        const [pktHour24, pktMinute] = pktTime24.split(':').map(Number);
+        
+        // Expected PKT time: UTC + 5 hours
+        const expectedPKTHour = (utcHours + 5) % 24;
+        
+        // Debug log to verify conversion (only log normalized value if it exists)
+        const normalizedValue = typeof dateString === 'string' ? dateString.replace(/\s+/, 'T').replace(/\.\d{3}$/, '') + (dateString.includes('T') && !dateString.endsWith('Z') && !dateString.match(/[+-]\d{2}:?\d{2}$/) ? 'Z' : '') : dateString.toString();
+        console.log('🕐 formatTime conversion:', {
+          original: dateString,
+          normalized: normalizedValue,
+          utcTime: `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`,
+          pktTime: `${String(pktHour24).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} PKT`,
+          expectedPKT: `${String(expectedPKTHour).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} PKT`,
+          match: pktHour24 === expectedPKTHour ? '✅ CORRECT' : '❌ MISMATCH'
+        });
+        
+        // Convert to 12-hour format with AM/PM
+        const pktHour12 = pktHour24 === 0 ? 12 : (pktHour24 > 12 ? pktHour24 - 12 : pktHour24);
+        const ampm = pktHour24 >= 12 ? 'PM' : 'AM';
+        const pktTime = `${String(pktHour12).padStart(2, '0')}:${String(pktMinute).padStart(2, '0')} ${ampm}`;
+        
+        return pktTime;
       } catch (e) {
         console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';
@@ -2678,18 +2521,16 @@ const AdminDashboard = () => {
       }
       
       // Check if event is waiting to start (startTime is in future)
-      // CRITICAL: Use UTC time for comparison since events are stored in UTC
       const now = new Date();
-      const nowUTC = new Date(now.toISOString());
       const eventStartTime = startTime ? new Date(startTime) : null;
       const eventEndTime = endTime ? new Date(endTime) : null;
       
-      // If event is scheduled and startTime is in future (UTC), show "Waiting"
-      // Compare in UTC to match backend logic
-      const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
+      // If event is scheduled and startTime is in future, show "Waiting for Starting Time"
+      // If event is active but startTime hasn't arrived yet, also show "Waiting for Starting Time"
+      const isWaitingToStart = eventStartTime && eventStartTime > now;
       
-      // If event is active but endTime has passed (UTC), show "Complete"
-      const isCompleted = eventEndTime && eventEndTime.getTime() <= nowUTC.getTime() && status === 'active';
+      // If event is active but endTime has passed, show "Complete"
+      const isCompleted = eventEndTime && eventEndTime <= now && status === 'active';
       
       // Determine actual status based on time
       let actualStatus = status;
@@ -2745,51 +2586,41 @@ const AdminDashboard = () => {
 
     return (
       <div className="space-y-6">
-        {/* Header Section - Enhanced */}
-        <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-6 border-2 border-blue-400 overflow-hidden">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
-          <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="flex items-center space-x-4">
-              <div className="bg-white bg-opacity-25 rounded-xl p-3 shadow-xl transform group-hover:rotate-12 transition-transform duration-300">
-                <Calendar className="w-8 h-8 text-white" />
-              </div>
-              <div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mb-1 drop-shadow-lg">Events</h2>
-                <p className="text-blue-100 text-sm font-medium mb-2">Manage and schedule all events</p>
-                <span className="inline-block bg-white bg-opacity-25 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
-                  {Array.isArray(data.events) ? data.events.length : 0} Event{(Array.isArray(data.events) ? data.events.length : 0) !== 1 ? 's' : ''}
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              <button
-                onClick={() => {
-                  setSelectedEvent(null);
-                  setShowEventModal(true);
-                }}
-                disabled={user?.status === 'locked' || user?.status === 'restricted'}
-                className="flex items-center justify-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                title={
-                  user?.status === 'locked' 
-                    ? 'Locked admins cannot create events' 
-                    : user?.status === 'restricted'
-                    ? 'Restricted admins cannot create events. Contact admin for full permissions.'
-                    : 'Create Event'
-                }
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Create Event
-              </button>
-              <button
-                onClick={loadEvents}
-                disabled={eventsLoading}
-                className="flex items-center justify-center px-4 py-3 bg-white bg-opacity-25 text-white rounded-xl hover:bg-white hover:text-blue-600 font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
-              >
-                <RefreshCw className={`w-5 h-5 mr-2 ${eventsLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-            </div>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <Calendar className="w-6 h-6 text-blue-600" />
+            <h2 className="text-xl font-semibold text-gray-900">Events</h2>
+            <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+              {Array.isArray(data.events) ? data.events.length : 0} Event{(Array.isArray(data.events) ? data.events.length : 0) !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => {
+                setSelectedEvent(null);
+                setShowEventModal(true);
+              }}
+              disabled={user?.status === 'locked' || user?.status === 'restricted'}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={
+                user?.status === 'locked' 
+                  ? 'Locked managers cannot create events' 
+                  : user?.status === 'restricted'
+                  ? 'Restricted managers cannot create events. Contact admin for full permissions.'
+                  : 'Create Event'
+              }
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Create Event
+            </button>
+            <button
+              onClick={loadEvents}
+              disabled={eventsLoading}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${eventsLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
           </div>
         </div>
 
@@ -2800,24 +2631,20 @@ const AdminDashboard = () => {
             <p className="text-sm mt-2 text-gray-400">Create an event to get started</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.isArray(data.events) && data.events.map((event) => {
               if (!event || !event.id) return null;
               const isLoading = eventActionLoading[event.id];
               const canStart = event.status === 'scheduled' && !event.isDisabled;
               const canStop = event.status === 'active' && !event.isDisabled;
-              const canEdit = !event.isDisabled && event.status !== 'active' && event.status !== 'completed';
-              const canDelete = event.status !== 'active' && event.status !== 'completed';
-              const canEnable = event.isDisabled && (event.status === 'scheduled' || event.status === 'active');
-              const canDisable = !event.isDisabled && (event.status === 'scheduled' || event.status === 'active');
+              const canEdit = !event.isDisabled && event.status !== 'active';
+              const canDelete = event.status !== 'active';
               
-              // CRITICAL: Use UTC time for comparison since events are stored in UTC
               const now = new Date();
-              const nowUTC = new Date(now.toISOString());
               const eventStartTime = event.startTime ? new Date(event.startTime) : null;
               const eventEndTime = event.endTime ? new Date(event.endTime) : null;
-              const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
-              const isCompleted = eventEndTime && eventEndTime.getTime() <= nowUTC.getTime() && event.status === 'active';
+              const isWaitingToStart = eventStartTime && eventStartTime > now;
+              const isCompleted = eventEndTime && eventEndTime <= now && event.status === 'active';
               
               let actualStatus = event.status;
               if (isWaitingToStart && (event.status === 'scheduled' || event.status === 'active')) {
@@ -2913,12 +2740,12 @@ const AdminDashboard = () => {
                     </div>
 
                     {/* Action Buttons - Compact */}
-                    <div className="flex flex-wrap gap-1.5 mt-auto">
+                    <div className="flex gap-1.5 mt-auto">
                       {canStart && (
                         <button
                           onClick={() => handleEventAction(event.id, 'start')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                           title="Start event"
                         >
                           <Play className="w-3 h-3" />
@@ -2929,33 +2756,11 @@ const AdminDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'stop')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                           title="Stop event"
                         >
                           <Square className="w-3 h-3" />
                           <span>Stop</span>
-                        </button>
-                      )}
-                      {canEnable && (
-                        <button
-                          onClick={() => handleEventAction(event.id, 'enable')}
-                          disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
-                          title="Enable event"
-                        >
-                          <Play className="w-3 h-3" />
-                          <span>Enable</span>
-                        </button>
-                      )}
-                      {canDisable && (
-                        <button
-                          onClick={() => handleEventAction(event.id, 'disable')}
-                          disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
-                          title="Disable event"
-                        >
-                          <Square className="w-3 h-3" />
-                          <span>Disable</span>
                         </button>
                       )}
                       {canEdit && (
@@ -2965,7 +2770,7 @@ const AdminDashboard = () => {
                             setShowEventModal(true);
                           }}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                           title="Edit event"
                         >
                           <Edit className="w-3 h-3" />
@@ -2976,7 +2781,7 @@ const AdminDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'delete')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                           title="Delete event"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -2984,7 +2789,7 @@ const AdminDashboard = () => {
                         </button>
                       )}
                       {isLoading && (
-                        <div className="flex-1 flex items-center justify-center min-w-[70px]">
+                        <div className="flex-1 flex items-center justify-center">
                           <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                         </div>
                       )}
@@ -3275,37 +3080,30 @@ const AdminDashboard = () => {
       );
     }
 
-    // Note: Restricted admins can still view data, they just can't perform actions
+    // Note: Restricted managers can still view data, they just can't perform actions
     // Actions will be blocked by backend and show restriction messages
 
     switch (activeTab) {
       case 'dashboard':
         return <DashboardView />;
         case 'events':
-          return <AdminEventsView />;
+          return <ManagerEventsView />;
       case 'venues':
-        // Get all venues - from data.venues (which includes venues from orgs + separate API)
-        // Also include organization info for each venue
-        const allVenuesWithOrg = (data.venues || []).map(venue => {
-          // Find the organization for this venue
-          const org = data.organizations.find(o => 
-            o.id === venue.organizationId || 
-            (o.venues && o.venues.some(v => v.id === venue.id))
-          );
-          
-          return {
+        // Get all venues from all organizations
+        const allVenues = data.organizations.flatMap(org => 
+          (org.venues || []).map(venue => ({
             ...venue,
-            organization: org ? {
+            organization: {
               id: org.id,
               name: org.name
-            } : null
-          };
-        });
+            }
+          }))
+        );
         
         return (
           <div className="space-y-8">
             {/* Header Section - Ultra Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
+            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -3314,27 +3112,27 @@ const AdminDashboard = () => {
                     <MapPin className="w-10 h-10 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Venues</h2>
-                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage all venues and locations</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
-                      {allVenuesWithOrg.length} Total Venue{allVenuesWithOrg.length !== 1 ? 's' : ''}
+                    <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Venues</h2>
+                    <p className="text-blue-100 text-base font-medium mb-3">Manage all venues and locations</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
+                      {allVenues.length} Total Venue{allVenues.length !== 1 ? 's' : ''}
                     </span>
                   </div>
                 </div>
               </div>
             </div>
             
-            {allVenuesWithOrg.length === 0 ? (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+            {allVenues.length === 0 ? (
+              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <MapPin className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Venues Found</p>
-                <p className="text-gray-600 text-sm sm:text-base mb-6">No venues are currently assigned to your organizations</p>
+                <p className="text-gray-800 text-2xl font-bold mb-3">No Venues Found</p>
+                <p className="text-gray-600 text-base mb-6">No venues are currently assigned to your organizations</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
-                {allVenuesWithOrg.map(venue => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {allVenues.map(venue => (
                   <VenueCard key={venue.id} venue={venue} />
                 ))}
               </div>
@@ -3345,7 +3143,7 @@ const AdminDashboard = () => {
         return (
           <div className="space-y-8">
             {/* Header Section - Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
+            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -3354,9 +3152,9 @@ const AdminDashboard = () => {
                     <Building className="w-10 h-10 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Organizations</h2>
-                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage all assigned organizations</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
+                    <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Organizations</h2>
+                    <p className="text-blue-100 text-base font-medium mb-3">Manage all assigned organizations</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
                       {data.organizations.length} Total Organization{data.organizations.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -3421,7 +3219,7 @@ const AdminDashboard = () => {
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mb-4">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                               <div className="bg-gray-50 rounded-lg p-3">
                                 <p className="text-xs text-gray-500 mb-1">Serial Number</p>
                                 <p className="text-sm font-semibold text-gray-900">{alert.serialNumber || 'N/A'}</p>
@@ -3451,7 +3249,7 @@ const AdminDashboard = () => {
                                   <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1">
                                     <p className="text-sm font-bold text-blue-900 mb-2">{alert.issue}</p>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                                    <div className="grid grid-cols-4 gap-2">
                                       <div className="bg-white rounded p-2 text-center">
                                         <p className="text-xs text-gray-500">Hour 0</p>
                                         <p className="text-sm font-bold text-gray-900">{alert.roomTempHistory.hour0?.toFixed(1)}°C</p>
@@ -3561,18 +3359,18 @@ const AdminDashboard = () => {
 
             {/* Active Organizations */}
             {data.organizations.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {data.organizations.map(org => (
                   <OrganizationCard key={org.id} org={org} />
                 ))}
               </div>
             ) : (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <Building className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Organizations Found</p>
-                <p className="text-gray-600 text-sm sm:text-base mb-6">No organizations are currently assigned to you</p>
+                <p className="text-gray-800 text-2xl font-bold mb-3">No Organizations Found</p>
+                <p className="text-gray-600 text-base mb-6">No organizations are currently assigned to you</p>
               </div>
             )}
           </div>
@@ -3581,7 +3379,7 @@ const AdminDashboard = () => {
         return (
           <div className="space-y-8">
             {/* Header Section - Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8 border-2 border-blue-400 overflow-hidden">
+            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
               <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -3590,9 +3388,9 @@ const AdminDashboard = () => {
                     <Thermometer className="w-10 h-10 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">AC Devices</h2>
-                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage all AC devices in your organizations</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
+                    <h2 className="text-3xl font-extrabold text-white mb-2 drop-shadow-lg">AC Devices</h2>
+                    <p className="text-blue-100 text-base font-medium mb-3">Manage all AC devices in your organizations</p>
+                    <span className="inline-block bg-white bg-opacity-25 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm">
                       {data.acs.length} Total AC Device{data.acs.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -3601,18 +3399,18 @@ const AdminDashboard = () => {
             </div>
 
             {data.acs.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {data.acs.map(ac => (
                   <ACCard key={ac.id} ac={ac} />
                 ))}
               </div>
             ) : (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-white to-blue-50 p-16 rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
                   <Thermometer className="w-12 h-12 text-blue-600" />
                 </div>
-                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No AC Devices Found</p>
-                <p className="text-gray-600 text-sm sm:text-base mb-6">No AC devices are currently assigned to your organizations</p>
+                <p className="text-gray-800 text-2xl font-bold mb-3">No AC Devices Found</p>
+                <p className="text-gray-600 text-base mb-6">No AC devices are currently assigned to your organizations</p>
               </div>
             )}
           </div>
@@ -3647,7 +3445,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
                 <div className="flex items-center justify-between">
                   <div>
@@ -3688,7 +3486,7 @@ const AdminDashboard = () => {
                 <Building className="w-5 h-5 mr-2 text-blue-600" />
                 Energy by Organization
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {data.organizations.map(org => {
                   const orgEnergy = energyData.organizations[org.id];
                   // Filter ACs by organizationId (direct field or from organization relationship)
@@ -4027,7 +3825,7 @@ const AdminDashboard = () => {
                             {/* Room Temperature History Visualization */}
                             <div className="mt-4">
                               <p className="text-xs font-medium text-gray-700 mb-3">3-Hour Room Temperature Pattern:</p>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+                              <div className="grid grid-cols-3 gap-3">
                                 <div className="bg-white rounded-lg p-3 border border-gray-200">
                                   <p className="text-xs text-gray-500 mb-1">Hour 0</p>
                                   <p className="text-lg font-bold text-gray-900">
@@ -4146,252 +3944,6 @@ const AdminDashboard = () => {
             )}
           </div>
         );
-      case 'managers':
-        return (
-          <div className="space-y-8">
-            {/* Header Section - Ultra Enhanced */}
-            <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 rounded-2xl shadow-2xl p-8 border-2 border-blue-400 overflow-hidden">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
-              <div className="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -ml-16 -mb-16"></div>
-              <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-                <div className="flex items-center space-x-5">
-                  <div className="bg-white bg-opacity-25 rounded-2xl p-4 shadow-xl transform group-hover:rotate-12 transition-transform duration-300">
-                    <Users className="w-10 h-10 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white mb-2 drop-shadow-lg">Managers</h2>
-                    <p className="text-blue-100 text-sm sm:text-base font-medium mb-3">Manage and monitor all managers</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
-                      {data.managers?.length || 0} Total Manager{(data.managers?.length || 0) !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    // TODO: Add manager creation modal
-                    toast.info('Manager creation feature coming soon');
-                  }}
-                  className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
-                >
-                  <UserPlus className="w-6 h-6 mr-2" />
-                  Add Manager
-                </button>
-              </div>
-            </div>
-            
-            {(!data.managers || data.managers.length === 0) ? (
-              <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
-                <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
-                  <Users className="w-12 h-12 text-blue-600" />
-                </div>
-                <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Managers Found</p>
-                <p className="text-gray-600 text-sm sm:text-base mb-6">Get started by adding your first manager</p>
-                <button
-                  onClick={() => {
-                    toast.info('Manager creation feature coming soon');
-                  }}
-                  className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 font-bold shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
-                >
-                  <UserPlus className="w-5 h-5 mr-2" />
-                  Add Manager
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
-                {data.managers.map(manager => (
-                  <div key={manager.id} className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{manager.name}</h3>
-                        <p className="text-sm text-gray-600">{manager.email}</p>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        manager.status === 'unlocked' ? 'bg-green-100 text-green-800' : 
-                        manager.status === 'locked' ? 'bg-red-100 text-red-800' : 
-                        manager.status === 'restricted' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {manager.status || 'unlocked'}
-                      </span>
-                    </div>
-                    {manager.organizations && manager.organizations.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <p className="text-xs text-gray-500 mb-2">Assigned Organizations:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {manager.organizations.map(org => (
-                            <span key={org.id} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                              {org.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* Status Change Buttons */}
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <p className="text-xs text-gray-500 mb-2">Change Status:</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => handleUpdateManagerStatus(manager.id, 'unlocked')}
-                          disabled={manager.status === 'unlocked'}
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                            manager.status === 'unlocked'
-                              ? 'bg-green-500 text-white cursor-not-allowed opacity-50'
-                              : 'bg-green-100 text-green-800 hover:bg-green-200'
-                          }`}
-                          title="Unlock manager - Full access"
-                        >
-                          <Unlock className="w-3 h-3 inline mr-1" />
-                          Unlocked
-                        </button>
-                        <button
-                          onClick={() => handleUpdateManagerStatus(manager.id, 'restricted')}
-                          disabled={manager.status === 'restricted'}
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                            manager.status === 'restricted'
-                              ? 'bg-yellow-500 text-white cursor-not-allowed opacity-50'
-                              : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                          }`}
-                          title="Restrict manager - Limited access"
-                        >
-                          <Lock className="w-3 h-3 inline mr-1" />
-                          Restricted
-                        </button>
-                        <button
-                          onClick={() => handleUpdateManagerStatus(manager.id, 'locked')}
-                          disabled={manager.status === 'locked'}
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                            manager.status === 'locked'
-                              ? 'bg-red-500 text-white cursor-not-allowed opacity-50'
-                              : 'bg-red-100 text-red-800 hover:bg-red-200'
-                          }`}
-                          title="Lock manager - No access"
-                        >
-                          <Lock className="w-3 h-3 inline mr-1" />
-                          Locked
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      case 'logs':
-        try {
-          console.log('📋 Rendering activity logs tab');
-          console.log('📋 Activity logs data:', data.logs);
-          console.log('📋 Activity logs length:', data.logs?.length);
-          
-          const formatDate = (dateString) => {
-            if (!dateString) return 'N/A';
-            try {
-              const date = new Date(dateString);
-              if (isNaN(date.getTime())) return 'Invalid Date';
-              return date.toLocaleString('en-PK', { 
-                timeZone: 'Asia/Karachi',
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              });
-            } catch (error) {
-              console.error('Date formatting error:', error);
-              return 'N/A';
-            }
-          };
-
-          return (
-            <div className="space-y-4 sm:space-y-6 lg:space-y-8 p-2 sm:p-4">
-              {/* Header Section */}
-              <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-lg sm:rounded-xl lg:rounded-2xl shadow-lg sm:shadow-xl lg:shadow-2xl p-3 sm:p-4 lg:p-6 xl:p-8 border-2 border-blue-400 overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 sm:w-40 sm:h-40 bg-white opacity-10 rounded-full -mr-16 sm:-mr-20 -mt-16 sm:-mt-20"></div>
-                <div className="absolute bottom-0 left-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-5 rounded-full -ml-12 sm:-ml-16 -mb-12 sm:-mb-16"></div>
-                <div className="relative flex items-center space-x-3 sm:space-x-4 lg:space-x-5">
-                  <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 shadow-xl">
-                    <Activity className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h2 className="text-lg sm:text-xl lg:text-2xl xl:text-3xl font-extrabold text-white mb-1 sm:mb-2 drop-shadow-lg break-words">Activity Logs</h2>
-                    <p className="text-blue-100 text-xs sm:text-sm lg:text-base font-medium mb-2 sm:mb-3">Track all system activities and changes</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 py-1 sm:px-4 sm:py-1.5 lg:px-5 lg:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
-                      {data.logs?.length || 0} Total Log{(data.logs?.length || 0) !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Activity Logs List */}
-              {data.logs && Array.isArray(data.logs) && data.logs.length > 0 ? (
-                <div className="space-y-3 sm:space-y-4">
-                  {data.logs.map((log, index) => {
-                    if (!log) return null;
-                    return (
-                      <div key={log.id || `log-${index}`} className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-3 sm:p-4 lg:p-6 border-l-4 border-blue-500">
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0 mb-2">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 break-words mb-1">
-                              {log.action || 'Activity'}
-                            </h3>
-                            <p className="text-xs sm:text-sm text-gray-600 break-words">
-                              {typeof log.details === 'object' 
-                                ? (log.details?.message || JSON.stringify(log.details)) 
-                                : (log.details || log.message || 'No details available')}
-                            </p>
-                          </div>
-                          <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-0 sm:ml-4 flex-shrink-0">
-                            <span className="text-xs text-gray-500 whitespace-nowrap">
-                              {formatDate(log.createdAt || log.timestamp)}
-                            </span>
-                            {log.targetType && (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ml-2 ${
-                                log.targetType === 'admin' 
-                                  ? 'bg-red-100 text-red-800' 
-                                  : log.targetType === 'manager'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : log.targetType === 'organization'
-                                  ? 'bg-purple-100 text-purple-800'
-                                  : log.targetType === 'ac'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {log.targetType}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {(log.admin || log.user) && (
-                          <div className="mt-2 text-xs text-gray-500">
-                            By: {log.admin?.name || log.user?.name || log.admin?.email || log.user?.email || 'System'}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="bg-gradient-to-br from-white to-blue-50 p-6 sm:p-8 lg:p-12 xl:p-16 rounded-lg sm:rounded-xl lg:rounded-2xl shadow-xl lg:shadow-2xl text-center border-2 border-blue-200">
-                  <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-4 sm:p-5 lg:p-6 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 mx-auto mb-4 sm:mb-6 flex items-center justify-center shadow-lg">
-                    <Activity className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 text-blue-600" />
-                  </div>
-                  <p className="text-gray-800 text-base sm:text-lg lg:text-xl xl:text-2xl font-bold mb-2 sm:mb-3">No Activity Logs Found</p>
-                  <p className="text-gray-600 text-sm sm:text-base font-medium">Activity logs will appear here as actions are performed</p>
-                </div>
-              )}
-            </div>
-          );
-        } catch (error) {
-          console.error('❌ Error rendering activity logs:', error);
-          return (
-            <div className="p-4 sm:p-6">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <h3 className="text-red-800 font-semibold mb-2">Error Loading Activity Logs</h3>
-                <p className="text-red-600 text-sm">{error.message}</p>
-              </div>
-            </div>
-          );
-        }
       default:
         return null;
     }
@@ -4408,7 +3960,7 @@ const AdminDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64 sm:w-72 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20 xl:w-64'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
         <div className={`p-6 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
@@ -4417,7 +3969,7 @@ const AdminDashboard = () => {
                 <BarChart3 className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <h2 className="text-lg font-bold">admin Panel</h2>
+                <h2 className="text-lg font-bold">Manager Panel</h2>
                 <p className="text-xs text-blue-200">Control Center</p>
               </div>
             </div>
@@ -4451,14 +4003,14 @@ const AdminDashboard = () => {
                       setSidebarOpen(false);
                     }
                   }}
-                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-3 sm:px-4' : 'justify-center px-2'} py-2.5 sm:py-3 rounded-lg transition-all duration-200 touch-manipulation ${
+                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-4' : 'justify-center px-2'} py-3 rounded-lg transition-all duration-200 ${
                     isActive
                       ? 'bg-white text-blue-600 shadow-lg'
                       : 'text-blue-100 hover:bg-blue-700 hover:text-white'
                   }`}
                   title={!sidebarOpen ? tab.label : ''}
                 >
-                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-5 h-5 sm:w-6 sm:h-6'}`} />
+                  <Icon className={`${sidebarOpen ? 'w-5 h-5 mr-3' : 'w-6 h-6'}`} />
                   {sidebarOpen && (
                     <>
                       <span className="font-medium flex-1 text-left">{tab.label}</span>
@@ -4490,8 +4042,8 @@ const AdminDashboard = () => {
               </div>
               {sidebarOpen && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{user?.name || 'admin'}</p>
-                  <p className="text-xs text-blue-200 truncate">{user?.email || 'admin@example.com'}</p>
+                  <p className="text-sm font-medium truncate">{user?.name || 'Manager'}</p>
+                  <p className="text-xs text-blue-200 truncate">{user?.email || 'manager@example.com'}</p>
                 {user?.status && (
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${
                     user.status === 'unlocked' 
@@ -4511,7 +4063,7 @@ const AdminDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'lg:ml-20 xl:ml-64'} transition-all duration-300 bg-gray-50 min-h-screen`}>
+      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} transition-all duration-300 bg-gray-50 min-h-screen`}>
         {/* Top Header */}
         <header className="bg-white shadow-md border-b sticky top-0 z-10 w-full">
           <div className="px-4 sm:px-6 py-4 w-full">
@@ -4528,7 +4080,7 @@ const AdminDashboard = () => {
                     {tabs.find(t => t.id === activeTab)?.label || 'Dashboard'}
                   </h1>
                   <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                    Welcome back, {user?.name || 'admin'}
+                    Welcome back, {user?.name || 'Manager'}
                   </p>
                 </div>
               </div>
@@ -4599,8 +4151,8 @@ const AdminDashboard = () => {
       )}
 
       {showOrgDetailsModal && selectedOrgDetails && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-xl max-w-4xl w-full mx-2 sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">Organization Details</h2>
               <button
@@ -4618,7 +4170,7 @@ const AdminDashboard = () => {
               {/* Organization Info */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">{selectedOrgDetails.name}</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div>
                     <span className="text-sm text-gray-600">Status:</span>
                     <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
@@ -4772,7 +4324,7 @@ const AdminDashboard = () => {
                   <div className="space-y-3">
                     {selectedOrgDetails.acs.map((ac) => (
                       <div key={ac.id} className="border rounded-lg p-4 bg-gray-50">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           <div>
                             <span className="text-xs text-gray-600">Name:</span>
                             <p className="text-sm font-medium">{ac.name}</p>
@@ -5286,7 +4838,6 @@ const AdminDashboard = () => {
   );
 };
 
-export default AdminDashboard;
-
+export default ManagerDashboard;
 
 
