@@ -915,7 +915,7 @@ const AdminDashboard = () => {
   };
 
   // Assign Organization to Manager Handler
-  const handleAssignOrganization = async (managerId, organizationIds, reason) => {
+  const handleAssignOrganization = async (managerId, organizationIds) => {
     try {
       setLoading(true);
       const response = await adminAPI.assignManagerToOrganizations(managerId, organizationIds);
@@ -5857,7 +5857,9 @@ const AdminDashboard = () => {
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">Assign Organization to Manager</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {selectedOrgForAssign.id ? 'Assign Organization to Manager' : 'Assign Organizations to Manager'}
+                </h3>
                 <button
                   onClick={() => {
                     setShowAssignOrgModal(false);
@@ -5873,16 +5875,28 @@ const AdminDashboard = () => {
               onSubmit={async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.target);
-                const managerId = parseInt(formData.get('managerId'));
-                const reason = formData.get('reason') || '';
+                let managerId;
+                let organizationIds = [];
                 
-                if (!reason.trim()) {
-                  toast.error('Please provide a reason for assigning this organization');
+                // If coming from manager card, use that managerId
+                if (selectedOrgForAssign.managerId) {
+                  managerId = selectedOrgForAssign.managerId;
+                  // Get selected organization IDs from checkboxes
+                  const checkboxes = formData.getAll('organizationIds');
+                  organizationIds = checkboxes.map(id => parseInt(id));
+                } else {
+                  // If coming from organization card, use selected organization
+                  managerId = parseInt(formData.get('managerId'));
+                  organizationIds = [selectedOrgForAssign.id];
+                }
+                
+                if (organizationIds.length === 0) {
+                  toast.error('Please select at least one organization');
                   return;
                 }
                 
                 try {
-                  await handleAssignOrganization(managerId, [selectedOrgForAssign.id], reason);
+                  await handleAssignOrganization(managerId, organizationIds);
                   setShowAssignOrgModal(false);
                   setSelectedOrgForAssign(null);
                   e.target.reset();
@@ -5892,40 +5906,64 @@ const AdminDashboard = () => {
               }}
               className="p-6 space-y-4"
             >
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <p className="text-sm font-semibold text-blue-900 mb-1">Organization:</p>
-                <p className="text-lg font-bold text-blue-700">{selectedOrgForAssign.name}</p>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Select Manager *</label>
-                <select
-                  name="managerId"
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select Manager</option>
-                  {data.managers.map(manager => (
-                    <option key={manager.id} value={manager.id}>{manager.name} ({manager.email})</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason for Assigning Full Organization *
-                </label>
-                <textarea
-                  name="reason"
-                  required
-                  rows="4"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Explain why you want to assign this full organization to the manager..."
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  This will assign the entire organization including all existing and future venues to the manager.
-                </p>
-              </div>
+              {selectedOrgForAssign.id ? (
+                // Single organization assignment (from organization card)
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm font-semibold text-blue-900 mb-1">Organization:</p>
+                    <p className="text-lg font-bold text-blue-700">{selectedOrgForAssign.name}</p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Manager *</label>
+                    <select
+                      name="managerId"
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select Manager</option>
+                      {data.managers.map(manager => (
+                        <option key={manager.id} value={manager.id}>{manager.name} ({manager.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                // Multiple organizations assignment (from manager card)
+                <>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm font-semibold text-green-900 mb-1">Manager:</p>
+                    <p className="text-lg font-bold text-green-700">
+                      {data.managers.find(m => m.id === selectedOrgForAssign.managerId)?.name || 'Manager'}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Organizations to Assign *
+                    </label>
+                    <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                      {data.organizations.filter(org => !org.managerId || org.managerId !== selectedOrgForAssign.managerId).map(org => (
+                        <label key={org.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="organizationIds"
+                            value={org.id}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700">{org.name}</span>
+                        </label>
+                      ))}
+                      {data.organizations.filter(org => !org.managerId || org.managerId !== selectedOrgForAssign.managerId).length === 0 && (
+                        <p className="text-sm text-gray-500 text-center py-4">All organizations are already assigned</p>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      This will assign the selected organizations including all existing and future venues to the manager.
+                    </p>
+                  </div>
+                </>
+              )}
               
               <div className="flex gap-3 pt-4">
                 <button
