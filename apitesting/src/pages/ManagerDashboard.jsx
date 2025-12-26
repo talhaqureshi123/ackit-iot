@@ -336,27 +336,13 @@ const ManagerDashboard = () => {
           }));
           
           // Show notification
-          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 5 seconds.`, {
+          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Event will remain in history.`, {
             duration: 3000,
           });
           
-          // Auto-delete after 5 seconds (5000ms) - only if still completed
-          setTimeout(() => {
-            setData(prevData => {
-              const event = prevData.events.find(e => e && e.id === eventData.eventId);
-              // Only remove if event is still completed (not restarted or updated)
-              if (event && event.status === 'completed') {
-                console.log(`🗑️ Removed completed event ${eventData.eventId} from list`);
-                return {
-                  ...prevData,
-                  events: prevData.events.filter(e => e && e.id !== eventData.eventId)
-                };
-              } else {
-                console.log(`⏭️ Skipped removing event ${eventData.eventId} - status changed to ${event?.status}`);
-                return prevData; // Don't remove if status changed
-              }
-            });
-          }, 5000); // 5 seconds
+          // DISABLED: Auto-delete is now disabled - completed events will remain in the list for history
+          // Events will stay visible even after completion for records and history
+          console.log(`✅ Completed event ${eventData.eventId} will remain in list (auto-remove disabled)`);
         }
 
         // Handle event deleted - remove immediately (REAL-TIME)
@@ -3987,8 +3973,8 @@ const ManagerDashboard = () => {
         <div className={`p-6 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
             <div className="flex items-center space-x-3">
-              <div className="bg-white rounded-lg p-2">
-                <BarChart3 className="w-6 h-6 text-blue-600" />
+              <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+                <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
               </div>
               <div>
                 <h2 className="text-lg font-bold">Manager Panel</h2>
@@ -3996,8 +3982,8 @@ const ManagerDashboard = () => {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg p-2">
-              <BarChart3 className="w-6 h-6 text-blue-600" />
+            <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+              <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
           <button

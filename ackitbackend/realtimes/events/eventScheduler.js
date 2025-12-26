@@ -359,10 +359,10 @@ class EventScheduler {
               `✅ Auto-completed disabled event: ${event.name} (ID: ${event.id}) - Original end time passed`
             );
 
-            // Auto-delete completed event from database
-            await event.destroy();
+            // DISABLED: Auto-delete is now disabled - completed events will remain in database for history
+            // Events will stay in database even after completion for records and history
             console.log(
-              `🗑️ Auto-deleted completed disabled event: ${event.name} (ID: ${event.id})`
+              `✅ Completed disabled event: ${event.name} (ID: ${event.id}) - Will remain in database (auto-delete disabled)`
             );
           } catch (error) {
             console.error(
@@ -461,60 +461,11 @@ class EventScheduler {
               );
             }
 
-            // Auto-delete completed event after 5 seconds
-            setTimeout(async () => {
-              try {
-                const eventToDelete = await Event.findByPk(event.id);
-                if (eventToDelete && eventToDelete.status === "completed") {
-                  await eventToDelete.destroy();
-                  console.log(
-                    `🗑️ Auto-deleted completed admin event: ${eventToDelete.name} (ID: ${eventToDelete.id}) after 5 seconds`
-                  );
-
-                  // Broadcast deletion to frontend - CRITICAL: Broadcast to ALL clients
-                  try {
-                    // Broadcast to all frontend clients (both admin and manager)
-                    ESPService.broadcastToFrontend({
-                      type: "EVENT_DELETED",
-                      eventId: event.id,
-                      eventName: event.name,
-                      createdBy: event.createdBy,
-                      timestamp: new Date().toISOString(),
-                    });
-
-                    // Also broadcast device-specific if available
-                    if (event.deviceId) {
-                      const device = await AC.findByPk(event.deviceId);
-                      if (device && device.serialNumber) {
-                        ESPService.broadcastToFrontend({
-                          type: "EVENT_DELETED",
-                          eventId: event.id,
-                          eventName: event.name,
-                          device_id: device.serialNumber,
-                          serialNumber: device.serialNumber,
-                          createdBy: event.createdBy,
-                          timestamp: new Date().toISOString(),
-                        });
-                      }
-                    }
-
-                    console.log(
-                      `📡 [SCHEDULER] Broadcasted EVENT_DELETED for completed admin event ${event.id} to all frontend clients`
-                    );
-                  } catch (broadcastError) {
-                    console.error(
-                      "⚠️ Error broadcasting event deleted:",
-                      broadcastError
-                    );
-                  }
-                }
-              } catch (deleteError) {
-                console.error(
-                  `❌ Error auto-deleting completed event ${event.id}:`,
-                  deleteError
-                );
-              }
-            }, 5000); // 5 seconds delay (5000ms)
+            // DISABLED: Auto-delete is now disabled - completed events will remain in database for history
+            // Events will stay in database even after completion for records and history
+            console.log(
+              `✅ Completed admin event: ${event.name} (ID: ${event.id}) - Will remain in database (auto-delete disabled)`
+            );
           } else if (event.createdBy === "manager") {
             // Turn device OFF when manager event completes
             if (event.deviceId) {
@@ -601,60 +552,11 @@ class EventScheduler {
               );
             }
 
-            // Auto-delete completed manager event after 5 seconds
-            setTimeout(async () => {
-              try {
-                const eventToDelete = await Event.findByPk(event.id);
-                if (eventToDelete && eventToDelete.status === "completed") {
-                  await eventToDelete.destroy();
-                  console.log(
-                    `🗑️ Auto-deleted completed manager event: ${eventToDelete.name} (ID: ${eventToDelete.id}) after 5 seconds`
-                  );
-
-                  // Broadcast deletion to frontend - CRITICAL: Broadcast to ALL clients
-                  try {
-                    // Broadcast to all frontend clients (both admin and manager)
-                    ESPService.broadcastToFrontend({
-                      type: "EVENT_DELETED",
-                      eventId: event.id,
-                      eventName: event.name,
-                      createdBy: event.createdBy,
-                      timestamp: new Date().toISOString(),
-                    });
-
-                    // Also broadcast device-specific if available
-                    if (event.deviceId) {
-                      const device = await AC.findByPk(event.deviceId);
-                      if (device && device.serialNumber) {
-                        ESPService.broadcastToFrontend({
-                          type: "EVENT_DELETED",
-                          eventId: event.id,
-                          eventName: event.name,
-                          device_id: device.serialNumber,
-                          serialNumber: device.serialNumber,
-                          createdBy: event.createdBy,
-                          timestamp: new Date().toISOString(),
-                        });
-                      }
-                    }
-
-                    console.log(
-                      `📡 [SCHEDULER] Broadcasted EVENT_DELETED for completed admin event ${event.id} to all frontend clients`
-                    );
-                  } catch (broadcastError) {
-                    console.error(
-                      "⚠️ Error broadcasting event deleted:",
-                      broadcastError
-                    );
-                  }
-                }
-              } catch (deleteError) {
-                console.error(
-                  `❌ Error auto-deleting completed event ${event.id}:`,
-                  deleteError
-                );
-              }
-            }, 5000); // 5 seconds delay (5000ms)
+            // DISABLED: Auto-delete is now disabled - completed events will remain in database for history
+            // Events will stay in database even after completion for records and history
+            console.log(
+              `✅ Completed manager event: ${event.name} (ID: ${event.id}) - Will remain in database (auto-delete disabled)`
+            );
           }
         } catch (error) {
           console.error(
@@ -698,12 +600,12 @@ class EventScheduler {
           if (!eventToDelete) continue;
 
           const status = eventToDelete.status;
-          // Only delete if status is scheduled, active, or completed
-          // AND the event's end time has passed (for scheduled/active) or it's already completed
+          // DISABLED: Auto-delete is now disabled - events will remain in database
+          // Only delete if status is scheduled or active (NOT completed)
+          // Completed events should remain for history/records
           if (
             status === "scheduled" ||
-            status === "active" ||
-            status === "completed"
+            status === "active"
           ) {
             // For scheduled/active events, only delete if end time has passed
             if (

@@ -1127,45 +1127,11 @@ class ManagerEventService {
         console.error("⚠️ Error broadcasting event stopped:", broadcastError);
       }
 
-      // Auto-delete event after 5 seconds
-      setTimeout(async () => {
-        try {
-          const eventToDelete = await Event.findByPk(eventId);
-          if (eventToDelete && eventToDelete.status === "stopped") {
-            await eventToDelete.destroy();
-            console.log(
-              `🗑️ Auto-deleted stopped manager event: ${eventToDelete.name} (ID: ${eventToDelete.id})`
-            );
-
-            // Broadcast deletion to frontend
-            try {
-              if (event.deviceId) {
-                const device = await AC.findByPk(event.deviceId);
-                if (device && device.serialNumber) {
-                  ESPService.broadcastToFrontend({
-                    type: "EVENT_DELETED",
-                    eventId: event.id,
-                    eventName: event.name,
-                    device_id: device.serialNumber,
-                    serialNumber: device.serialNumber,
-                    timestamp: new Date().toISOString(),
-                  });
-                }
-              }
-            } catch (broadcastError) {
-              console.error(
-                "⚠️ Error broadcasting event deleted:",
-                broadcastError
-              );
-            }
-          }
-        } catch (deleteError) {
-          console.error(
-            `❌ Error auto-deleting stopped event ${eventId}:`,
-            deleteError
-          );
-        }
-      }, 5000); // 5 seconds delay
+      // DISABLED: Auto-delete is now disabled - stopped events will remain in database for history
+      // Events will stay in database even after being stopped for records and history
+      console.log(
+        `✅ Stopped manager event: ${event.name} (ID: ${eventId}) - Will remain in database (auto-delete disabled)`
+      );
 
       return {
         success: true,
@@ -1508,10 +1474,10 @@ class ManagerEventService {
         event.disabledAt = null;
         await event.save({ transaction });
 
-        // Auto-delete completed event from database
-        await event.destroy({ transaction });
+        // DISABLED: Auto-delete is now disabled - completed events will remain in database for history
+        // Events will stay in database even after completion for records and history
         console.log(
-          `🗑️ Auto-deleted completed event: ${event.name} (ID: ${event.id}) - Cannot enable, end time passed`
+          `✅ Completed event: ${event.name} (ID: ${event.id}) - Will remain in database (auto-delete disabled) - Cannot enable, end time passed`
         );
 
         await transaction.commit();

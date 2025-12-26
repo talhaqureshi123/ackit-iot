@@ -532,8 +532,8 @@ const SuperAdminDashboard = () => {
         <div className={`p-6 border-b border-red-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
             <div className="flex items-center space-x-3">
-              <div className="bg-white rounded-lg p-2">
-                <Shield className="w-6 h-6 text-red-600" />
+              <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+                <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
               </div>
               <div>
                 <h2 className="text-lg font-bold">Super Admin</h2>
@@ -541,8 +541,8 @@ const SuperAdminDashboard = () => {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg p-2">
-              <Shield className="w-6 h-6 text-red-600" />
+            <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+              <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
           <button

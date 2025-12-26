@@ -66,12 +66,6 @@ router.post(
   adminController.assignManagerToOrganizations
 );
 
-// Assign multiple venues to manager
-router.post(
-  "/managers/:managerId/assign-venues",
-  adminController.assignManagerToVenues
-);
-
 // ==================== ORGANIZATION MANAGEMENT ROUTES ====================
 // Lock organization (Admin-controlled)
 router.post(

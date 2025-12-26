@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI } from '../services/apiAdmin';
 import { BACKEND_IP, BACKEND_PORT, FRONTEND_WS_PORT, WS_URL } from '../config/api';
 import toast from 'react-hot-toast';
 import EventForm from '../components/EventForm';
+import VenueDetailsPage from './VenueDetailsPage';
 import { 
   Users, 
   Building, 
@@ -34,11 +36,13 @@ import {
   Menu,
   BarChart3,
   User,
-  UserPlus
+  UserPlus,
+  ArrowLeft
 } from 'lucide-react';
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true); // Track initial data load
@@ -46,6 +50,7 @@ const AdminDashboard = () => {
   const [allAlerts, setAllAlerts] = useState([]); // Store all alerts (including device-level) for device highlighting
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deviceViewMode, setDeviceViewMode] = useState('cards'); // 'cards' or 'table'
   
   // Create modals state
   const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
@@ -117,6 +122,7 @@ const AdminDashboard = () => {
   const [selectedOrgDetails, setSelectedOrgDetails] = useState(null);
   const [showVenueDetailsModal, setShowVenueDetailsModal] = useState(false);
   const [selectedVenueDetails, setSelectedVenueDetails] = useState(null);
+  const [selectedVenueId, setSelectedVenueId] = useState(null); // For sidebar venue details
   const [showACDetailsModal, setShowACDetailsModal] = useState(false);
   const [selectedACDetails, setSelectedACDetails] = useState(null);
   const [energyData, setEnergyData] = useState({
@@ -351,27 +357,13 @@ const AdminDashboard = () => {
           }));
           
           // Show notification
-          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Will be removed in 5 seconds.`, {
+          toast.success(`Event "${eventData.eventName || 'Unknown'}" ended. Event will remain in history.`, {
             duration: 3000,
           });
           
-          // Auto-delete after 5 seconds (5000ms) - only if still completed
-          setTimeout(() => {
-            setData(prevData => {
-              const event = prevData.events.find(e => e && e.id === eventData.eventId);
-              // Only remove if event is still completed (not restarted or updated)
-              if (event && event.status === 'completed') {
-                console.log(`🗑️ Removed completed event ${eventData.eventId} from list`);
-                return {
-                  ...prevData,
-                  events: prevData.events.filter(e => e && e.id !== eventData.eventId)
-                };
-              } else {
-                console.log(`⏭️ Skipped removing event ${eventData.eventId} - status changed to ${event?.status}`);
-                return prevData; // Don't remove if status changed
-              }
-            });
-          }, 5000); // 5 seconds
+          // DISABLED: Auto-delete is now disabled - completed events will remain in the list for history
+          // Events will stay visible even after completion for records and history
+          console.log(`✅ Completed event ${eventData.eventId} will remain in list (auto-remove disabled)`);
         }
 
         // Handle event deleted - remove immediately (REAL-TIME)
@@ -547,6 +539,14 @@ const AdminDashboard = () => {
       });
     }
   }, [activeTab, data.acs.length, data.organizations.length]);
+
+  // Auto-select first venue when dashboard tab is clicked and no venue is selected
+  useEffect(() => {
+    if (activeTab === 'venue-dashboard' && !selectedVenueId && data.venues && data.venues.length > 0) {
+      // Auto-select the first venue
+      setSelectedVenueId(data.venues[0].id);
+    }
+  }, [activeTab, selectedVenueId, data.venues]);
 
   // Auto-load activity logs when logs tab is active
   useEffect(() => {
@@ -925,23 +925,6 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('Assign organization error:', error);
       const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to assign organization';
-      toast.error(errorMessage);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAssignVenues = async (managerId, venueIds) => {
-    try {
-      setLoading(true);
-      const response = await adminAPI.assignManagerToVenues(managerId, venueIds);
-      toast.success(response.data?.message || 'Venues assigned to manager successfully');
-      await loadData(false);
-      return response;
-    } catch (error) {
-      console.error('Assign venues error:', error);
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to assign venues';
       toast.error(errorMessage);
       throw error;
     } finally {
@@ -1852,7 +1835,8 @@ const AdminDashboard = () => {
 
 
   const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'venue-dashboard', label: 'Dashboard', icon: MapPin },
+    { id: 'dashboard', label: 'Overview', icon: BarChart3 },
     { id: 'alerts', label: 'Alerts', icon: AlertCircle, count: alerts.length, badge: alerts.length > 0 ? 'red' : null },
     { id: 'events', label: 'Events', icon: Calendar, count: Array.isArray(data.events) ? data.events.length : 0 },
     { id: 'managers', label: 'Managers', icon: Users, count: data.managers?.length || 0 },
@@ -2179,6 +2163,7 @@ const AdminDashboard = () => {
   };
 
   const VenueCard = ({ venue }) => {
+    const navigate = useNavigate();
     const venueACs = Array.isArray(data.acs) ? data.acs.filter(ac => ac.venueId === venue.id) : [];
     const venueDeviceIds = venueACs.map(ac => ac.id);
     const isVenueOn = venue.isVenueOn === true || venue.isVenueOn === 'true' || venue.isVenueOn === 1;
@@ -2432,12 +2417,15 @@ const AdminDashboard = () => {
           {/* Action Buttons - Compact */}
           <div className="flex gap-1.5 mt-auto">
             <button
-              onClick={() => handleViewVenueDetails(venue.id)}
+              onClick={() => {
+                setSelectedVenueId(venue.id);
+                setActiveTab('venue-dashboard'); // Switch to Dashboard tab to show venue details
+              }}
               className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
-              title="View organization, size, and more details"
+              title="View venue dashboard"
             >
-              <Eye className="w-3 h-3" />
-              <span>View</span>
+              <MapPin className="w-3 h-3" />
+              <span>View Details</span>
           </button>
           </div>
         </div>
@@ -3420,8 +3408,45 @@ const AdminDashboard = () => {
     switch (activeTab) {
       case 'dashboard':
         return <DashboardView />;
-        case 'events':
-          return <AdminEventsView />;
+      case 'venue-dashboard':
+        // Show VenueDetailsPage in main content area (not in sidebar)
+        // Always show dropdowns, and show venue details if selected, otherwise show empty state
+        
+        // Get current venue and its organization (if venue is selected)
+        const currentVenue = selectedVenueId ? data.venues?.find(v => v.id === selectedVenueId) : null;
+        const currentOrg = currentVenue ? data.organizations.find(o => 
+          o.id === currentVenue.organizationId || 
+          (o.venues && o.venues.some(v => v.id === currentVenue.id))
+        ) : null;
+        
+        // Get filtered venues for selected organization (or all venues if no org selected)
+        const filteredVenues = currentOrg ? (data.venues || []).filter(v => 
+          v.organizationId === currentOrg.id || 
+          (currentOrg.venues && currentOrg.venues.some(ov => ov.id === v.id))
+        ) : [];
+        
+        return (
+          <div className="w-full min-h-screen">
+            {/* Show venue details if selected, otherwise show empty state */}
+            {selectedVenueId ? (
+              <VenueDetailsPage 
+                venueIdProp={selectedVenueId} 
+                hideHeader={true} 
+                onVenueChange={(newVenueId) => setSelectedVenueId(newVenueId)}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-64 px-6">
+                <div className="text-center">
+                  <MapPin className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-700 mb-2">Select a Venue</h3>
+                  <p className="text-gray-500">Choose an organization and venue from the dropdowns above to view dashboard details.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      case 'events':
+        return <AdminEventsView />;
       case 'venues':
         // Get all venues - from data.venues (which includes venues from orgs + separate API)
         // Also include organization info for each venue
@@ -3731,6 +3756,13 @@ const AdminDashboard = () => {
           </div>
         );
       case 'acs':
+        // Helper function to get venue name for a device
+        const getVenueName = (ac) => {
+          if (ac.venue?.name) return ac.venue.name;
+          const venue = data.venues.find(v => v.id === ac.venueId);
+          return venue?.name || 'N/A';
+        };
+
         return (
           <div className="space-y-8">
             {/* Header Section - Enhanced */}
@@ -3750,22 +3782,126 @@ const AdminDashboard = () => {
                       </span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowCreateACModal(true)}
-                  className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
-                >
-                  <Plus className="w-6 h-6 mr-2" />
-                  Add AC Device
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* View Toggle */}
+                  <div className="flex items-center bg-white bg-opacity-20 rounded-lg p-1">
+                    <button
+                      onClick={() => setDeviceViewMode('cards')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        deviceViewMode === 'cards'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Cards
+                    </button>
+                    <button
+                      onClick={() => setDeviceViewMode('table')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        deviceViewMode === 'table'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Table
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowCreateACModal(true)}
+                    className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
+                  >
+                    <Plus className="w-6 h-6 mr-2" />
+                    Add AC Device
+                  </button>
+                </div>
               </div>
             </div>
             
             {data.acs.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
-                {data.acs.map(ac => (
-                  <ACCard key={ac.id} ac={ac} />
-                ))}
-              </div>
+              deviceViewMode === 'table' ? (
+                <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Device ID
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Venue
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Temperature
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Events
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {data.acs.map((ac) => {
+                          const deviceEvents = Array.isArray(data.events) ? data.events.filter(e => 
+                            e.deviceId === ac.id && e.eventType === 'device'
+                          ) : [];
+                          const venue = data.venues.find(v => v.id === ac.venueId);
+                          
+                          return (
+                            <tr key={ac.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{ac.name}</div>
+                                <div className="text-xs text-gray-500">{ac.serialNumber}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm text-gray-900">{getVenueName(ac)}</span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {ac.temperature || 16}°C
+                                  </span>
+                                  <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                                    <Plus className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={ac.isOn}
+                                    readOnly
+                                    className="sr-only peer"
+                                  />
+                                  <div className={`w-11 h-6 rounded-full peer ${
+                                    ac.isOn ? 'bg-green-500' : 'bg-gray-300'
+                                  } peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all`}></div>
+                                  <span className="ml-3 text-sm text-gray-700">
+                                    {ac.isOn ? 'On' : 'Off'}
+                                  </span>
+                                </label>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+                  {data.acs.map(ac => (
+                    <ACCard key={ac.id} ac={ac} />
+                  ))}
+                </div>
+              )
             ) : (
               <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
@@ -4382,7 +4518,7 @@ const AdminDashboard = () => {
                       </div>
                     )}
                     
-                    {/* Assign Button */}
+                    {/* Assign Organizations Button */}
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <button
                         onClick={() => {
@@ -4390,10 +4526,10 @@ const AdminDashboard = () => {
                           setShowAssignOrgModal(true);
                         }}
                         className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors shadow-sm hover:shadow"
-                        title="Assign organizations and venues to this manager"
+                        title="Assign organizations to this manager"
                       >
                         <UserPlus className="w-4 h-4" />
-                        <span>Assign</span>
+                        <span>Assign Organizations</span>
                       </button>
                     </div>
                     
@@ -4579,22 +4715,22 @@ const AdminDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64 sm:w-72 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20 xl:w-64'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-48 sm:w-52 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
-        <div className={`p-6 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
+        <div className={`p-2 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
-            <div className="flex items-center space-x-3">
-              <div className="bg-white rounded-lg p-2">
-                <BarChart3 className="w-6 h-6 text-blue-600" />
+            <div className="flex items-center space-x-1.5">
+              <div className="bg-white rounded-lg p-1 flex items-center justify-center">
+                <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-5 h-5 object-contain" />
               </div>
               <div>
-                <h2 className="text-lg font-bold">admin Panel</h2>
+                <h2 className="text-sm font-bold">admin Panel</h2>
                 <p className="text-xs text-blue-200">Control Center</p>
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg p-2">
-              <BarChart3 className="w-6 h-6 text-blue-600" />
+            <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+              <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
           <button
@@ -4607,8 +4743,8 @@ const AdminDashboard = () => {
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 overflow-y-auto py-4">
-          <div className="px-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto py-1.5">
+          <div className="px-1.5 space-y-0.5">
             {tabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -4622,17 +4758,17 @@ const AdminDashboard = () => {
                       setSidebarOpen(false);
                     }
                   }}
-                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-3 sm:px-4' : 'justify-center px-2'} py-2.5 sm:py-3 rounded-lg transition-all duration-200 touch-manipulation ${
+                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-1.5 sm:px-2' : 'justify-center px-2'} py-1.5 sm:py-2 rounded-lg transition-all duration-200 touch-manipulation ${
                     isActive
                       ? 'bg-white text-blue-600 shadow-lg'
                       : 'text-blue-100 hover:bg-blue-700 hover:text-white'
                   }`}
                   title={!sidebarOpen ? tab.label : ''}
                 >
-                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-5 h-5 sm:w-6 sm:h-6'}`} />
+                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-4 h-4 sm:w-5 sm:h-5'}`} />
                   {sidebarOpen && (
                     <>
-                      <span className="font-medium flex-1 text-left">{tab.label}</span>
+                      <span className="text-sm font-medium flex-1 text-left">{tab.label}</span>
                       {tab.count !== undefined && (
                         <span className={`ml-2 py-0.5 px-2 rounded-full text-xs font-semibold ${
                           tab.badge === 'red' && tab.count > 0
@@ -4652,12 +4788,14 @@ const AdminDashboard = () => {
           </div>
         </nav>
 
+        {/* Sidebar Dashboard Panel - REMOVED - No longer showing in sidebar */}
+
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-blue-700">
-          <div className={`${sidebarOpen ? 'px-4' : 'px-2'} py-3 bg-blue-700 rounded-lg`}>
-            <div className={`flex items-center ${sidebarOpen ? 'space-x-3' : 'justify-center'}`}>
-              <div className="bg-blue-600 rounded-full p-2">
-                <User className="w-5 h-5" />
+        <div className="p-1.5 border-t border-blue-700">
+          <div className={`${sidebarOpen ? 'px-2' : 'px-2'} py-1.5 bg-blue-700 rounded-lg`}>
+            <div className={`flex items-center ${sidebarOpen ? 'space-x-2' : 'justify-center'}`}>
+              <div className="bg-blue-600 rounded-full p-1.5">
+                <User className="w-4 h-4" />
               </div>
               {sidebarOpen && (
                 <div className="flex-1 min-w-0">
@@ -4682,10 +4820,10 @@ const AdminDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'lg:ml-20 xl:ml-64'} transition-all duration-300 bg-gray-50 min-h-screen`}>
-        {/* Top Header */}
-        <header className="bg-white shadow-md border-b sticky top-0 z-10 w-full">
-          <div className="px-4 sm:px-6 py-4 w-full">
+      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-48 xl:ml-52' : 'lg:ml-14 xl:ml-16'} transition-all duration-300 bg-gray-50 min-h-screen flex flex-col`}>
+        {/* Top Header - 10% height */}
+        <header className="bg-white shadow-md border-b sticky top-0 z-20 w-full h-[10vh] flex-shrink-0 flex items-center">
+          <div className="px-4 sm:px-6 w-full">
             <div className="flex justify-between items-center">
               <div className="flex items-center space-x-3">
                 <button
@@ -4731,8 +4869,8 @@ const AdminDashboard = () => {
           </div>
         </header>
 
-        {/* Content */}
-        <main className="p-4 sm:p-6 w-full overflow-x-hidden">
+        {/* Content - 90% height */}
+        <main className="p-4 sm:p-6 w-full overflow-x-hidden flex-1 h-[90vh] overflow-y-auto">
           <div className="w-full max-w-none">
             {/* Main Content */}
             {renderContent()}
@@ -5219,11 +5357,11 @@ const AdminDashboard = () => {
                           <span>{selectedACDetails.ton} Ton</span>
                         </div>
                       )}
-                      {selectedACDetails.venue && (
+                      {selectedACDetails?.venue && (
                         <div className="flex items-center space-x-2">
                           <span className="font-medium">Venue:</span>
-                          <span>{selectedACDetails.venue.name}</span>
-                          {selectedACDetails.venue.organization && (
+                          <span>{selectedACDetails.venue?.name || 'N/A'}</span>
+                          {selectedACDetails.venue?.organization && (
                             <span className="text-gray-500">({selectedACDetails.venue.organization.name})</span>
                           )}
                         </div>
@@ -5884,14 +6022,14 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Assign Organizations and Venues to Manager Modal */}
+      {/* Assign Organization to Manager Modal */}
       {showAssignOrgModal && selectedOrgForAssign && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-900">
-                  {selectedOrgForAssign.id ? 'Assign Organization to Manager' : 'Assign to Manager'}
+                  {selectedOrgForAssign.id ? 'Assign Organization to Manager' : 'Assign Organizations to Manager'}
                 </h3>
                 <button
                   onClick={() => {
@@ -5910,50 +6048,31 @@ const AdminDashboard = () => {
                 const formData = new FormData(e.target);
                 let managerId;
                 let organizationIds = [];
-                let venueIds = [];
                 
                 // If coming from manager card, use that managerId
                 if (selectedOrgForAssign.managerId) {
                   managerId = selectedOrgForAssign.managerId;
                   // Get selected organization IDs from checkboxes
-                  const orgCheckboxes = formData.getAll('organizationIds');
-                  organizationIds = orgCheckboxes.map(id => parseInt(id));
-                  // Get selected venue IDs from checkboxes
-                  const venueCheckboxes = formData.getAll('venueIds');
-                  venueIds = venueCheckboxes.map(id => parseInt(id));
+                  const checkboxes = formData.getAll('organizationIds');
+                  organizationIds = checkboxes.map(id => parseInt(id));
                 } else {
                   // If coming from organization card, use selected organization
                   managerId = parseInt(formData.get('managerId'));
                   organizationIds = [selectedOrgForAssign.id];
                 }
                 
-                if (organizationIds.length === 0 && venueIds.length === 0) {
-                  toast.error('Please select at least one organization or venue');
+                if (organizationIds.length === 0) {
+                  toast.error('Please select at least one organization');
                   return;
                 }
                 
                 try {
-                  setLoading(true);
-                  const promises = [];
-                  
-                  // Assign organizations if any selected
-                  if (organizationIds.length > 0) {
-                    promises.push(handleAssignOrganization(managerId, organizationIds));
-                  }
-                  
-                  // Assign venues if any selected
-                  if (venueIds.length > 0) {
-                    promises.push(handleAssignVenues(managerId, venueIds));
-                  }
-                  
-                  await Promise.all(promises);
+                  await handleAssignOrganization(managerId, organizationIds);
                   setShowAssignOrgModal(false);
                   setSelectedOrgForAssign(null);
                   e.target.reset();
                 } catch (error) {
-                  // Error already handled in handlers
-                } finally {
-                  setLoading(false);
+                  // Error already handled in handleAssignOrganization
                 }
               }}
               className="p-6 space-y-4"
@@ -5981,7 +6100,7 @@ const AdminDashboard = () => {
                   </div>
                 </>
               ) : (
-                // Multiple organizations and venues assignment (from manager card)
+                // Multiple organizations assignment (from manager card)
                 <>
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                     <p className="text-sm font-semibold text-green-900 mb-1">Manager:</p>
@@ -5990,12 +6109,11 @@ const AdminDashboard = () => {
                     </p>
                   </div>
                   
-                  {/* Organizations Section */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Organizations to Assign
+                      Select Organizations to Assign *
                     </label>
-                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                    <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
                       {data.organizations.filter(org => !org.managerId || org.managerId !== selectedOrgForAssign.managerId).map(org => (
                         <label key={org.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
                           <input
@@ -6012,33 +6130,7 @@ const AdminDashboard = () => {
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      Assigning an organization will also assign all existing and future venues in that organization.
-                    </p>
-                  </div>
-
-                  {/* Venues Section */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Venues to Assign
-                    </label>
-                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
-                      {data.venues.filter(venue => !venue.managerId || venue.managerId !== selectedOrgForAssign.managerId).map(venue => (
-                        <label key={venue.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                          <input
-                            type="checkbox"
-                            name="venueIds"
-                            value={venue.id}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="text-sm text-gray-700">{venue.name}</span>
-                        </label>
-                      ))}
-                      {data.venues.filter(venue => !venue.managerId || venue.managerId !== selectedOrgForAssign.managerId).length === 0 && (
-                        <p className="text-sm text-gray-500 text-center py-4">All venues are already assigned</p>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      You can assign individual venues or entire organizations to the manager.
+                      This will assign the selected organizations including all existing and future venues to the manager.
                     </p>
                   </div>
                 </>
@@ -6060,13 +6152,134 @@ const AdminDashboard = () => {
                   disabled={loading}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
                 >
-                  {loading ? 'Assigning...' : selectedOrgForAssign.id ? 'Assign Organization' : 'Assign'}
+                  {loading ? 'Assigning...' : 'Assign Organization'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// Wrapper component for VenueDetailsPage to work within AdminDashboard
+// Energy Consumption Section Component for Sidebar
+const VenueEnergySection = ({ venueId }) => {
+  const [energyData, setEnergyData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!venueId) return;
+    
+    const loadEnergyData = async () => {
+      try {
+        setLoading(true);
+        // Get venue details which includes energy info
+        const res = await adminAPI.getVenueDetails(venueId);
+        const venueData = res.data?.data?.venue || res.data?.venue || res.data?.data;
+        
+        if (venueData) {
+          // Calculate total energy from devices in this venue
+          const devices = res.data?.data?.devices || [];
+          const totalEnergy = devices.reduce((sum, device) => {
+            return sum + (device.energyConsumption || device.totalEnergyConsumed || 0);
+          }, 0);
+          
+          setEnergyData({
+            total: totalEnergy,
+            deviceCount: devices.length
+          });
+        }
+      } catch (error) {
+        console.error('Error loading energy data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEnergyData();
+  }, [venueId]);
+
+  if (loading) {
+    return <div className="text-xs text-gray-500">Loading...</div>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex justify-between items-center">
+        <span className="text-xs text-gray-600">Total Energy:</span>
+        <span className="text-xs font-bold text-blue-600">
+          {energyData?.total ? `${energyData.total.toFixed(2)} KV` : '0 KV'}
+        </span>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-xs text-gray-600">Devices:</span>
+        <span className="text-xs font-semibold text-gray-800">
+          {energyData?.deviceCount || 0}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// Alerts Section Component for Sidebar
+const VenueAlertsSection = ({ venueId }) => {
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!venueId) return;
+    
+    const loadAlerts = async () => {
+      try {
+        setLoading(true);
+        const res = await adminAPI.getActiveAlerts();
+        const allAlerts = res.data?.data?.alerts || res.data?.alerts || [];
+        
+        // Filter alerts for this venue's devices
+        const venueRes = await adminAPI.getVenueDetails(venueId);
+        const venueData = venueRes.data?.data?.venue || venueRes.data?.venue || venueRes.data?.data;
+        const deviceIds = venueData?.devices?.map(d => d.id) || [];
+        
+        const venueAlerts = allAlerts.filter(alert => 
+          deviceIds.includes(alert.deviceId) || alert.venueId === venueId
+        );
+        
+        setAlerts(venueAlerts);
+      } catch (error) {
+        console.error('Error loading alerts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAlerts();
+  }, [venueId]);
+
+  if (loading) {
+    return <div className="text-xs text-gray-500">Loading...</div>;
+  }
+
+  if (alerts.length === 0) {
+    return (
+      <div className="text-xs text-gray-500 text-center py-2">
+        No alerts found
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 max-h-32 overflow-y-auto">
+      {alerts.map((alert) => (
+        <div key={alert.id} className="bg-red-50 border border-red-200 rounded p-1.5">
+          <div className="text-xs font-semibold text-red-800">{alert.type || 'Alert'}</div>
+          <div className="text-xs text-red-600 mt-0.5">{alert.message || alert.description || 'No description'}</div>
+          {alert.deviceName && (
+            <div className="text-xs text-gray-500 mt-0.5">Device: {alert.deviceName}</div>
+          )}
+        </div>
+      ))}
     </div>
   );
 };
