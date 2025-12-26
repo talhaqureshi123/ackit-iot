@@ -7,11 +7,11 @@
 #include <LiquidCrystal_I2C.h>  // LCD Display library (I2C)
 
 // ==================== CONFIGURATION ====================
-const char* ssid = "Talha";
-const char* password = "1234567890";
+const char* ssid = "lotify 4";
+const char* password = "Talha244";
 
 // Railway Configuration
-const char* websocket_server = "ackit-iot-production.up.railway.app";
+const char* websocket_server = "ackit-iot.up.railway.app";
 const int websocket_port = 443;  // WSS uses port 443 (HTTPS port)
 const char* websocket_path = "/esp32";
 
@@ -81,6 +81,10 @@ const unsigned long irDebounceMs = 1500UL;
 // Room temperature auto-update (every 5 minutes = 300000ms)
 unsigned long roomTempTicker = 0;
 const unsigned long ROOM_TEMP_INTERVAL_MS = 5UL * 60UL * 1000UL; // 5 minutes
+
+// Connection status logging (every 30 seconds)
+unsigned long lastConnectionStatusLog = 0;
+const unsigned long CONNECTION_STATUS_INTERVAL_MS = 30UL * 1000UL; // 30 seconds
 
 // Forward declarations
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length);
@@ -221,18 +225,33 @@ void loop() {
     roomTempTicker = millis();
     readAndSendRoomTemp();
   }
+
+  // Periodic connection status logging
+  unsigned long now = millis();
+  if (now - lastConnectionStatusLog > CONNECTION_STATUS_INTERVAL_MS) {
+    lastConnectionStatusLog = now;
+    if (device.isConnected) {
+      Serial.println("🟢 [STATUS] WebSocket: CONNECTED | WiFi: " + String(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED"));
+    } else {
+      Serial.println("🔴 [STATUS] WebSocket: DISCONNECTED | WiFi: " + String(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED"));
+      Serial.println("   └─ Reconnection attempts are automatic (every 5 seconds)");
+    }
+  }
 }
 
 // ==================== WEBSOCKET EVENTS ====================
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
+      Serial.println("❌ [WS] DISCONNECTED from server");
       device.isConnected = false;
       stopRoomTempAuto();
+      updateDisplay();  // Update display on disconnection
       break;
 
     case WStype_CONNECTED: {
-      Serial.println("✅ WS connected");
+      char* payloadStr = (char*)payload;
+      Serial.printf("✅ [WS] CONNECTED to server: %s\n", payloadStr ? payloadStr : "wss://ackit-iot.up.railway.app/esp32");
       device.isConnected = true;
       updateDisplay();  // Update display on connection
       
@@ -279,9 +298,13 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
     }
 
     case WStype_PONG:
+      // Pong received (keep-alive)
       break;
 
     case WStype_ERROR:
+      Serial.println("⚠️ [WS] ERROR occurred");
+      device.isConnected = false;
+      updateDisplay();  // Update display on error
       break;
 
     default:
