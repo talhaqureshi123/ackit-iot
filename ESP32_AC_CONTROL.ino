@@ -7,11 +7,11 @@
 #include <LiquidCrystal_I2C.h>  // LCD Display library (I2C)
 
 // ==================== CONFIGURATION ====================
-const char* ssid = "lotify 4";
-const char* password = "Talha244";
+const char* ssid = "Mallick1";
+const char* password = "Growmore1";
 
 // Railway Configuration
-const char* websocket_server = "ackit-iot.up.railway.app";
+const char* websocket_server = "ackit-iot-production.up.railway.app";
 const int websocket_port = 443;  // WSS uses port 443 (HTTPS port)
 const char* websocket_path = "/esp32";
 
@@ -251,7 +251,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 
     case WStype_CONNECTED: {
       char* payloadStr = (char*)payload;
-      Serial.printf("✅ [WS] CONNECTED to server: %s\n", payloadStr ? payloadStr : "wss://ackit-iot.up.railway.app/esp32");
+      Serial.printf("✅ [WS] CONNECTED to server: %s\n", payloadStr ? payloadStr : "wss://ackit-iot-production.up.railway.app/esp32");
       device.isConnected = true;
       updateDisplay();  // Update display on connection
       

@@ -73,12 +73,15 @@ const CORS_ORIGINS = [
   "http://localhost:5173", // ✅ Vite default port
   `http://localhost:${PORT}`, // ✅ Backend port (for direct access)
   // Railway frontend URLs (will be set via environment variable)
-  process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
+  process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : null,
+  "https://ackit-iot.up.railway.app", // ✅ Railway production frontend
   // Allow any localhost with any port (for development)
   /^http:\/\/localhost:\d+$/,
   // Allow any IP from same network (for network access)
   new RegExp(`^http://${SERVER_IP.replace(/\./g, "\\.")}:\\d+$`),
-  // Allow Railway domains
+  // Allow Railway domains (regex patterns for any Railway domain)
   /^https:\/\/.*\.railway\.app$/,
   /^https:\/\/.*\.up\.railway\.app$/,
 ].filter((value, index, self) => {

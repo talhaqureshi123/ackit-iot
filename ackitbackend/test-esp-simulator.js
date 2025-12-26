@@ -17,7 +17,7 @@ const { AC } = require("./models");
 const serverConfig = require("./config/server.config");
 const SERVER_IP = serverConfig.SERVER_IP || "192.168.1.105";
 const SERVER_PORT = 5050; // WebSocket port (not HTTP port)
-const SERIAL_NUMBER = "AC-541281-637";
+const SERIAL_NUMBER = "AC-919834-359";
 const WEBSOCKET_PATH = "/esp32";
 
 // Railway Configuration
@@ -71,27 +71,23 @@ console.log("🔗 Device Testing Links:");
 if (USE_RAILWAY) {
   console.log(`   └─ Railway Backend: ${RAILWAY_BACKEND_URL}`);
   console.log(`   └─ Railway WebSocket: ${WS_URL}`);
+  console.log(`   └─ Railway Frontend: https://ackit-iot.up.railway.app`);
   console.log(
-    `   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`
+    `   └─ Test Device Dashboard: https://ackit-iot.up.railway.app/admin (Admin login required)`
   );
   console.log(
-    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`
-  );
-  console.log(
-    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`
+    `   └─ Test Device Dashboard: https://ackit-iot.up.railway.app/manager (Manager login required)`
   );
 } else {
   console.log(`   └─ Local Backend: http://${SERVER_IP}:${SERVER_PORT}`);
   console.log(`   └─ Local WebSocket: ${WS_URL}`);
   console.log(`   └─ Railway Backend: ${RAILWAY_BACKEND_URL}`);
+  console.log(`   └─ Railway Frontend: https://ackit-iot.up.railway.app`);
   console.log(
-    `   └─ Railway Frontend: https://ackit-iot-production-9ffb.up.railway.app`
+    `   └─ Test Device Dashboard: https://ackit-iot.up.railway.app/admin (Admin login required)`
   );
   console.log(
-    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/admin (Admin login required)`
-  );
-  console.log(
-    `   └─ Test Device Dashboard: https://ackit-iot-production-9ffb.up.railway.app/manager (Manager login required)`
+    `   └─ Test Device Dashboard: https://ackit-iot.up.railway.app/manager (Manager login required)`
   );
 }
 console.log("");

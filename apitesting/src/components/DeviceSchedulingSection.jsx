@@ -301,61 +301,70 @@ const DeviceSchedulingSection = ({
           return (
             <div 
               key={event.id || index} 
-              className={`bg-white rounded-xl p-4 border-2 transition-all duration-200 hover:shadow-lg ${
-                isDisabled ? 'border-gray-200 opacity-75' : 'border-blue-200 hover:border-blue-400'
+              className={`bg-white rounded-lg p-3 border transition-all hover:shadow-md relative ${
+                isDisabled ? 'border-gray-200 opacity-75' : 'border-gray-200 hover:border-blue-300'
               }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 space-y-2.5 min-w-0">
+              {/* Edit and Delete Icons - Top Right */}
+              <div className="absolute top-2 right-2 flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    if (onEventEdit) {
+                      onEventEdit(event);
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Edit event"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(event.id, event.name || 'Event')}
+                  disabled={isLoading}
+                  className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Delete event"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-start justify-between gap-3 pr-12">
+                <div className="flex-1 space-y-2 min-w-0">
                   {/* Event Name and Status */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      {event.name && (
-                        <h5 className="text-sm font-bold text-gray-900 truncate mb-1">
-                          {event.name}
-                        </h5>
-                      )}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${statusColor}`}>
-                          {isDisabled ? 'Disabled' : (event.status || 'Scheduled')}
-                        </span>
-                        {isRecurring && (
-                          <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 flex items-center gap-1">
-                            <Repeat className="w-3 h-3" />
-                            Recurring
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {event.name && (
+                      <h5 className="text-sm font-bold text-gray-900">
+                        {event.name}
+                      </h5>
+                    )}
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${statusColor}`}>
+                      {isDisabled ? 'Disabled' : (event.status || 'Scheduled')}
+                    </span>
+                    {isRecurring && (
+                      <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded flex items-center gap-1">
+                        <Repeat className="w-3 h-3" />
+                        Recurring
+                      </span>
+                    )}
                   </div>
                   
-                  {/* Date and Time Info */}
-                  <div className="space-y-1.5">
-                    {formattedDate && (
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                        <span className="text-xs font-medium text-gray-700">{formattedDate}</span>
-                      </div>
-                    )}
-                    {(startTime || endTime) && (
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-blue-600" />
-                        <span className="text-xs font-semibold text-gray-900">
+                  {/* Date and Time - Simple */}
+                  {formattedDate && (
+                    <div className="text-xs text-gray-600 space-y-0.5">
+                      <div>{formattedDate}</div>
+                      {(startTime || endTime) && (
+                        <div className="text-gray-700 font-medium">
                           {startTime || 'N/A'} {endTime && `→ ${endTime}`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   
-                  {/* Command/Temperature */}
-                  <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                  {/* Temperature - Simple */}
+                  <div className="flex items-center gap-1.5">
                     <Thermometer className="w-3.5 h-3.5 text-blue-600" />
-                    <span className="text-xs text-gray-600 font-medium">Temperature:</span>
-                    <span className={`text-sm font-bold px-2 py-0.5 rounded ${
-                      event.temperature 
-                        ? 'text-blue-700 bg-blue-100 border border-blue-200' 
-                        : 'text-green-700 bg-green-100 border border-green-200'
-                    }`}>
+                    <span className="text-xs text-gray-600">
                       {event.temperature ? `${event.temperature}°C` : 'ON'}
                     </span>
                   </div>
@@ -363,9 +372,8 @@ const DeviceSchedulingSection = ({
                   {/* Days of Week for Recurring Events */}
                   {event.daysOfWeek && event.daysOfWeek.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs text-gray-500 font-medium">Days:</span>
                       {formatDays(typeof event.daysOfWeek === 'string' ? event.daysOfWeek : event.daysOfWeek.join(' ')).map((day, i) => (
-                        <span key={i} className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                        <span key={i} className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
                           {day}
                         </span>
                       ))}
@@ -373,16 +381,15 @@ const DeviceSchedulingSection = ({
                   )}
                 </div>
                 
-                {/* Action Buttons - Compact */}
-                <div className="flex flex-col gap-1.5 flex-shrink-0">
-                  {/* Enable/Disable Button */}
+                {/* Enable/Disable Button - Bottom Right */}
+                <div className="flex-shrink-0">
                   <button
                     onClick={() => handleEnableDisable(event.id, isDisabled ? 'enable' : 'disable')}
                     disabled={isLoading}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center gap-1 min-w-[75px] ${
+                    className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
                       isDisabled
-                        ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 border border-gray-300'
-                        : 'bg-green-500 text-white hover:bg-green-600 border border-green-600'
+                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-green-100 text-green-700 hover:bg-green-200'
                     } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     title={isDisabled ? 'Enable event' : 'Disable event'}
                   >
@@ -397,32 +404,6 @@ const DeviceSchedulingSection = ({
                         <span>Disable</span>
                       </>
                     )}
-                  </button>
-                  
-                  {/* Edit Button */}
-                  <button
-                    onClick={() => {
-                      if (onEventEdit) {
-                        onEventEdit(event);
-                      }
-                    }}
-                    disabled={isLoading}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600 transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center gap-1 min-w-[75px] disabled:opacity-50 disabled:cursor-not-allowed border border-blue-600"
-                    title="Edit event"
-                  >
-                    <Edit className="w-3 h-3" />
-                    <span>Edit</span>
-                  </button>
-                  
-                  {/* Delete Button */}
-                  <button
-                    onClick={() => handleDelete(event.id, event.name || 'Event')}
-                    disabled={isLoading}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-500 text-white hover:bg-red-600 transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center gap-1 min-w-[75px] disabled:opacity-50 disabled:cursor-not-allowed border border-red-600"
-                    title="Delete event"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    <span>Delete</span>
                   </button>
                 </div>
               </div>

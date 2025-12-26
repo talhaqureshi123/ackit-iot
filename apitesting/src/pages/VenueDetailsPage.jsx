@@ -344,7 +344,8 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
   const filteredDevices = getSortedDevices(devices.filter(device => {
     const matchesSearch = !searchTerm || 
       device.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      device.serialNumber?.toLowerCase().includes(searchTerm.toLowerCase());
+      device.serialNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (device.temperature && device.temperature.toString().includes(searchTerm));
     
     const matchesStatus = !filters.status || 
       (filters.status === 'on' && device.isOn) ||
@@ -358,7 +359,10 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
       (filters.alert === 'alert' && (device.isWorking === false || device.alertAt)) ||
       (filters.alert === 'no-alert' && device.isWorking !== false && !device.alertAt);
     
-    return matchesSearch && matchesStatus && matchesLock && matchesAlert;
+    const matchesTemperature = !filters.temperature || 
+      (device.temperature && device.temperature.toString() === filters.temperature);
+    
+    return matchesSearch && matchesStatus && matchesLock && matchesAlert && matchesTemperature;
   }));
 
   // Drag and drop handlers
@@ -964,7 +968,6 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
                                 <div className="flex items-center gap-2">
                                   <div>
                                     <div className="text-sm font-medium text-gray-900">{device.name || 'N/A'}</div>
-                                    <div className="text-xs text-gray-500">{device.serialNumber || 'N/A'}</div>
                                   </div>
                                 </div>
                               </td>

@@ -108,7 +108,7 @@ const EnergyChartBox = ({ venue, setVenue, organizationEnergy, organizationName,
   }
 
   return (
-    <div className=" mt-6 bg-blue-500 shadow-sm w-full rounded-2xl overflow-visible" style={{ maxHeight: '120px' }}>
+    <div className=" mt-8 bg-blue-500 shadow-sm w-full rounded-2xl overflow-visible" style={{ maxHeight: '120px' }}>
       {/* Blue Header Bar */}
       <div className="bg-blue-500 px-3 py-1.5 rounded-t-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1.5">
