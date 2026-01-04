@@ -25,7 +25,7 @@ function getServerIP() {
       }
     }
   }
-  return "192.168.1.105"; // Fallback IP (change this if needed)
+  return "192.168.0.101"; // Fallback IP (change this if needed)
 }
 
 // Auto-detect server IP, or use environment variable, or fallback to current IP
@@ -72,16 +72,14 @@ const CORS_ORIGINS = [
   "http://localhost:3000", // ✅ Local development
   "http://localhost:5173", // ✅ Vite default port
   `http://localhost:${PORT}`, // ✅ Backend port (for direct access)
-  // Railway frontend URLs (will be set via environment variable)
-  process.env.RAILWAY_PUBLIC_DOMAIN
-    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-    : null,
-  "https://ackit-iot.up.railway.app", // ✅ Railway production frontend
+  // Railway frontend URLs
+  "https://ackit-iot.up.railway.app", // ✅ Railway frontend
+  process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null,
   // Allow any localhost with any port (for development)
   /^http:\/\/localhost:\d+$/,
   // Allow any IP from same network (for network access)
   new RegExp(`^http://${SERVER_IP.replace(/\./g, "\\.")}:\\d+$`),
-  // Allow Railway domains (regex patterns for any Railway domain)
+  // Allow Railway domains
   /^https:\/\/.*\.railway\.app$/,
   /^https:\/\/.*\.up\.railway\.app$/,
 ].filter((value, index, self) => {

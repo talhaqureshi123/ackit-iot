@@ -48,8 +48,8 @@ const getEnvVar = (key, defaultValue) => {
 // Railway Production URL Support
 // ============================================
 // Priority: Railway Backend URL > Environment Variable > Local IP
-const RAILWAY_BACKEND_URL = getEnvVar("VITE_RAILWAY_BACKEND_URL", null);
-export const BACKEND_IP = getEnvVar("VITE_BACKEND_IP", "192.168.1.105");
+const RAILWAY_BACKEND_URL = getEnvVar("VITE_RAILWAY_BACKEND_URL", "https://ackit-iot-production.up.railway.app");
+export const BACKEND_IP = getEnvVar("VITE_BACKEND_IP", "192.168.0.101");
 
 // ============================================
 // Port Configuration
