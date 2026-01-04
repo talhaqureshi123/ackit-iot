@@ -414,11 +414,22 @@ class ManagerAuth {
 
       if (!manager) {
         console.log(`❌ Manager not found with email: ${email}`);
-        console.log(`❌ Available Manager emails in database:`);
-        const allManagers = await Manager.findAll({ attributes: ['id', 'email', 'name'], limit: 10 });
-        allManagers.forEach(m => {
-          console.log(`   - ${m.email} (${m.name})`);
-        });
+        // Log available managers for debugging (only in development or if explicitly enabled)
+        // Log available managers for debugging (only in development or if explicitly enabled)
+        if (process.env.NODE_ENV !== "production" || process.env.DEBUG_LOG_USERS === "true") {
+          try {
+            const allManagers = await Manager.findAll({ 
+              attributes: ['id', 'email', 'name', 'status'],
+              limit: 10 
+            });
+            console.log(`❌ Available Manager emails in database (${allManagers.length} found):`);
+            allManagers.forEach(m => {
+              console.log(`   - ${m.email} (${m.name}, Status: ${m.status})`);
+            });
+          } catch (logError) {
+            console.error("⚠️ Could not log available managers:", logError.message);
+          }
+        }
         return res.status(401).json({
           success: false,
           message: "Invalid email or password.",

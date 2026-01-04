@@ -658,6 +658,21 @@ class AdminAuth {
 
       if (!admin) {
         console.log(`❌ Admin not found with email: ${email}`);
+        // Log available admins for debugging (only in development or if explicitly enabled)
+        if (process.env.NODE_ENV !== "production" || process.env.DEBUG_LOG_USERS === "true") {
+          try {
+            const allAdmins = await Admin.findAll({ 
+              attributes: ['id', 'email', 'name', 'status'],
+              limit: 10 
+            });
+            console.log(`❌ Available Admin emails in database (${allAdmins.length} found):`);
+            allAdmins.forEach(a => {
+              console.log(`   - ${a.email} (${a.name}, Status: ${a.status})`);
+            });
+          } catch (logError) {
+            console.error("⚠️ Could not log available admins:", logError.message);
+          }
+        }
         return res.status(401).json({
           success: false,
           message: "Invalid email or password.",
