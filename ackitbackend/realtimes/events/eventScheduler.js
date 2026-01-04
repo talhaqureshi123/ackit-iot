@@ -208,17 +208,17 @@ class EventScheduler {
 
       // Use raw SQL with UTC comparison to bypass Sequelize timezone conversion
       // Only start events that are within the last 5 seconds (not 1 minute)
-      // Use Sequelize.col to get proper table-qualified column name
+      // Note: If columns are TIMESTAMPTZ, we can compare directly without AT TIME ZONE
       const eventsToStart = await Event.findAll({
         where: {
           status: "scheduled",
           isDisabled: false,
           [Op.and]: [
             Sequelize.literal(
-              `"Event"."startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+              `"startTime" <= '${nowUTCString}'::timestamptz`
             ),
             Sequelize.literal(
-              `"Event"."startTime" AT TIME ZONE 'UTC' >= '${fiveSecondsAgoUTCString}'::timestamptz`
+              `"startTime" >= '${fiveSecondsAgoUTCString}'::timestamptz`
             ),
           ],
         },
@@ -231,7 +231,7 @@ class EventScheduler {
           isDisabled: false,
           [Op.and]: [
             Sequelize.literal(
-              `"Event"."startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+              `"startTime" <= '${nowUTCString}'::timestamptz`
             ),
           ],
         },
@@ -325,13 +325,14 @@ class EventScheduler {
 
       // Find active events that should end now (skip disabled events)
       // Use raw SQL with UTC comparison to bypass Sequelize timezone conversion
+      // Note: If columns are TIMESTAMPTZ, we can compare directly without AT TIME ZONE
       const eventsToEnd = await Event.findAll({
         where: {
           status: "active",
           isDisabled: false, // Skip disabled events
           [Op.and]: [
             Sequelize.literal(
-              `"Event"."endTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+              `"endTime" <= '${nowUTCString}'::timestamptz`
             ),
           ],
         },
@@ -620,13 +621,14 @@ class EventScheduler {
 
       // Find scheduled events whose endTime has passed more than 5 seconds ago
       // These events should have started but device was offline, so remove them
+      // Note: If columns are TIMESTAMPTZ, we can compare directly without AT TIME ZONE
       const eventsToRemove = await Event.findAll({
         where: {
           status: "scheduled",
           isDisabled: false,
           [Op.and]: [
             Sequelize.literal(
-              `"Event"."endTime" AT TIME ZONE 'UTC' <= '${fiveSecondsAgoUTCString}'::timestamptz`
+              `"Event"."endTime" <= '${fiveSecondsAgoUTCString}'::timestamptz`
             ),
           ],
         },

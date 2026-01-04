@@ -982,10 +982,10 @@ class ESPService {
           isDisabled: false,
           [Op.and]: [
             Sequelize.literal(
-              `"startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+              `"startTime" <= '${nowUTCString}'::timestamptz`
             ),
             Sequelize.literal(
-              `"endTime" AT TIME ZONE 'UTC' > '${nowUTCString}'::timestamptz`
+              `"endTime" > '${nowUTCString}'::timestamptz`
             ),
           ],
         },
