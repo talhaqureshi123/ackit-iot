@@ -4,10 +4,11 @@ import { BACKEND_BASE_URL } from "../config/api";
 // Determine API base URL based on environment
 // Production: Use full backend URL (Railway)
 // Development: Use Vite proxy (/api)
-const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
-const API_BASE_URL = isProduction 
-  ? `${BACKEND_BASE_URL}/api`  // Production: Full backend URL
-  : "/api";  // Development: Vite proxy
+const isProduction =
+  import.meta.env.PROD || import.meta.env.MODE === "production";
+const API_BASE_URL = isProduction
+  ? `${BACKEND_BASE_URL}/api` // Production: Full backend URL
+  : "/api"; // Development: Vite proxy
 
 // Track login time to prevent immediate logout after login
 let lastLoginTime = 0;
@@ -84,11 +85,43 @@ apiManager.interceptors.response.use(
         !url.includes("/system/lock");
       const isViewDetailsOperation =
         url.includes("/organizations/") && url.match(/\/organizations\/[^/]+$/);
+      const isLoginOperation =
+        url.includes("/login") ||
+        url.includes("/superadmin/login") ||
+        url.includes("/admin/login") ||
+        url.includes("/manager/login");
+
+      // CRITICAL: Never logout on login operations - these are expected to fail during auto-detection
+      if (isLoginOperation) {
+        console.log(
+          "ℹ️ 401 on login operation (expected during auto-detection) - not logging out"
+        );
+        return Promise.reject(error); // DO NOT logout on login attempts
+      }
 
       // Check if we're in grace period after login
       const loginTime = parseInt(localStorage.getItem("loginTime") || "0");
       const timeSinceLogin = Date.now() - Math.max(lastLoginTime, loginTime);
       const isInGracePeriod = timeSinceLogin < LOGIN_GRACE_PERIOD;
+
+      // Also check if we have user data in localStorage - if yes, don't clear on first 401
+      // Check both localStorage role key AND user object's role field (fallback)
+      const storedUser = localStorage.getItem("user");
+      const storedRole = localStorage.getItem("role");
+      let userRoleFromObject = null;
+
+      try {
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          userRoleFromObject = parsedUser?.role;
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+
+      // hasUserData = true if we have user AND (role key OR role in user object)
+      const hasUserData =
+        !!storedUser && (!!storedRole || !!userRoleFromObject);
 
       // Log detailed error info for debugging
       console.error("🔴 Manager API - 401 Error Details:");
@@ -100,11 +133,15 @@ apiManager.interceptors.response.use(
       console.error("  localStorage role:", localStorage.getItem("role"));
       console.error("  Time since login:", timeSinceLogin, "ms");
       console.error("  In grace period:", isInGracePeriod);
+      console.error("  Has user data:", hasUserData);
 
-      // Don't auto-logout if we're in grace period after login
-      if (isInGracePeriod) {
+      // Don't auto-logout if we're in grace period after login OR if we have user data
+      if (isInGracePeriod || hasUserData) {
         console.log(
-          "⚠️ Manager API - 401 error during login grace period, not logging out"
+          `⚠️ Manager API - 401 error during login grace period or with user data, not logging out`
+        );
+        console.log(
+          `  Reason: ${isInGracePeriod ? "Grace period" : "Has user data"}`
         );
         return Promise.reject(error);
       }
@@ -201,6 +238,7 @@ export const managerAPI = {
   getACEnergy: (acId) => apiManager.get(`/manager/acs/${acId}/energy`),
   getOrganizationEnergy: (organizationId) =>
     apiManager.get(`/manager/organizations/${organizationId}/energy`),
+  getEnergyReport: () => apiManager.get("/manager/energy/report"),
 
   // Events Management
   getEvents: () => apiManager.get("/manager/events"),

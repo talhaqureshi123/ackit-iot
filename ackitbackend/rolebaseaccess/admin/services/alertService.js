@@ -100,8 +100,20 @@ class AlertService {
       const now = new Date();
       const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
 
+      // Get ESPService to check device connection
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+
       for (const venue of venues) {
         for (const ac of venue.acs || []) {
+          // CRITICAL: Skip if device is NOT CONNECTED - no alerts for offline devices
+          if (ac.serialNumber && !ESPService.isDeviceConnected(ac.serialNumber)) {
+            console.log(
+              `⏸️ [AC_ALERT] AC ${ac.name} (${ac.id}, ${ac.serialNumber}) is OFFLINE, skipping alert check`
+            );
+            continue;
+          }
+
           // Only check ACs that are ON
           if (!ac.isOn) {
             console.log(

@@ -334,9 +334,76 @@ class SuperAdminController {
         });
       }
 
+      // Get organizations for this admin
+      const organizations = await Organization.findAll({
+        where: { adminId: adminId },
+        attributes: [
+          "id",
+          "name",
+          "batchNumber",
+          "status",
+          "createdAt",
+          "updatedAt",
+        ],
+        order: [["createdAt", "DESC"]],
+      });
+
+      // Get venues for this admin
+      const venues = await Venue.findAll({
+        where: { adminId: adminId },
+        attributes: [
+          "id",
+          "name",
+          "organizationSize",
+          "status",
+          "temperature",
+          "isVenueOn",
+          "isLocked",
+          "lockedTemperature",
+          "createdAt",
+          "updatedAt",
+        ],
+        order: [["createdAt", "DESC"]],
+      });
+
+      // Get devices (ACs) for this admin - through organizations and venues
+      const organizationIds = organizations.map(org => org.id);
+      const venueIds = venues.map(v => v.id);
+      const allIds = [...organizationIds, ...venueIds];
+
+      let devices = [];
+      if (allIds.length > 0) {
+        devices = await AC.findAll({
+          where: {
+            venueId: { [Op.in]: allIds },
+          },
+          attributes: [
+            "id",
+            "name",
+            "brand",
+            "model",
+            "serialNumber",
+            "temperature",
+            "isOn",
+            "isWorking",
+            "currentState",
+            "venueId",
+            "createdAt",
+            "updatedAt",
+          ],
+          order: [["createdAt", "DESC"]],
+        });
+      }
+
+      // Format response
+      const adminData = admin.toJSON();
+      adminData.organizations = organizations.map(org => org.toJSON());
+      adminData.venues = venues.map(venue => venue.toJSON());
+      adminData.devices = devices.map(device => device.toJSON());
+
       res.status(200).json({
         success: true,
-        data: admin,
+        data: adminData,
         message: "Admin details retrieved successfully",
       });
     } catch (error) {
@@ -488,11 +555,28 @@ class SuperAdminController {
       const offset = (page - 1) * limit;
 
       // Superadmin views only admin activities
+      // Exclude printfriendly activities
+      const whereConditions = [
+        { action: { [Op.notLike]: '%print%friendly%' } },
+        { action: { [Op.notLike]: '%Print Friendly%' } },
+        { action: { [Op.notLike]: '%printfriendly%' } },
+      ];
+      
+      // Only admin activities (not manager activities)
+      if (adminId) {
+        whereConditions.push({ adminId: adminId });
+      } else {
+        whereConditions.push({ adminId: { [Op.ne]: null } });
+      }
+      
+      if (action) {
+        // Add action filter but still exclude printfriendly
+        whereConditions.push({ action: { [Op.like]: `%${action}%` } });
+      }
+
       const whereClause = {
-        adminId: { [Op.ne]: null }, // Only admin activities (not manager activities)
+        [Op.and]: whereConditions,
       };
-      if (adminId) whereClause.adminId = adminId;
-      if (action) whereClause.action = { [Op.like]: `%${action}%` };
 
       const logs = await ActivityLog.findAndCountAll({
         where: whereClause,
@@ -508,15 +592,27 @@ class SuperAdminController {
         offset: parseInt(offset),
       });
 
+      // Also filter out any logs that might have printfriendly in details
+      const filteredLogs = logs.rows.filter(log => {
+        const action = (log.action || '').toLowerCase();
+        const details = typeof log.details === 'object' 
+          ? JSON.stringify(log.details).toLowerCase()
+          : (log.details || '').toLowerCase();
+        return !action.includes('printfriendly') && 
+               !action.includes('print friendly') &&
+               !details.includes('printfriendly') &&
+               !details.includes('print friendly');
+      });
+
       res.status(200).json({
         success: true,
         data: {
-          logs: logs.rows,
+          logs: filteredLogs,
           pagination: {
             currentPage: parseInt(page),
-            totalPages: Math.ceil(logs.count / limit),
-            totalLogs: logs.count,
-            hasNext: offset + logs.rows.length < logs.count,
+            totalPages: Math.ceil(filteredLogs.length / limit),
+            totalLogs: filteredLogs.length,
+            hasNext: offset + filteredLogs.length < logs.count,
             hasPrev: page > 1,
           },
         },
@@ -711,6 +807,232 @@ class SuperAdminController {
     } catch (error) {
       console.error(`❌ Error sending ${status} notification:`, error);
       // Don't throw error to prevent breaking the main flow
+    }
+  }
+
+  // PLAN REQUEST MANAGEMENT FUNCTIONS
+
+  // Get all plan requests
+  async getPlanRequests(req, res) {
+    try {
+      const PlanRequest = require("../../../models/PlanRequest/planRequest");
+      const Admin = require("../../../models/Roleaccess/admin");
+
+      const requests = await PlanRequest.findAll({
+        include: [
+          {
+            model: Admin,
+            as: "admin",
+            attributes: ["id", "name", "email", "plan"],
+          },
+        ],
+        order: [["createdAt", "DESC"]],
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          requests: requests,
+        },
+        message: "Plan requests retrieved successfully",
+      });
+    } catch (error) {
+      console.error("Get plan requests error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error retrieving plan requests",
+        error: error.message,
+      });
+    }
+  }
+
+  // Approve plan request
+  async approvePlanRequest(req, res) {
+    try {
+      const PlanRequest = require("../../../models/PlanRequest/planRequest");
+      const Admin = require("../../../models/Roleaccess/admin");
+      const { requestId } = req.params;
+      const superAdminId = req.user.id;
+
+      const planRequest = await PlanRequest.findByPk(requestId, {
+        include: [
+          {
+            model: Admin,
+            as: "admin",
+          },
+        ],
+      });
+
+      if (!planRequest) {
+        return res.status(404).json({
+          success: false,
+          message: "Plan request not found",
+        });
+      }
+
+      if (planRequest.status !== "pending") {
+        return res.status(400).json({
+          success: false,
+          message: `Plan request is already ${planRequest.status}`,
+        });
+      }
+
+      // Update admin's plan
+      await Admin.update(
+        { plan: planRequest.requestedPlan },
+        { where: { id: planRequest.adminId } }
+      );
+
+      // Update plan request status
+      await planRequest.update({
+        status: "approved",
+        reviewedBy: superAdminId,
+        reviewedAt: new Date(),
+      });
+
+      // Send notification email to admin
+      try {
+        const notificationService = require("../../../realtimes/email/superadminNotifications");
+        await notificationService.sendPlanApprovalNotification(
+          planRequest.admin.email,
+          planRequest.admin.name,
+          planRequest.requestedPlan,
+          `Super Admin (ID: ${superAdminId})`
+        );
+        console.log(`✅ Plan approval notification sent to ${planRequest.admin.email}`);
+      } catch (notifError) {
+        console.error("❌ Error sending plan approval notification:", notifError);
+        // Don't throw error to prevent breaking the main flow
+      }
+
+      // Log activity
+      try {
+        await this.logActivity(
+          superAdminId,
+          "APPROVE_PLAN_REQUEST",
+          "plan_request",
+          planRequest.id,
+          {
+            message: `Plan request approved: ${planRequest.currentPlan} → ${planRequest.requestedPlan} for admin ${planRequest.admin.name}`,
+          },
+          null,
+          req
+        );
+      } catch (logError) {
+        console.error("Error logging plan approval:", logError);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Plan request approved successfully. Admin has been notified via email.",
+        data: {
+          request: planRequest,
+          admin: {
+            id: planRequest.admin.id,
+            name: planRequest.admin.name,
+            email: planRequest.admin.email,
+            plan: planRequest.requestedPlan,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Approve plan request error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error approving plan request",
+        error: error.message,
+      });
+    }
+  }
+
+  // Reject plan request
+  async rejectPlanRequest(req, res) {
+    try {
+      const PlanRequest = require("../../../models/PlanRequest/planRequest");
+      const Admin = require("../../../models/Roleaccess/admin");
+      const { requestId } = req.params;
+      const { reason = "Rejected by Super Admin" } = req.body || {};
+      const superAdminId = req.user.id;
+
+      const planRequest = await PlanRequest.findByPk(requestId, {
+        include: [
+          {
+            model: Admin,
+            as: "admin",
+          },
+        ],
+      });
+
+      if (!planRequest) {
+        return res.status(404).json({
+          success: false,
+          message: "Plan request not found",
+        });
+      }
+
+      if (planRequest.status !== "pending") {
+        return res.status(400).json({
+          success: false,
+          message: `Plan request is already ${planRequest.status}`,
+        });
+      }
+
+      // Update plan request status
+      await planRequest.update({
+        status: "rejected",
+        rejectionReason: reason,
+        reviewedBy: superAdminId,
+        reviewedAt: new Date(),
+      });
+
+      // Send notification email to admin
+      try {
+        const notificationService = require("../../../realtimes/email/superadminNotifications");
+        await notificationService.sendPlanRejectionNotification(
+          planRequest.admin.email,
+          planRequest.admin.name,
+          planRequest.requestedPlan,
+          reason,
+          `Super Admin (ID: ${superAdminId})`
+        );
+        console.log(`✅ Plan rejection notification sent to ${planRequest.admin.email}`);
+      } catch (notifError) {
+        console.error("❌ Error sending plan rejection notification:", notifError);
+        // Don't throw error to prevent breaking the main flow
+      }
+
+      // Log activity
+      try {
+        await this.logActivity(
+          superAdminId,
+          "REJECT_PLAN_REQUEST",
+          "plan_request",
+          planRequest.id,
+          {
+            message: `Plan request rejected: ${planRequest.currentPlan} → ${planRequest.requestedPlan} for admin ${planRequest.admin.name}`,
+            reason: reason,
+          },
+          null,
+          req
+        );
+      } catch (logError) {
+        console.error("Error logging plan rejection:", logError);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Plan request rejected. Admin has been notified via email.",
+        data: {
+          request: planRequest,
+        },
+      });
+    } catch (error) {
+      console.error("Reject plan request error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error rejecting plan request",
+        error: error.message,
+      });
     }
   }
 }

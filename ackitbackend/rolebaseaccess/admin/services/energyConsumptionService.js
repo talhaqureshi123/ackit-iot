@@ -132,9 +132,40 @@ class EnergyConsumptionService {
    */
   static async updateACEnergy(acId) {
     try {
-      const ac = await AC.findByPk(acId);
+      const ac = await AC.findByPk(acId, {
+        attributes: [
+          "id",
+          "serialNumber",
+          "ton",
+          "temperature",
+          "currentMode",
+          "totalEnergyConsumed",
+          "isOn",
+          "isOnStartup",
+          "startupStartTime",
+          "lastEnergyCalculation",
+          "lastPowerChangeAt",
+          "createdAt",
+          "venueId",
+        ],
+      });
       if (!ac) {
         throw new Error(`AC with ID ${acId} not found`);
+      }
+
+      // CRITICAL: Only update energy if device is CONNECTED
+      // If device is disconnected, energy should remain at last connection value
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      
+      if (ac.serialNumber && !ESPService.isDeviceConnected(ac.serialNumber)) {
+        console.log(`⚠️ [ENERGY] Skipping energy update for AC ${acId} (${ac.serialNumber}) - device is disconnected`);
+        // Return current energy without updating (energy stays at last connection value)
+        return {
+          acId: ac.id,
+          energyConsumed: 0, // No new energy consumed since device is offline
+          totalEnergyConsumed: ac.totalEnergyConsumed || 0, // Keep existing energy
+        };
       }
 
       // If AC is ON but doesn't have proper energy tracking initialized, initialize it
@@ -361,6 +392,7 @@ class EnergyConsumptionService {
         },
         attributes: [
           "id",
+          "serialNumber",
           "ton",
           "temperature",
           "currentMode",
@@ -383,12 +415,30 @@ class EnergyConsumptionService {
         return [];
       }
 
-      // Calculate energy for all ACs
+      // CRITICAL: Filter to only CONNECTED devices
+      // Disconnected devices should NOT have their energy updated (energy stays at last connection value)
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      
+      const connectedACs = activeACs.filter((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+
+      console.log(`🔌 [ENERGY] Filtered to ${connectedACs.length} connected ACs (${activeACs.length - connectedACs.length} disconnected - energy will not update)`);
+
+      if (connectedACs.length === 0) {
+        await transaction.commit();
+        console.log(`⚠️ [ENERGY] No connected ACs found - skipping energy update`);
+        return [];
+      }
+
+      // Calculate energy for all CONNECTED ACs only
       const updates = [];
       const results = [];
       const organizationIds = new Set(); // Track unique organizations
 
-      for (const ac of activeACs) {
+      for (const ac of connectedACs) {
         try {
           // If AC is ON but doesn't have proper energy tracking initialized, initialize it
           let needsInit = false;
@@ -744,6 +794,157 @@ class EnergyConsumptionService {
         `❌ Error getting organization energy for org ${organizationId}:`,
         error
       );
+      throw error;
+    }
+  }
+
+  /**
+   * Get comprehensive energy report with device → venue → organization hierarchy
+   * Includes monthly breakdown for 12 months
+   * @param {Number} adminId - Admin ID
+   * @returns {Object} - Complete energy report
+   */
+  static async getEnergyReport(adminId) {
+    try {
+      // Get all organizations for this admin
+      const organizations = await Organization.findAll({
+        where: { adminId: adminId },
+        attributes: ['id', 'name'],
+        order: [['name', 'ASC']]
+      });
+
+      const report = {
+        generatedAt: new Date().toISOString(),
+        organizations: []
+      };
+
+      // Generate last 12 months
+      const months = [];
+      const now = new Date();
+      for (let i = 11; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({
+          month: date.toLocaleString('default', { month: 'long' }),
+          year: date.getFullYear(),
+          monthNumber: date.getMonth() + 1,
+          yearMonth: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        });
+      }
+
+      // Process each organization
+      for (const org of organizations) {
+        // Get all venues for this organization
+        const venues = await Venue.findAll({
+          where: { organizationId: org.id },
+          attributes: ['id', 'name', 'organizationId'],
+          order: [['name', 'ASC']]
+        });
+
+        const venueIds = venues.map(v => v.id);
+        const allPossibleIds = venueIds.length > 0 ? [org.id, ...venueIds] : [org.id];
+        const uniqueIds = [...new Set(allPossibleIds)];
+
+        // Get all ACs for this organization
+        const acs = await AC.findAll({
+          where: {
+            venueId: { [Op.in]: uniqueIds },
+          },
+          attributes: [
+            'id',
+            'name',
+            'venueId',
+            'ton',
+            'totalEnergyConsumed',
+            'createdAt'
+          ],
+          order: [['name', 'ASC']]
+        });
+
+        // Group ACs by venue
+        const venueData = [];
+        let orgTotalEnergy = 0;
+
+        for (const venue of venues) {
+          const venueACs = acs.filter(ac => ac.venueId === venue.id);
+          const venueEnergy = venueACs.reduce((sum, ac) => sum + (ac.totalEnergyConsumed || 0), 0);
+          orgTotalEnergy += venueEnergy;
+
+          venueData.push({
+            venueId: venue.id,
+            venueName: venue.name,
+            totalEnergy: venueEnergy,
+            devices: venueACs.map(ac => ({
+              deviceId: ac.id,
+              deviceName: ac.name,
+              deviceTon: ac.ton || null,
+              ton: ac.ton || null,
+              energy: ac.totalEnergyConsumed || 0
+            }))
+          });
+        }
+
+        // Also include ACs directly assigned to organization (venueId = orgId)
+        const orgDirectACs = acs.filter(ac => ac.venueId === org.id);
+        if (orgDirectACs.length > 0) {
+          const orgDirectEnergy = orgDirectACs.reduce((sum, ac) => sum + (ac.totalEnergyConsumed || 0), 0);
+          orgTotalEnergy += orgDirectEnergy;
+
+          venueData.push({
+            venueId: org.id,
+            venueName: `${org.name} (Direct)`,
+            totalEnergy: orgDirectEnergy,
+            devices: orgDirectACs.map(ac => ({
+              deviceId: ac.id,
+              deviceName: ac.name,
+              deviceTon: ac.ton || null,
+              ton: ac.ton || null,
+              energy: ac.totalEnergyConsumed || 0
+            }))
+          });
+        }
+
+        // Calculate monthly energy (distribute total energy across months based on device creation date)
+        const monthlyEnergy = months.map(month => {
+          let monthEnergy = 0;
+          
+          // For each device, calculate energy for this month
+          // If device was created before this month, distribute energy proportionally
+          for (const ac of acs) {
+            const deviceCreatedAt = new Date(ac.createdAt);
+            const monthStart = new Date(month.year, month.monthNumber - 1, 1);
+            const monthEnd = new Date(month.year, month.monthNumber, 0, 23, 59, 59);
+            
+            // If device exists in this month, add its energy
+            if (deviceCreatedAt <= monthEnd) {
+              // Calculate how much of device's total energy belongs to this month
+              // Simple approach: divide total energy by months since creation
+              const monthsSinceCreation = Math.max(1, Math.floor((now - deviceCreatedAt) / (1000 * 60 * 60 * 24 * 30)));
+              const energyPerMonth = (ac.totalEnergyConsumed || 0) / monthsSinceCreation;
+              monthEnergy += energyPerMonth;
+            }
+          }
+          
+          return {
+            ...month,
+            energy: Math.round(monthEnergy * 100) / 100 // Round to 2 decimal places
+          };
+        });
+
+        report.organizations.push({
+          organizationId: org.id,
+          organizationName: org.name,
+          totalEnergy: Math.round(orgTotalEnergy * 100) / 100,
+          venues: venueData,
+          monthlyEnergy: monthlyEnergy
+        });
+      }
+
+      return {
+        success: true,
+        data: report
+      };
+    } catch (error) {
+      console.error('❌ Error generating energy report:', error);
       throw error;
     }
   }

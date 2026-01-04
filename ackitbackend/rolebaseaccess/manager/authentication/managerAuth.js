@@ -362,18 +362,30 @@ class ManagerAuth {
   // Manager login
   static async login(req, res) {
     try {
+      console.log("🔐 Manager Login - Starting login process...");
+      console.log("🔐 Login request body:", req.body);
+      console.log("🔐 Login session state:", req.session);
+
       const { email, password } = req.body || {};
 
       if (!email || !password) {
+        console.log("❌ Login failed - Missing email or password");
         return res.status(400).json({
           success: false,
           message: "Email and password are required.",
         });
       }
 
+      console.log(`🔐 Attempting login for email: ${email}`);
+
       // Find manager by email with admin info - use fresh query to get latest status
-      const manager = await Manager.findOne({ 
-        where: { email },
+      console.log(`🔍 Searching for Manager with email: ${email}`);
+      const { Sequelize } = require("sequelize");
+      const trimmedEmail = email ? email.trim() : email;
+      
+      // Try exact match first
+      let manager = await Manager.findOne({ 
+        where: { email: trimmedEmail },
         include: [{
           model: Admin,
           as: 'admin',
@@ -382,13 +394,38 @@ class ManagerAuth {
         // Force fresh read from database (don't use cache)
         logging: false
       });
+      
+      // If not found, try case-insensitive search
+      if (!manager) {
+        console.log(`🔍 Trying case-insensitive search...`);
+        manager = await Manager.findOne({ 
+          where: Sequelize.where(
+            Sequelize.fn('LOWER', Sequelize.col('Manager.email')),
+            trimmedEmail.toLowerCase()
+          ),
+          include: [{
+            model: Admin,
+            as: 'admin',
+            attributes: ['id', 'name', 'email', 'status']
+          }],
+          logging: false
+        });
+      }
 
       if (!manager) {
+        console.log(`❌ Manager not found with email: ${email}`);
+        console.log(`❌ Available Manager emails in database:`);
+        const allManagers = await Manager.findAll({ attributes: ['id', 'email', 'name'], limit: 10 });
+        allManagers.forEach(m => {
+          console.log(`   - ${m.email} (${m.name})`);
+        });
         return res.status(401).json({
           success: false,
           message: "Invalid email or password.",
         });
       }
+
+      console.log(`✅ Manager found: ${manager.name} (ID: ${manager.id}, Status: ${manager.status})`);
 
       // Reload manager to ensure we have the latest status from database
       await manager.reload();
@@ -438,10 +475,24 @@ class ManagerAuth {
 
       let isPasswordValid = false;
       try {
-        isPasswordValid = await bcrypt.compare(password, manager.password);
+        // Trim password to remove any whitespace
+        const trimmedPassword = password ? password.trim() : password;
+        console.log("   - Input password length:", password ? password.length : 0);
+        console.log("   - Trimmed password length:", trimmedPassword ? trimmedPassword.length : 0);
+        console.log("   - Has whitespace:", password ? (password !== password.trim()) : false);
+        
+        isPasswordValid = await bcrypt.compare(trimmedPassword, manager.password);
         console.log("   - Password valid?", isPasswordValid);
+        
+        // If failed, try with original password (in case trimming was the issue)
+        if (!isPasswordValid && password !== trimmedPassword) {
+          console.log("   - Retrying with original password (no trim)...");
+          isPasswordValid = await bcrypt.compare(password, manager.password);
+          console.log("   - Password valid (retry)?", isPasswordValid);
+        }
       } catch (bcryptError) {
         console.error("❌ Bcrypt compare error:", bcryptError);
+        console.error("❌ Bcrypt error stack:", bcryptError.stack);
         return res.status(500).json({
           success: false,
           message: "Error verifying password. Please try again.",

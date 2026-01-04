@@ -1,34 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI } from '../services/apiAdmin';
 import toast from 'react-hot-toast';
-import NeedMaintenanceModal from '../components/NeedMaintenanceModal';
-import DeviceDetailsModal from '../components/DeviceDetailsModal';
-import KPICard from '../components/KPICard';
-import EnergyChartBox from '../components/EnergyChartBox';
-import DeviceSchedulingSection from '../components/DeviceSchedulingSection';
 import EventForm from '../components/EventForm';
 import { 
-  ArrowLeft,
-  MapPin,
-  Thermometer,
+  VenueHeader,
+  DeviceFilters,
+  DeviceTable,
+  DeviceSchedulingSection,
+  EnergyChartBox
+} from '../components/venuedetail';
+import {
+  DeviceDetailsModal,
+  NeedMaintenanceModal,
+  EventTypeSelectionModal
+} from '../components/modals';
+import { 
   AlertCircle,
-  Search,
-  Plus,
-  Minus,
-  Users,
-  AlertTriangle,
-  Zap,
-  Eye,
-  Lock,
-  Unlock,
-  Power,
-  X,
-  GripVertical
+  X
 } from 'lucide-react';
+import { useWebSocketNotifications } from '../hooks/useWebSocketNotifications';
+import NotificationContainer from '../components/notifications/NotificationContainer';
 
-const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) => {
+const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange, onEventCreated, hasOrganizations = true, sidebarOpen = true }) => {
   const paramsVenueId = useParams().venueId;
   const venueId = venueIdProp || paramsVenueId; // Use prop if provided, otherwise use params
   const navigate = useNavigate();
@@ -50,21 +45,698 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
     status: '',
     lock: ''
   });
-  const [venueLocking, setVenueLocking] = useState(false);
-  const [showLockDropdown, setShowLockDropdown] = useState(false);
-  const [showDeviceLockDropdown, setShowDeviceLockDropdown] = useState(false);
-  const [showAlertDropdown, setShowAlertDropdown] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showDeviceModal, setShowDeviceModal] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [showEventTypeSelection, setShowEventTypeSelection] = useState(false);
+  const [selectedEventType, setSelectedEventType] = useState(null); // 'simple' or 'recurring'
   const [eventDeviceId, setEventDeviceId] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [deviceOrder, setDeviceOrder] = useState({}); // Store device order per venue: { venueId: [deviceIds...] }
-  const [draggedDeviceId, setDraggedDeviceId] = useState(null);
+
+  // WebSocket notification callbacks (memoized to prevent unnecessary re-renders)
+  const handleDeviceConnected = useCallback((message) => {
+    console.log('✅ [VenueDetailsPage] Device connected:', message);
+    // Handle both serial and serialNumber fields
+    const serialNumber = message.serialNumber || message.serial;
+    console.log('✅ [VenueDetailsPage] Device serialNumber:', serialNumber);
+    
+    if (!serialNumber) {
+      console.warn('⚠️ [VenueDetailsPage] DEVICE_CONNECTED event missing serialNumber/serial:', message);
+      return;
+    }
+    
+    // Update device connection status in local state
+    setDevices((prevDevices) => {
+      const updated = prevDevices.map((device) => {
+        if (device.serialNumber === serialNumber) {
+          console.log('✅ [VenueDetailsPage] Marking device as connected:', device.name, device.serialNumber);
+          return { ...device, isConnected: true };
+        }
+        return device;
+      });
+      
+      // Check if any device was updated
+      const wasUpdated = updated.some((d, idx) => d.isConnected !== prevDevices[idx]?.isConnected);
+      if (!wasUpdated) {
+        console.warn('⚠️ [VenueDetailsPage] No device found with serialNumber:', serialNumber, 'Available devices:', prevDevices.map(d => d.serialNumber));
+      }
+      
+      console.log('📊 [VenueDetailsPage] Updated devices:', updated.map(d => ({ name: d.name, serialNumber: d.serialNumber, isConnected: d.isConnected })));
+      return updated;
+    });
+    // Show toast notification
+    toast.success(message.message || `Device ${message.deviceName || serialNumber} is CONNECTED`);
+  }, []);
+
+  const handleDeviceDisconnected = useCallback((message) => {
+    console.log('❌ Device disconnected:', message);
+    // Handle both serial and serialNumber fields
+    const serialNumber = message.serialNumber || message.serial;
+    
+    if (!serialNumber) {
+      console.warn('⚠️ [VenueDetailsPage] DEVICE_DISCONNECTED event missing serialNumber/serial:', message);
+      return;
+    }
+    
+    // Update device connection status in local state
+    setDevices((prevDevices) => {
+      const updated = prevDevices.map((device) =>
+        device.serialNumber === serialNumber
+          ? { ...device, isConnected: false }
+          : device
+      );
+      
+      // Check if all devices are disconnected
+      const allDisconnected = updated.every(device => !device.isConnected);
+      if (allDisconnected && updated.length > 0) {
+        // All devices disconnected - send alert
+        toast.error(`⚠️ Alert: All devices in venue are offline!`, {
+          duration: 5000,
+        });
+        console.warn('⚠️ All devices disconnected in venue');
+      }
+      
+      return updated;
+    });
+    // Show toast notification
+    toast.error(message.message || `Device ${message.deviceName || serialNumber} is DISCONNECTED`);
+  }, []);
+
+  const handleDeviceUpdated = useCallback((message) => {
+    console.log('🔄 Device updated:', message);
+    // Handle both serial and serialNumber fields
+    const serialNumber = message.serialNumber || message.serial;
+    
+    if (!serialNumber) {
+      console.warn('⚠️ [VenueDetailsPage] DEVICE_UPDATED event missing serialNumber/serial:', message);
+      return;
+    }
+    
+    // Only update if device is connected - revert action if offline
+    setDevices((prevDevices) => {
+      const device = prevDevices.find(d => d.serialNumber === serialNumber);
+      if (!device) {
+        console.warn('⚠️ Device update ignored - device not found:', serialNumber);
+        return prevDevices;
+      }
+      
+      // Revert action if device is offline
+      if (!device.isConnected) {
+        console.warn('⚠️ Device update ignored - device not connected:', serialNumber);
+        toast.error(`⚠️ Device ${device.name || serialNumber} is offline. Update reverted.`);
+        return prevDevices; // Revert by not updating
+      }
+      
+      // Update device data in local state only if connected
+      if (message.updateType === 'temperature') {
+        return prevDevices.map((d) =>
+          d.serialNumber === serialNumber
+            ? { ...d, temperature: message.temperature }
+            : d
+        );
+      } else if (message.updateType === 'power') {
+        return prevDevices.map((d) =>
+          d.serialNumber === serialNumber
+            ? { ...d, isOn: message.isOn }
+            : d
+        );
+      }
+      return prevDevices;
+    });
+  }, []);
+
+  // Load venue data function - must be defined before useCallback hooks that use it
+  const loadVenueData = useCallback(async () => {
+    if (!venueId) return;
+    
+    let venueErrorShown = false; // Declare outside try block
+    
+    try {
+      setLoading(true);
+      const [venueRes, venuesRes, acsRes, eventsRes, orgsRes] = await Promise.all([
+        adminAPI.getVenueDetails(venueId).catch(err => {
+          console.error('❌ Failed to load venue for venueId:', venueId, err);
+          console.error('❌ Error details:', {
+            message: err.message,
+            response: err.response?.data,
+            status: err.response?.status,
+            statusText: err.response?.statusText
+          });
+          // Return error object instead of null to handle it properly
+          return { error: true, status: err.response?.status, data: err.response?.data };
+        }),
+        adminAPI.getVenues().catch(err => {
+          console.error('Failed to load venues:', err);
+          return null;
+        }),
+        adminAPI.getACs().catch(err => {
+          console.error('Failed to load ACs:', err);
+          return null;
+        }),
+        adminAPI.getEvents().catch(err => {
+          console.error('Failed to load events:', err);
+          return null;
+        }),
+        adminAPI.getOrganizations().catch(err => {
+          console.error('Failed to load organizations:', err);
+          // Return error object to handle it properly
+          return { error: true, status: err.response?.status, data: err.response?.data };
+        })
+      ]);
+
+      console.log('🔍 Venue response check for venueId:', venueId, venueRes);
+      
+      // Check for error response first - but don't return early, check venues list first
+      if (venueRes?.error) {
+        console.error('❌ Venue API returned error:', venueRes);
+        // Don't show error yet - wait to check venues list
+      }
+      
+      // Declare venueData in function scope so it's accessible later
+      let venueData = null;
+      
+      if (venueRes?.data) {
+        console.log('🔍 Full venue response:', JSON.stringify(venueRes.data, null, 2));
+        console.log('🔍 Response structure:', {
+          hasData: !!venueRes.data,
+          hasDataData: !!venueRes.data.data,
+          hasDataDataVenue: !!venueRes.data.data?.venue,
+          hasDataVenue: !!venueRes.data.venue,
+          success: venueRes.data.success,
+          keys: Object.keys(venueRes.data)
+        });
+        
+        // Try different response structures
+        if (venueRes.data.data?.venue) {
+          const rawVenue = venueRes.data.data.venue;
+          // Check if rawVenue has nested structure: {success: true, venue: {...}}
+          if (rawVenue.venue) {
+            venueData = rawVenue.venue;
+            console.log('✅ Using venueRes.data.data.venue.venue (nested structure)');
+          } else {
+            venueData = rawVenue;
+            console.log('✅ Using venueRes.data.data.venue (direct structure)');
+          }
+        } else if (venueRes.data.venue) {
+          venueData = venueRes.data.venue;
+          console.log('✅ Using venueRes.data.venue');
+        } else if (venueRes.data.data && !venueRes.data.data.venue) {
+          // If data exists but no venue property, data might be the venue itself
+          if (venueRes.data.data.id || venueRes.data.data.name) {
+            venueData = venueRes.data.data;
+            console.log('✅ Using venueRes.data.data (venue object directly)');
+          }
+        }
+        
+        console.log('✅ Venue loaded:', venueData);
+        if (venueData) {
+          console.log('✅ Venue name:', venueData.name);
+          console.log('✅ Venue ID:', venueData.id);
+          console.log('✅ Venue isVenueOn:', venueData.isVenueOn);
+          console.log('✅ Venue temperature:', venueData.temperature);
+          console.log('✅ Venue isLocked:', venueData.isLocked);
+          console.log('✅ Venue organizationId:', venueData.organizationId);
+          console.log('✅ All venue keys:', Object.keys(venueData));
+          setVenue(venueData);
+        } else {
+          console.warn('⚠️ Venue data not found in direct API response, will try venues list');
+          // Don't show error yet - wait to check venues list
+        }
+      } else if (venueRes?.response) {
+        // Handle error response
+        console.error('❌ API Error Response:', venueRes.response);
+        console.error('❌ Status:', venueRes.response.status);
+        console.error('❌ Data:', venueRes.response.data);
+        // Don't show error yet - wait to check venues list
+      } else if (venueRes === null || venueRes === undefined) {
+        console.warn('⚠️ No venue response received');
+        // Don't show error yet - wait to check venues list
+      }
+
+      // Handle different response structures for venues
+      // Backend returns: { success: true, data: { venues: [...] } }
+      if (venuesRes?.data) {
+        const loadedVenues = venuesRes.data.data?.venues || 
+                         venuesRes.data.venues || 
+                         (Array.isArray(venuesRes.data.data) ? venuesRes.data.data : []) ||
+                         [];
+        console.log('✅ Venues loaded:', loadedVenues.length, loadedVenues);
+        setAllVenues(loadedVenues);
+        
+        // If venue data was not loaded from direct API call, try to get it from venues list
+        if (!venueData && venueId) {
+          const venueIdNum = typeof venueId === 'string' ? parseInt(venueId) : venueId;
+          const foundVenue = loadedVenues.find(v => {
+            const vId = typeof v.id === 'string' ? parseInt(v.id) : v.id;
+            return vId === venueIdNum;
+          });
+          if (foundVenue) {
+            console.log('✅ Found venue in venues list:', foundVenue.name);
+            venueData = foundVenue;
+            setVenue(foundVenue);
+          } else {
+            console.warn('⚠️ Venue not found in venues list for venueId:', venueIdNum);
+            // Only show error if venue is not found in both direct API and venues list
+            // AND if we have actually tried to load venues
+            if (!venueErrorShown && venuesRes?.data) {
+              if (venueRes?.error) {
+                if (venueRes.status === 404) {
+                  toast.error('Venue not found. Please check if the venue exists.');
+                } else if (venueRes.status === 403) {
+                  toast.error('You do not have permission to view this venue.');
+                } else {
+                  toast.error(venueRes.data?.message || 'Failed to load venue details');
+                }
+                venueErrorShown = true;
+              } else if (!venueRes || venueRes === null) {
+                toast.error('Failed to load venue details. Please check your connection.');
+                venueErrorShown = true;
+              }
+            }
+          }
+        } else if (!venueData && !venuesRes?.data) {
+          // No venue data and no venues list - show error
+          if (!venueErrorShown) {
+            if (venueRes?.error) {
+              if (venueRes.status === 404) {
+                toast.error('Venue not found. Please check if the venue exists.');
+              } else if (venueRes.status === 403) {
+                toast.error('You do not have permission to view this venue.');
+              } else {
+                toast.error(venueRes.data?.message || 'Failed to load venue details');
+              }
+              venueErrorShown = true;
+            } else if (!venueRes || venueRes === null) {
+              toast.error('Failed to load venue details. Please check your connection.');
+              venueErrorShown = true;
+            }
+          }
+        }
+        
+        // Filter venues by selected organization if any
+        if (selectedOrganizationId) {
+          const filteredVenues = loadedVenues.filter(v => 
+            v.organizationId === selectedOrganizationId || 
+            v.organization?.id === selectedOrganizationId
+          );
+          setVenues(filteredVenues);
+        } else {
+          // If no organization selected, show all venues
+          setVenues(loadedVenues);
+        }
+      } else {
+        console.warn('⚠️ No venues data in response:', venuesRes);
+      }
+
+      let venueACs = [];
+      console.log('🔍 ACs Response check:', acsRes);
+      if (acsRes?.data) {
+        console.log('✅ ACs response received:', acsRes.data);
+        // Backend returns: { success: true, data: [array of ACs] }
+        // So acsRes.data = { success: true, data: [...] }
+        // So acsRes.data.data = [array of ACs]
+        const allACs = Array.isArray(acsRes.data.data) 
+                      ? acsRes.data.data 
+                      : (acsRes.data.data?.acs || acsRes.data.acs || []);
+        
+        console.log('✅ All ACs loaded:', allACs.length);
+        if (allACs.length > 0) {
+          console.log('📋 Sample AC:', allACs[0]);
+          console.log('🔋 Sample AC Energy:', allACs[0].totalEnergyConsumed, 'KV');
+          console.log('🔋 Sample AC has totalEnergyConsumed?', 'totalEnergyConsumed' in allACs[0]);
+        }
+        console.log('🔍 Filtering by venueId:', venueId, 'Type:', typeof venueId);
+        console.log('🔍 All ACs before filtering:', allACs.length, allACs.map(ac => ({ 
+          id: ac.id, 
+          name: ac.name, 
+          venueId: ac.venueId, 
+          venueIdType: typeof ac.venueId 
+        })));
+        
+        // Convert venueId to number for comparison
+        const venueIdNum = venueId ? (typeof venueId === 'string' ? parseInt(venueId) : venueId) : null;
+        console.log('🔍 Converted venueId to number:', venueIdNum, 'Original:', venueId);
+        
+        if (!venueIdNum || isNaN(venueIdNum)) {
+          console.error('❌ Invalid venueId:', venueId, 'Cannot filter devices');
+          setDevices([]);
+          // Don't return early - continue to load other data (events, organizations)
+        } else {
+          // Get venue data for organizationId check (use venueData if available, otherwise use venue state)
+          const currentVenueData = venueData || venue;
+          console.log('🔍 Venue data available:', currentVenueData ? 'Yes' : 'No', currentVenueData?.name, 'orgId:', currentVenueData?.organizationId, 'venueId:', currentVenueData?.id);
+          
+          // CRITICAL: Filter devices that belong to this venue
+          // Exclude devices that belong to parent organization (where venueId === organizationId)
+          venueACs = allACs.filter(ac => {
+            // Handle both string and number venueId
+            const acVenueId = ac.venueId ? (typeof ac.venueId === 'string' ? parseInt(ac.venueId) : ac.venueId) : null;
+            
+            if (!acVenueId) {
+              console.log('⚠️ Device has no venueId:', ac.name, ac.id);
+              return false;
+            }
+            
+            // Device must have venueId matching this venue's ID
+            // Also check if device belongs to organization (venueId === organizationId)
+            // This handles cases where organization is also a venue
+            const matches = acVenueId === venueIdNum;
+            
+            // Also check if device belongs to organization that matches this venue's organization
+            if (!matches && currentVenueData?.organizationId) {
+              const orgIdNum = typeof currentVenueData.organizationId === 'string' 
+                ? parseInt(currentVenueData.organizationId) 
+                : currentVenueData.organizationId;
+              
+              // If device's venueId matches organizationId, include it if this venue is part of that org
+              if (acVenueId === orgIdNum) {
+                console.log('✅ Device included (belongs to organization):', ac.name, 'venueId:', ac.venueId, 'orgId:', orgIdNum);
+                return true; // Include devices that belong to the organization
+              }
+            }
+            if (matches) {
+              console.log('✅ Device matched:', ac.name, 'venueId:', acVenueId, 'Type:', typeof ac.venueId, 'Expected:', venueIdNum);
+            } else if (allACs.length <= 10) {
+              // Log for first 10 devices to help debug
+              console.log('❌ Device NOT matched:', ac.name, 'venueId:', acVenueId, 'Type:', typeof acVenueId, 'Expected:', venueIdNum, 'Raw venueId:', ac.venueId);
+            }
+            return matches;
+          });
+          
+          console.log('✅ Venue devices filtered:', venueACs.length);
+          
+          // Initialize all devices as disconnected by default
+          // They will be marked as connected only when DEVICE_CONNECTED event is received
+          const devicesWithConnectionStatus = venueACs.map(device => ({
+            ...device,
+            isConnected: false, // Default to false - only true when device actually connects
+          }));
+          
+          console.log('📱 [VenueDetailsPage] Devices initialized with connection status:', 
+            devicesWithConnectionStatus.map(d => ({ 
+              name: d.name, 
+              serialNumber: d.serialNumber, 
+              serialNumberType: typeof d.serialNumber,
+              isConnected: d.isConnected 
+            }))
+          );
+          
+          // CRITICAL: Check if any devices should already be marked as connected
+          // (in case DEVICE_CONNECTED event arrived before devices were loaded)
+          if (recentConnectionEventsRef.current.size > 0) {
+            console.log('🔄 [VenueDetailsPage] Found', recentConnectionEventsRef.current.size, 'stored connection events');
+            console.log('📦 [VenueDetailsPage] Stored connection events:', Array.from(recentConnectionEventsRef.current.keys()));
+            
+            devicesWithConnectionStatus.forEach(device => {
+              if (device.serialNumber && recentConnectionEventsRef.current.has(device.serialNumber)) {
+                console.log('✅ [VenueDetailsPage] Device', device.name, 'should be marked as connected (event was stored)');
+                device.isConnected = true;
+              }
+            });
+          }
+          
+          // Check if no devices exist or all are disconnected - send alert
+          if (devicesWithConnectionStatus.length === 0) {
+            console.warn('⚠️ No devices found in venue');
+            toast.error('⚠️ No devices found in this venue', {
+              duration: 4000,
+            });
+          } else {
+            // Check if all devices are disconnected
+            const allDisconnected = devicesWithConnectionStatus.every(device => !device.isConnected);
+            console.log('📊 [VenueDetailsPage] All devices disconnected?', allDisconnected, 'Total devices:', devicesWithConnectionStatus.length);
+            if (allDisconnected) {
+              console.warn('⚠️ All devices are offline in venue');
+              toast.error('⚠️ Alert: All devices in this venue are offline', {
+                duration: 5000,
+              });
+            }
+          }
+          
+          if (devicesWithConnectionStatus.length > 0) {
+            console.log('✅ First device:', devicesWithConnectionStatus[0]);
+            // Auto-select first device if no device is selected
+            setSelectedDevice(prev => {
+              if (!prev || !devicesWithConnectionStatus.find(d => d.id === prev.id)) {
+                const firstDevice = devicesWithConnectionStatus[0];
+                const deviceVenue = currentVenueData || venue;
+                const deviceVenueName = deviceVenue?.name || 'Unknown Venue';
+                return {
+                  ...firstDevice,
+                  venue: deviceVenueName
+                };
+              }
+              return prev;
+            });
+          } else {
+            console.warn('⚠️ No devices found for venueId:', venueIdNum);
+            if (allACs.length > 0) {
+              console.warn('⚠️ Available venueIds in ACs:', allACs.map(ac => ({ name: ac.name, venueId: ac.venueId })));
+            } else {
+              console.warn('⚠️ No ACs found at all!');
+            }
+            // Clear selected device if no devices found
+            setSelectedDevice(null);
+          }
+          setDevices(devicesWithConnectionStatus);
+          
+          // Load device order from localStorage for this venue
+          if (venueId) {
+            const savedOrder = localStorage.getItem(`deviceOrder_${venueId}`);
+            if (savedOrder) {
+              try {
+                const orderData = JSON.parse(savedOrder);
+                setDeviceOrder(prev => ({ ...prev, [venueId]: orderData }));
+              } catch (e) {
+                console.error('Error loading device order:', e);
+              }
+            }
+          }
+        }
+      } else {
+        console.warn('⚠️ No ACs data in response:', acsRes);
+        console.warn('⚠️ ACs response structure:', {
+          hasResponse: !!acsRes,
+          hasData: !!acsRes?.data,
+          response: acsRes
+        });
+        setDevices([]);
+      }
+
+      if (eventsRes?.data) {
+        console.log('📅 [VenueDetailsPage] Events response received:', eventsRes.data);
+        const allEvents = eventsRes.data.data?.events || 
+                         eventsRes.data.events || 
+                         (Array.isArray(eventsRes.data.data) ? eventsRes.data.data : []) ||
+                         [];
+        console.log('📅 [VenueDetailsPage] All events parsed:', allEvents.length, allEvents);
+        const venueDeviceIds = venueACs.map(d => d.id);
+        console.log('📅 [VenueDetailsPage] Venue device IDs:', venueDeviceIds);
+        const venueEvents = allEvents.filter(e => 
+          e.eventType === 'device' && venueDeviceIds.includes(e.deviceId)
+        );
+        console.log('📅 [VenueDetailsPage] Filtered venue events:', venueEvents.length, venueEvents);
+        setEvents(venueEvents);
+      } else {
+        console.warn('⚠️ [VenueDetailsPage] No events response data');
+      }
+
+      // Handle different response structures for organizations
+      // Backend returns: { success: true, data: [...] } (data is array directly)
+      console.log('🔍 [ORGS] Full organizations response:', orgsRes);
+      
+      if (orgsRes?.error) {
+        console.error('❌ Organizations API returned error:', orgsRes);
+        if (orgsRes.status === 404) {
+          console.warn('⚠️ Organizations endpoint not found');
+        } else if (orgsRes.status === 403) {
+          console.warn('⚠️ No permission to view organizations');
+        } else {
+          console.warn('⚠️ Organizations API error:', orgsRes.data?.message);
+        }
+        // Set empty array to prevent "Loading organizations..." from showing forever
+        setOrganizations([]);
+      } else if (orgsRes?.data) {
+        console.log('🔍 [ORGS] Organizations response structure:', {
+          hasData: !!orgsRes.data,
+          hasDataData: !!orgsRes.data.data,
+          isArray: Array.isArray(orgsRes.data.data),
+          hasOrganizations: !!orgsRes.data.organizations,
+          success: orgsRes.data.success,
+          keys: Object.keys(orgsRes.data),
+          fullResponse: orgsRes.data
+        });
+        
+        // Backend returns: { success: true, data: [...] }
+        // So orgsRes.data.data should be the array
+        let allOrgs = [];
+        if (Array.isArray(orgsRes.data.data)) {
+          allOrgs = orgsRes.data.data;
+          console.log('✅ [ORGS] Using orgsRes.data.data (direct array)');
+        } else if (orgsRes.data.organizations) {
+          allOrgs = Array.isArray(orgsRes.data.organizations) ? orgsRes.data.organizations : [];
+          console.log('✅ [ORGS] Using orgsRes.data.organizations');
+        } else if (orgsRes.data.data?.organizations) {
+          allOrgs = Array.isArray(orgsRes.data.data.organizations) ? orgsRes.data.data.organizations : [];
+          console.log('✅ [ORGS] Using orgsRes.data.data.organizations');
+        } else if (orgsRes.data.success && orgsRes.data.data) {
+          // Try to extract from data if it's an object
+          allOrgs = Array.isArray(orgsRes.data.data) ? orgsRes.data.data : [];
+          console.log('✅ [ORGS] Using orgsRes.data.data (fallback)');
+        }
+        
+        console.log('✅ [ORGS] Organizations loaded:', allOrgs.length, allOrgs);
+        if (allOrgs.length > 0) {
+          console.log('📋 [ORGS] Sample organization:', allOrgs[0]);
+        } else {
+          console.warn('⚠️ [ORGS] No organizations found in response');
+        }
+        setOrganizations(allOrgs); // Always set, even if empty
+      } else if (orgsRes === null || orgsRes === undefined) {
+        console.warn('⚠️ [ORGS] Organizations API returned null/undefined');
+        setOrganizations([]);
+      } else {
+        console.warn('⚠️ [ORGS] No organizations data in response:', orgsRes);
+        console.warn('⚠️ [ORGS] Organizations response type:', typeof orgsRes);
+        console.warn('⚠️ [ORGS] Organizations response keys:', orgsRes ? Object.keys(orgsRes) : 'N/A');
+        // Set empty array to prevent "Loading organizations..." from showing forever
+        setOrganizations([]);
+      }
+    } catch (error) {
+      console.error('Error loading venue data:', error);
+      // Only show error if we haven't already shown one AND if venue was not found
+      if (!venueErrorShown && !venue) {
+        toast.error(error.response?.data?.message || 'Failed to load venue details');
+        venueErrorShown = true;
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [venueId]); // Removed selectedOrganizationId to prevent unnecessary reloads
+
+  const handleVenueUpdated = useCallback((message) => {
+    console.log('🏢 Venue updated:', message);
+    // Only update connected devices when venue changes
+    if (message.temperature !== undefined) {
+      setDevices((prevDevices) =>
+        prevDevices.map((device) => {
+          // Only update if device is connected and belongs to this venue
+          if (device.isConnected && device.venueId === message.venueId) {
+            return { ...device, temperature: message.temperature };
+          }
+          return device;
+        })
+      );
+      toast.success(`Venue ${message.venueName} temperature updated (applied to connected devices only)`);
+    } else {
+      // For other venue updates, reload data
+      loadVenueData();
+      toast.success(`Venue ${message.venueName} updated`);
+    }
+  }, [loadVenueData]);
+
+  const handleOrganizationUpdated = useCallback((message) => {
+    console.log('🏛️ Organization updated:', message);
+    // Only update connected devices when organization changes
+    if (message.temperature !== undefined) {
+      setDevices((prevDevices) =>
+        prevDevices.map((device) => {
+          // Only update if device is connected and belongs to this organization
+          const deviceOrgId = venue?.organizationId || venue?.organization?.id;
+          if (device.isConnected && deviceOrgId === message.organizationId) {
+            return { ...device, temperature: message.temperature };
+          }
+          return device;
+        })
+      );
+      toast.success(`Organization ${message.organizationName} temperature updated (applied to connected devices only)`);
+    } else {
+      // For other organization updates, reload data
+      loadVenueData();
+      toast.success(`Organization ${message.organizationName} updated`);
+    }
+  }, [loadVenueData, venue]);
+
+  // Track recent DEVICE_CONNECTED events (in case they arrive before devices are loaded)
+  const recentConnectionEventsRef = useRef(new Map()); // { serialNumber: message }
+
+  // Enhanced handleDeviceConnected to track events even if devices not loaded yet
+  const handleDeviceConnectedEnhanced = useCallback((message) => {
+    const serialNumber = message.serialNumber || message.serial;
+    if (serialNumber) {
+      // Store the event for later processing
+      recentConnectionEventsRef.current.set(serialNumber, message);
+      console.log('📦 [VenueDetailsPage] Stored DEVICE_CONNECTED event for:', serialNumber);
+    }
+    // Call original handler
+    handleDeviceConnected(message);
+  }, [handleDeviceConnected]);
+
+  // WebSocket notifications hook
+  const {
+    isConnected,
+    notifications,
+    removeNotification,
+  } = useWebSocketNotifications({
+    venueId: venueId ? parseInt(venueId) : null,
+    organizationId: venue?.organizationId || venue?.organization?.id || null,
+    onDeviceConnected: handleDeviceConnectedEnhanced,
+    onDeviceDisconnected: handleDeviceDisconnected,
+    onDeviceUpdated: handleDeviceUpdated,
+    onVenueUpdated: handleVenueUpdated,
+    onOrganizationUpdated: handleOrganizationUpdated,
+  });
+
+  // Sync connection status when devices are loaded (apply any missed DEVICE_CONNECTED events)
+  useEffect(() => {
+    if (devices.length > 0) {
+      console.log('🔄 [VenueDetailsPage] Checking connection status for', devices.length, 'devices');
+      console.log('📊 [VenueDetailsPage] Current devices:', devices.map(d => ({ 
+        name: d.name, 
+        serialNumber: d.serialNumber, 
+        isConnected: d.isConnected 
+      })));
+      console.log('📦 [VenueDetailsPage] Stored connection events:', Array.from(recentConnectionEventsRef.current.keys()));
+      console.log('🔌 [VenueDetailsPage] WebSocket connected:', isConnected);
+      
+      // Check if any devices should be marked as connected
+      const hasStoredEvents = recentConnectionEventsRef.current.size > 0;
+      if (hasStoredEvents || isConnected) {
+        setDevices((prevDevices) => {
+          let updated = false;
+          const updatedDevices = prevDevices.map((device) => {
+            if (device.serialNumber) {
+              // Check if we have a stored connection event for this device
+              if (recentConnectionEventsRef.current.has(device.serialNumber)) {
+                if (!device.isConnected) {
+                  console.log('✅ [VenueDetailsPage] Syncing device as connected (from stored event):', device.name, device.serialNumber);
+                  updated = true;
+                  return { ...device, isConnected: true };
+                }
+              }
+            }
+            return device;
+          });
+          
+          if (updated) {
+            console.log('✅ [VenueDetailsPage] Connection status synced');
+          } else {
+            console.log('ℹ️ [VenueDetailsPage] No connection status updates needed');
+          }
+          return updatedDevices;
+        });
+      }
+    }
+  }, [devices.length, isConnected]); // Only run when device count changes or WebSocket connects
 
   useEffect(() => {
-    loadVenueData();
+    if (venueId) {
+      console.log('📅 [VenueDetailsPage] Loading venue data for venueId:', venueId);
+      loadVenueData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueId]);
 
   // Set selected organization when venue loads and filter venues
@@ -96,222 +768,6 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
       setOrganizationEnergy(0);
     }
   }, [selectedOrganizationId]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (showLockDropdown && !event.target.closest('.lock-dropdown-container')) {
-        setShowLockDropdown(false);
-      }
-      if (showDeviceLockDropdown && !event.target.closest('.device-lock-dropdown-container')) {
-        setShowDeviceLockDropdown(false);
-      }
-      if (showAlertDropdown && !event.target.closest('.alert-dropdown-container')) {
-        setShowAlertDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showLockDropdown, showDeviceLockDropdown, showAlertDropdown]);
-
-  const loadVenueData = async () => {
-    try {
-      setLoading(true);
-      const [venueRes, venuesRes, acsRes, eventsRes, orgsRes] = await Promise.all([
-        adminAPI.getVenueDetails(venueId).catch(err => {
-          console.error('Failed to load venue:', err);
-          return null;
-        }),
-        adminAPI.getVenues().catch(err => {
-          console.error('Failed to load venues:', err);
-          return null;
-        }),
-        adminAPI.getACs().catch(err => {
-          console.error('Failed to load ACs:', err);
-          return null;
-        }),
-        adminAPI.getEvents().catch(err => {
-          console.error('Failed to load events:', err);
-          return null;
-        }),
-        adminAPI.getOrganizations().catch(err => {
-          console.error('Failed to load organizations:', err);
-          return null;
-        })
-      ]);
-
-      console.log('🔍 Venue response check:', venueRes);
-      if (venueRes?.data) {
-        console.log('🔍 Full venue response:', venueRes.data);
-        console.log('🔍 Response structure:', {
-          hasData: !!venueRes.data,
-          hasDataData: !!venueRes.data.data,
-          hasDataDataVenue: !!venueRes.data.data?.venue,
-          hasDataVenue: !!venueRes.data.venue,
-          keys: Object.keys(venueRes.data)
-        });
-        
-        // Try different response structures
-        let venueData = null;
-        if (venueRes.data.data?.venue) {
-          const rawVenue = venueRes.data.data.venue;
-          // Check if rawVenue has nested structure: {success: true, venue: {...}}
-          if (rawVenue.venue) {
-            venueData = rawVenue.venue;
-            console.log('✅ Using venueRes.data.data.venue.venue (nested structure)');
-          } else {
-            venueData = rawVenue;
-            console.log('✅ Using venueRes.data.data.venue (direct structure)');
-          }
-        } else if (venueRes.data.venue) {
-          venueData = venueRes.data.venue;
-          console.log('✅ Using venueRes.data.venue');
-        } else if (venueRes.data.data) {
-          venueData = venueRes.data.data;
-          console.log('✅ Using venueRes.data.data');
-        }
-        
-        console.log('✅ Venue loaded:', venueData);
-        if (venueData) {
-          console.log('✅ Venue name:', venueData.name);
-          console.log('✅ Venue isVenueOn:', venueData.isVenueOn);
-          console.log('✅ Venue temperature:', venueData.temperature);
-          console.log('✅ Venue isLocked:', venueData.isLocked);
-          console.log('✅ All venue keys:', Object.keys(venueData));
-          setVenue(venueData);
-        } else {
-          console.error('❌ Venue data is null or undefined');
-          console.error('❌ Available data:', venueRes.data);
-        }
-      } else {
-        console.warn('⚠️ No venue data in response:', venueRes);
-        console.warn('⚠️ Full response:', venueRes);
-      }
-
-      // Handle different response structures for venues
-      // Backend returns: { success: true, data: { venues: [...] } }
-      if (venuesRes?.data) {
-        const loadedVenues = venuesRes.data.data?.venues || 
-                         venuesRes.data.venues || 
-                         (Array.isArray(venuesRes.data.data) ? venuesRes.data.data : []) ||
-                         [];
-        console.log('✅ Venues loaded:', loadedVenues.length, loadedVenues);
-        setAllVenues(loadedVenues);
-        
-        // Filter venues by selected organization if any
-        if (selectedOrganizationId) {
-          const filteredVenues = loadedVenues.filter(v => 
-            v.organizationId === selectedOrganizationId || 
-            v.organization?.id === selectedOrganizationId
-          );
-          setVenues(filteredVenues);
-        } else {
-          // If no organization selected, show all venues
-          setVenues(loadedVenues);
-        }
-      } else {
-        console.warn('⚠️ No venues data in response:', venuesRes);
-      }
-
-      let venueACs = [];
-      console.log('🔍 ACs Response check:', acsRes);
-      if (acsRes?.data) {
-        console.log('✅ ACs response received:', acsRes.data);
-        // Backend returns: { success: true, data: [array of ACs] }
-        // So acsRes.data = { success: true, data: [...] }
-        // So acsRes.data.data = [array of ACs]
-        const allACs = Array.isArray(acsRes.data.data) 
-                      ? acsRes.data.data 
-                      : (acsRes.data.data?.acs || acsRes.data.acs || []);
-        
-        console.log('✅ All ACs loaded:', allACs.length);
-        if (allACs.length > 0) {
-          console.log('📋 Sample AC:', allACs[0]);
-        }
-        console.log('🔍 Filtering by venueId:', venueId, 'Type:', typeof venueId);
-        
-        // Convert venueId to number for comparison
-        const venueIdNum = parseInt(venueId);
-        console.log('🔍 Converted venueId to number:', venueIdNum);
-        
-        venueACs = allACs.filter(ac => {
-          const acVenueId = parseInt(ac.venueId);
-          const matches = acVenueId === venueIdNum;
-          if (matches) {
-            console.log('✅ Device matched:', ac.name, 'venueId:', ac.venueId, 'Type:', typeof ac.venueId);
-          } else if (allACs.length <= 5) {
-            // Only log if we have few devices to avoid spam
-            console.log('❌ Device NOT matched:', ac.name, 'venueId:', ac.venueId, 'Expected:', venueIdNum);
-          }
-          return matches;
-        });
-        
-        console.log('✅ Venue devices filtered:', venueACs.length);
-        if (venueACs.length > 0) {
-          console.log('✅ First device:', venueACs[0]);
-        } else {
-          console.warn('⚠️ No devices found for venueId:', venueIdNum);
-          if (allACs.length > 0) {
-            console.warn('⚠️ Available venueIds in ACs:', allACs.map(ac => ({ name: ac.name, venueId: ac.venueId })));
-          } else {
-            console.warn('⚠️ No ACs found at all!');
-          }
-        }
-        setDevices(venueACs);
-        
-        // Load device order from localStorage for this venue
-        if (venueId) {
-          const savedOrder = localStorage.getItem(`deviceOrder_${venueId}`);
-          if (savedOrder) {
-            try {
-              const orderData = JSON.parse(savedOrder);
-              setDeviceOrder(prev => ({ ...prev, [venueId]: orderData }));
-            } catch (e) {
-              console.error('Error loading device order:', e);
-            }
-          }
-        }
-      } else {
-        console.warn('⚠️ No ACs data in response:', acsRes);
-        console.warn('⚠️ ACs response structure:', {
-          hasResponse: !!acsRes,
-          hasData: !!acsRes?.data,
-          response: acsRes
-        });
-        setDevices([]);
-      }
-
-      if (eventsRes?.data) {
-        const allEvents = eventsRes.data.data?.events || 
-                         eventsRes.data.events || 
-                         (Array.isArray(eventsRes.data.data) ? eventsRes.data.data : []) ||
-                         [];
-        const venueDeviceIds = venueACs.map(d => d.id);
-        const venueEvents = allEvents.filter(e => 
-          e.eventType === 'device' && venueDeviceIds.includes(e.deviceId)
-        );
-        setEvents(venueEvents);
-      }
-
-      // Handle different response structures for organizations
-      // Backend returns: { success: true, data: [...] } (data is array directly)
-      if (orgsRes?.data) {
-        const allOrgs = (Array.isArray(orgsRes.data.data) ? orgsRes.data.data : []) ||
-                       orgsRes.data.organizations || 
-                       orgsRes.data.data?.organizations || 
-                       [];
-        console.log('✅ Organizations loaded:', allOrgs.length, allOrgs);
-        setOrganizations(allOrgs);
-      } else {
-        console.warn('⚠️ No organizations data in response:', orgsRes);
-      }
-    } catch (error) {
-      console.error('Error loading venue data:', error);
-      toast.error('Failed to load venue details');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Sort devices based on saved order
   const getSortedDevices = (deviceList) => {
@@ -366,27 +822,36 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
   }));
 
   // Drag and drop handlers
-  const handleDragStart = (e, deviceId) => {
+  const [draggedDeviceId, setDraggedDeviceId] = useState(null);
+  const [dragOverDeviceId, setDragOverDeviceId] = useState(null);
+
+  const handleDragStart = (deviceId, e) => {
+    e.stopPropagation();
     setDraggedDeviceId(deviceId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/html', deviceId);
-    e.currentTarget.style.opacity = '0.5';
   };
 
-  const handleDragEnd = (e) => {
-    e.currentTarget.style.opacity = '1';
-    setDraggedDeviceId(null);
-  };
-
-  const handleDragOver = (e) => {
+  const handleDragOver = (deviceId, e) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
+    if (deviceId !== draggedDeviceId) {
+      setDragOverDeviceId(deviceId);
+    }
   };
 
-  const handleDrop = (e, targetDeviceId) => {
+  const handleDragLeave = () => {
+    setDragOverDeviceId(null);
+  };
+
+  const handleDrop = (targetDeviceId, e) => {
     e.preventDefault();
+    e.stopPropagation();
     
-    if (!draggedDeviceId || draggedDeviceId === targetDeviceId || !venueId) {
+    if (!draggedDeviceId || !targetDeviceId || draggedDeviceId === targetDeviceId || !venueId) {
+      setDraggedDeviceId(null);
+      setDragOverDeviceId(null);
       return;
     }
 
@@ -395,6 +860,8 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
     const targetIndex = currentOrder.indexOf(targetDeviceId);
 
     if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedDeviceId(null);
+      setDragOverDeviceId(null);
       return;
     }
 
@@ -408,7 +875,25 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
     setDeviceOrder(updatedOrder);
     localStorage.setItem(`deviceOrder_${venueId}`, JSON.stringify(newOrder));
     
+    // Update selectedDevice to the dragged device for Device Scheduling section
+    const draggedDevice = filteredDevices.find(d => d.id === draggedDeviceId);
+    if (draggedDevice) {
+      const deviceVenue = allVenues.find(v => v.id === draggedDevice.venueId) || venue;
+        const deviceVenueName = deviceVenue?.name || venue?.name || 'Unknown Venue';
+        setSelectedDevice({
+        ...draggedDevice,
+        venue: deviceVenueName
+      });
+    }
+    
+    setDraggedDeviceId(null);
+    setDragOverDeviceId(null);
     toast.success('Device order updated');
+  };
+
+  const handleDragEnd = () => {
+    setDraggedDeviceId(null);
+    setDragOverDeviceId(null);
   };
 
   // Debug logging
@@ -476,18 +961,27 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
     }
   };
 
-  // Calculate KPIs - use organization data if organization is selected, otherwise use venue devices
-  const totalDevices = selectedOrganizationId && organizationDevices.length > 0 
-    ? organizationDevices.length 
-    : devices.length;
+  // Calculate KPIs - Always use venue-specific devices (not organization devices)
+  // When venue is selected, show only that venue's devices
+  const totalDevices = devices.length; // Always use venue-specific devices
   
-  const faultDevices = selectedOrganizationId && organizationDevices.length > 0
-    ? organizationDevices.filter(d => d.isWorking === false || d.alertAt || d.isWorking === 0).length
-    : devices.filter(d => d.isWorking === false || d.alertAt).length;
+  // Fault devices: Only count CONNECTED devices with alerts (offline devices don't generate alerts)
+  const faultDevices = devices.filter(d => d.isConnected && (d.isWorking === false || d.alertAt)).length;
   
-  const totalEnergy = selectedOrganizationId && organizationEnergy > 0
-    ? organizationEnergy
-    : devices.reduce((sum, d) => sum + (d.totalEnergyConsumed || 0), 0);
+  // Calculate venue energy: Sum of all CONNECTED devices in the selected venue
+  // Offline devices should not contribute to energy (energy stays at last connection value)
+  const venueEnergy = devices.reduce((sum, d) => {
+    // Only count energy if device is connected
+    if (d.isConnected) {
+      const deviceEnergy = d.totalEnergyConsumed || 0;
+      console.log(`🔋 Device "${d.name}" (ID: ${d.id}) energy: ${deviceEnergy} KV (connected)`);
+      return sum + deviceEnergy;
+    } else {
+      console.log(`⏸️ Device "${d.name}" (ID: ${d.id}) is offline - energy not counted`);
+      return sum; // Don't add energy for offline devices
+    }
+  }, 0);
+  console.log(`⚡ Venue Energy (Sum of ${devices.filter(d => d.isConnected).length} connected devices): ${venueEnergy.toFixed(2)} KV`);
 
   // Helper function to format days - show range if consecutive, otherwise individual
   const formatDays = (daysString) => {
@@ -516,23 +1010,26 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
     }
   };
 
+  // Show loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading venue details...</p>
-        </div>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 text-xl">Loading venue details...</p>
+      </div>
       </div>
     );
   }
 
-  if (!venue) {
+  // Show error state only if we've finished loading and still no venue
+  if (!venue && !loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <p className="text-gray-600 text-xl mb-4">Venue not found</p>
+          <p className="text-gray-500 text-sm mb-4">Venue ID: {venueId}</p>
           <button
             onClick={() => navigate(-1)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -545,662 +1042,205 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
   }
 
   return (
-    <div className={hideHeader ? "w-full h-full overflow-visible" : "min-h-screen bg-white w-full"}>
+    <div className={`${hideHeader ? "w-full h-full overflow-visible flex flex-col items-center" : "min-h-screen bg-white w-full flex flex-col items-center"} overflow-x-hidden`}>
+      {/* WebSocket Connection Status Indicator */}
+      {isConnected && (
+        <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 bg-green-500 text-white px-2 py-1 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-xs shadow-lg flex items-center gap-1.5 sm:gap-2">
+          <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full animate-pulse"></div>
+          <span className="hidden sm:inline">Real-time Connected</span>
+          <span className="sm:hidden">Live</span>
+        </div>
+      )}
+
+      {/* Notifications Container */}
+      <NotificationContainer
+        notifications={notifications}
+        onRemoveNotification={removeNotification}
+      />
+
       {/* Top Header with Organization Dropdown and KPIs */}
-      {!hideHeader && (
-        <div className="bg-white">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between mb-6 relative z-50">
-              <div className="flex items-center space-x-4 relative z-50">
-                <button
-                  onClick={() => navigate(-1)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <ArrowLeft className="w-5 h-5 text-gray-600" />
-                </button>
-              <select 
-                value={selectedOrganizationId || venue?.organizationId || venue?.organization?.id || ''}
-                onChange={(e) => {
-                  const orgId = e.target.value ? parseInt(e.target.value) : null;
-                  setSelectedOrganizationId(orgId);
-                  
-                  if (orgId) {
-                    // Filter venues by selected organization
-                    const filteredVenues = allVenues.filter(v => 
-                      v.organizationId === orgId || 
-                      v.organization?.id === orgId
-                    );
-                    setVenues(filteredVenues);
-                    
-                    // Load organization data (devices, energy)
-                    loadOrganizationData(orgId);
-                    
-                    // If there are filtered venues, navigate to the first one
-                    if (filteredVenues.length > 0) {
-                      navigate(`/admin/venue/${filteredVenues[0].id}`);
-                    } else {
-                      toast.info(`No venues found for selected organization`);
-                    }
-                    
-                    const selectedOrg = organizations.find(org => org.id === orgId);
-                    if (selectedOrg) {
-                      toast.success(`Selected: ${selectedOrg.name}`);
-                    }
-                  } else {
-                    // Show all venues if no organization selected
-                    setVenues(allVenues);
-                    setOrganizationDevices([]);
-                    setOrganizationEnergy(0);
-                  }
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 relative z-50"
-                style={{ zIndex: 9999 }}
-              >
-                <option value="">Organization</option>
-                {organizations && organizations.length > 0 ? (
-                  organizations.map((org) => (
-                    <option key={org.id} value={org.id}>
-                      {org.name} {org.id ? `(ID: ${org.id})` : ''}
-                    </option>
-                  ))
-                ) : (
-                  <option value="" disabled>Loading organizations...</option>
-                )}
-                {/* Show current venue's organization if not in list */}
-                {venue?.organization && organizations && !organizations.find(org => org.id === venue.organization.id) && (
-                  <option value={venue.organization.id}>
-                    {venue.organization.name} {venue.organization.id ? `(ID: ${venue.organization.id})` : ''}
-                  </option>
-                )}
-              </select>
-              <select 
-                value={venueId}
-                onChange={(e) => {
-                  if (e.target.value && e.target.value !== venueId) {
-                    navigate(`/admin/venue/${e.target.value}`);
-                  }
-                }}
-                disabled={!selectedOrganizationId}
-                className={`px-4 py-2 border rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 relative z-50 ${
-                  !selectedOrganizationId 
-                    ? 'bg-gray-50 border-gray-200 text-gray-500 cursor-not-allowed' 
-                    : 'bg-white border-gray-300'
-                }`}
-                style={{ zIndex: 9999 }}
-                title={!selectedOrganizationId ? 'Please select Organization first' : 'Select a venue'}
-              >
-                <option value="" className="text-center">
-                  {!selectedOrganizationId 
-                    ? '👉 Please select Organization first' 
-                    : 'Select Venue'}
-                </option>
-                {venues && venues.length > 0 ? (
-                  venues.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name} {v.id ? `(ID: ${v.id})` : ''}
-                    </option>
-                  ))
-                ) : selectedOrganizationId ? (
-                  <option value="" disabled>Loading venues...</option>
-                ) : null}
-              </select>
-              </div>
-            </div>
-            
-            {/* KPIs - In Header Section */}
-          <div className="grid grid-cols- md:grid-cols-3 p-1 gap-0 w-[60%] h-10">
-            <KPICard 
-              title="No. of Devices" 
-              value={`${totalDevices} Devices`} 
-              icon={Users} 
-              iconColor="text-blue-600" 
-              bgColor="bg-blue-100" 
-            />
-            <KPICard 
-              title="Fault Devices" 
-              value={`${faultDevices} Devices`} 
-              icon={AlertTriangle} 
-              iconColor="text-red-600" 
-              bgColor="bg-red-100" 
-            />
-            <KPICard 
-              title="Energy" 
-              value={`${totalEnergy.toFixed(1)} KV`} 
-              icon={Zap} 
-              iconColor="text-yellow-600" 
-              bgColor="bg-yellow-100" 
-            />
-          </div>
-        </div>
-        </div>
-      )}
+      <VenueHeader
+        hideHeader={hideHeader}
+        selectedOrganizationId={selectedOrganizationId}
+        setSelectedOrganizationId={setSelectedOrganizationId}
+        venue={venue}
+        venueId={venueId}
+        organizations={organizations}
+        allVenues={allVenues}
+        venues={venues}
+        setVenues={setVenues}
+        loadOrganizationData={loadOrganizationData}
+        navigate={navigate}
+        totalDevices={totalDevices}
+        faultDevices={faultDevices}
+        venueEnergy={venueEnergy}
+        hasOrganizations={hasOrganizations}
+        onVenueChange={onVenueChange}
+      />
 
-      {/* KPIs - Show even when hideHeader is true */}
-      {hideHeader && (
-        <div className="w-full px-4 py-1 bg-gray-50 relative z-0">
-          {/* Organization and Venue Selection Dropdowns */}
-          <div className="flex items-center space-x-4 mb-2 w-[50%]">
-            <select 
-              value={selectedOrganizationId || venue?.organizationId || venue?.organization?.id || ''}
-              onChange={(e) => {
-                const orgId = e.target.value ? parseInt(e.target.value) : null;
-                setSelectedOrganizationId(orgId);
-                
-                if (orgId) {
-                  // Filter venues by selected organization
-                  const filteredVenues = allVenues.filter(v => 
-                    v.organizationId === orgId || 
-                    v.organization?.id === orgId
-                  );
-                  setVenues(filteredVenues);
-                  
-                  // Load organization data (devices, energy)
-                  loadOrganizationData(orgId);
-                  
-                  // If there are filtered venues, navigate to the first one
-                  if (filteredVenues.length > 0) {
-                    // Update venue in parent component if needed
-                    const firstVenue = filteredVenues[0];
-                    if (firstVenue.id !== venueId) {
-                      // Trigger venue change
-                      if (hideHeader && onVenueChange) {
-                        // Update parent component if callback provided
-                        onVenueChange(firstVenue.id);
-                      } else {
-                        // Navigate if standalone page
-                        navigate(`/admin/venue/${firstVenue.id}`);
-                      }
-                    }
-                  } else {
-                    toast.info(`No venues found for selected organization`);
-                  }
-                  
-                  const selectedOrg = organizations.find(org => org.id === orgId);
-                  if (selectedOrg) {
-                    toast.success(`Selected: ${selectedOrg.name}`);
-                  }
-                } else {
-                  // Show all venues if no organization selected
-                  setVenues(allVenues);
-                  setOrganizationDevices([]);
-                  setOrganizationEnergy(0);
-                }
-              }}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Organization</option>
-              {organizations && organizations.length > 0 ? (
-                organizations.map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.name} {org.id ? `(ID: ${org.id})` : ''}
-                  </option>
-                ))
-              ) : (
-                <option value="" disabled>Loading organizations...</option>
-              )}
-            </select>
-            
-            <select 
-              value={venueId}
-              onChange={(e) => {
-                if (e.target.value && e.target.value !== venueId) {
-                  const newVenueId = parseInt(e.target.value);
-                  if (hideHeader && onVenueChange) {
-                    // Update parent component if callback provided
-                    onVenueChange(newVenueId);
-                  } else {
-                    // Navigate if standalone page
-                    navigate(`/admin/venue/${newVenueId}`);
-                  }
-                }
-              }}
-              disabled={!selectedOrganizationId}
-              className={`px-4 py-2 border rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                !selectedOrganizationId 
-                  ? 'bg-gray-50 border-gray-200 text-gray-500 cursor-not-allowed' 
-                  : 'bg-white border-gray-300'
-              }`}
-              title={!selectedOrganizationId ? 'Please select Organization first' : 'Select a venue'}
-            >
-              <option value="">
-                {!selectedOrganizationId 
-                  ? '👉 Please select Organization first' 
-                  : 'Select Venue'}
-              </option>
-              {venues && venues.length > 0 ? (
-                venues.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name} {v.id ? `(ID: ${v.id})` : ''}
-                  </option>
-                ))
-              ) : selectedOrganizationId ? (
-                <option value="" disabled>Loading venues...</option>
-              ) : null}
-            </select>
-          </div>
-          
-          {/* KPI Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-[50%]">
-            <KPICard 
-              title="No. of Devices" 
-              value={`${totalDevices} Devices`} 
-              icon={Users} 
-              iconColor="text-blue-600" 
-              bgColor="bg-blue-100" 
-            />
-            <KPICard 
-              title="Fault Devices" 
-              value={`${faultDevices} Devices`} 
-              icon={AlertTriangle} 
-              iconColor="text-red-600" 
-              bgColor="bg-red-100" 
-            />
-            <KPICard 
-              title="Energy" 
-              value={`${totalEnergy.toFixed(1)} KV`} 
-              icon={Zap} 
-              iconColor="text-yellow-600" 
-              bgColor="bg-yellow-100" 
-            />
-          </div>
-        </div>
-      )}
-
-      <div className={hideHeader ? "w-full px-4 py-4 flex justify-start" : "max-w-7xl mx-auto px-6 py-6"}>
+      <div className={`${hideHeader ? "w-full max-w-[95%] xl:max-w-[90%] 2xl:max-w-[85%] px-2 sm:px-4 md:px-6 py-4" : "w-full max-w-[95%] xl:max-w-[90%] 2xl:max-w-[85%] px-2 sm:px-4 md:px-6 py-4 md:py-6"}`}>
         {/* Main Content - Table and Right Panel */}
-        <div className={`grid grid-cols-1 ${hideHeader ? 'lg:grid-cols-3' : 'lg:grid-cols-3'} gap-4 ${hideHeader ? 'w-full' : ''}`}>
-          {/* Device List Table - Blue Container */}
-          <div className={`lg:col-span-2 ${hideHeader ? 'w-full -ml-2' : ''}`} style={hideHeader ? {} : { minWidth: '800px' }}>
-            {/* Blue Outer Container - Aligned with Energy card end */}
-            <div className={`bg-blue-500 rounded-2xl p-1 shadow-md ${hideHeader ? 'w-full' : 'max-w-4xl'}`} style={hideHeader ? { width: '100%' } : {}}>
-              {/* Section - Filters (Alert, Temperature, Status, Lock, Search) */}
-              <section className=" rounded-xl p-4 mb-1">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                  <div>
-                    <button
-                      onClick={() => setShowAlertModal(true)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 bg-white text-gray-700 hover:bg-gray-50"
-                    >
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Alert</span>
-                    </button>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <Thermometer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                      <input
-                        type="number"
-                        min="16"
-                        max="30"
-                        value={filters.temperature}
-                        onChange={(e) => setFilters({ ...filters, temperature: e.target.value })}
-                        placeholder="Temperature"
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <Power className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                      <select
-                        value={filters.status}
-                        onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      >
-                        <option value="">Status</option>
-                        <option value="on">On</option>
-                        <option value="off">Off</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                      <select
-                        value={filters.lock}
-                        onChange={(e) => setFilters({ ...filters, lock: e.target.value })}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      >
-                        <option value="">Lock</option>
-                        <option value="locked">Locked</option>
-                        <option value="unlocked">Unlocked</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Search..."
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </section>
-               
+        {/* Adjust layout based on sidebar state: when sidebar closed (dashboard), increase gap and align right panel to right */}
+        <div className={`flex flex-col lg:flex-row lg:items-start ${hideHeader 
+          ? 'gap-4 sm:gap-6' 
+          : sidebarOpen 
+            ? 'gap-4 sm:gap-6' 
+            : 'gap-6 sm:gap-8 md:gap-10'
+        } w-full max-w-full ${hideHeader ? '' : ''}`}>
+          {/* Device List Table - Blue Container - left aligned */}
+          {/* When sidebar closed, increase table container width. When open, keep it normal so right panel can fill remaining space */}
+          <div className={`-ml-0 sm:-ml-2 transition-all duration-300 ${hideHeader 
+            ? 'w-full' 
+            : sidebarOpen 
+              ? 'w-full lg:flex-none lg:w-auto lg:max-w-[55%] lg:min-w-0' 
+              : 'w-full lg:flex-[2_1_65%] lg:max-w-[70%] lg:min-w-0'
+          }`}>
+            {/* Blue Outer Container - Left aligned */}
+            <div className={` bg-blue-500 rounded-xl sm:rounded-2xl p-1 shadow-md w-full`}>
+              {/* Section - Filters */}
+              <DeviceFilters
+                filters={filters}
+                setFilters={setFilters}
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                onAlertClick={() => setShowAlertModal(true)}
+              />
 
-              {/* Table Header Div - Under Filters (with table inside) */}
-              <div className="bg-white rounded-2xl overflow-hidden w-full mt-1">
-                {/* Table with Header and Body */}
-                <div className="w-full">
-                  <table className="w-full divide-y divide-gray-200">
-                    {/* Table Header */}
-                    <thead className="bg-gray-50 sticky top-0 z-10">
-                      <tr>
-                        <th className="pl-4 pr-2 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 w-10">
-                          {/* Drag Handle Column */}
-                        </th>
-                        <th className="pl-4 pr-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b-2 border-gray-300">
-                          Device ID
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b-2 border-gray-300">
-                          Venue
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-b-2 border-gray-300">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Thermometer className="w-4 h-4" />
-                            <span>Temperature</span>
-                          </div>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b-2 border-gray-300">
-                          <div className="flex items-center gap-1.5">
-                            <Power className="w-4 h-4" />
-                            <span>Status</span>
-                          </div>
-                        </th>
-                        <th className="px-4 pr-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-b-2 border-gray-300">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Plus className="w-4 h-4" />
-                            <span>Events</span>
-                          </div>
-                        </th>
-                        <th className="px-4 pr-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-b-2 border-gray-300">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Eye className="w-4 h-4" />
-                            <span>View</span>
-                          </div>
-                        </th>
-                      </tr>
-                    </thead>
-                    {/* Table Body */}
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {/* Dynamic Devices from Selected Venue */}
-                      {filteredDevices.length === 0 ? (
-                        <tr>
-                          <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                            {devices.length === 0 
-                              ? 'No devices found in this venue. Please check console for details.' 
-                              : `No devices match the current filters. Total devices: ${devices.length}`}
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredDevices.map((device) => {
-                          // Get venue name for this device
-                          const deviceVenue = allVenues.find(v => v.id === device.venueId) || venue;
-                          const deviceVenueName = deviceVenue?.name || venue?.name || 'Unknown Venue';
-                          const deviceEvents = events.filter(e => e.deviceId === device.id);
-                          
-                          return (
-                            <tr 
-                              key={device.id} 
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, device.id)}
-                              onDragEnd={handleDragEnd}
-                              onDragOver={handleDragOver}
-                              onDrop={(e) => handleDrop(e, device.id)}
-                              className={`hover:bg-gray-50 cursor-pointer transition-colors ${selectedDevice?.id === device.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''} ${draggedDeviceId === device.id ? 'opacity-50' : ''}`}
-                              onClick={() => {
-                                setSelectedDevice(device);
+              {/* Device Table */}
+              <DeviceTable
+                filteredDevices={filteredDevices}
+                devices={devices}
+                allVenues={allVenues}
+                venue={venue}
+                organizations={organizations}
+                events={events}
+                onDeviceSelect={(device, deviceVenueName) => {
+                                setSelectedDevice({
+                                  ...device,
+                                  venue: deviceVenueName
+                                });
                               }}
-                            >
-                              <td 
-                                className="pl-4 pr-2 py-4 align-middle cursor-grab active:cursor-grabbing"
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <GripVertical className="w-4 h-4 text-gray-400 hover:text-gray-600" />
-                              </td>
-                              <td className="pl-4 pr-6 py-4 align-middle">
-                                <div className="flex items-center gap-2">
-                                  <div>
-                                    <div className="text-sm font-medium text-gray-900">{device.name || 'N/A'}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 align-middle">
-                                <div className="flex items-center space-x-2">
-                                  <MapPin className="w-4 h-4 text-blue-600" />
-                                  <span className="text-xs text-gray-900">{deviceVenueName}</span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 pr-2 align-middle">
-                                <div className="flex items-center justify-center space-x-1 bg-gray-100 rounded-full px-2 py-1 w-fit mx-auto">
-                                  <button 
-                                    onClick={async () => {
-                                      const currentTemp = device.temperature || 16;
-                                      if (currentTemp > 16) {
-                                        try {
-                                          await adminAPI.setAdminACTemperature(device.id, currentTemp - 1);
-                                          setDevices(prev => prev.map(d => 
-                                            d.id === device.id ? { ...d, temperature: currentTemp - 1 } : d
-                                          ));
-                                          toast.success(`Temperature set to ${currentTemp - 1}°C`);
-                                        } catch (error) {
-                                          toast.error(error.response?.data?.message || 'Failed to set temperature');
-                                        }
-                                      }
+                onEventCreate={(deviceId) => {
+                  setEventDeviceId(deviceId);
+                                      setShowEventTypeSelection(true);
                                     }}
-                                    className="p-0.5 text-blue-600 hover:bg-blue-200 rounded-full flex items-center justify-center"
-                                  >
-                                    <Minus className="w-2.5 h-2.5" />
-                                  </button>
-                                  <input 
-                                    type="number" 
-                                    min="16" 
-                                    max="30" 
-                                    value={device.temperature || 16}
-                                    placeholder="temp"
-                                    onChange={async (e) => {
-                                      const value = parseInt(e.target.value);
-                                      if (!isNaN(value) && value >= 16 && value <= 30) {
-                                        try {
-                                          await adminAPI.setAdminACTemperature(device.id, value);
-                                          setDevices(prev => prev.map(d => 
-                                            d.id === device.id ? { ...d, temperature: value } : d
-                                          ));
-                                          toast.success(`Temperature set to ${value}°C`);
-                                        } catch (error) {
-                                          toast.error(error.response?.data?.message || 'Failed to set temperature');
-                                        }
-                                      }
-                                    }}
-                                    className="text-xs font-medium text-gray-900 w-10 text-center bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-blue-500 rounded placeholder:text-gray-400"
-                                  />
-                                  <button 
-                                    onClick={async () => {
-                                      const currentTemp = device.temperature || 16;
-                                      if (currentTemp < 30) {
-                                        try {
-                                          await adminAPI.setAdminACTemperature(device.id, currentTemp + 1);
-                                          setDevices(prev => prev.map(d => 
-                                            d.id === device.id ? { ...d, temperature: currentTemp + 1 } : d
-                                          ));
-                                          toast.success(`Temperature set to ${currentTemp + 1}°C`);
-                                        } catch (error) {
-                                          toast.error(error.response?.data?.message || 'Failed to set temperature');
-                                        }
-                                      }
-                                    }}
-                                    className="p-0.5 text-blue-600 hover:bg-blue-200 rounded-full flex items-center justify-center"
-                                  >
-                                    <Plus className="w-2.5 h-2.5" />
-                                  </button>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 align-middle">
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={device.isOn || false}
-                                    onChange={async (e) => {
-                                      e.stopPropagation(); // Prevent row click
-                                      const newStatus = e.target.checked;
-                                      console.log('🔄 Toggling AC power:', { 
-                                        deviceId: device.id, 
-                                        deviceName: device.name, 
-                                        newStatus,
-                                        venueId: venue?.id,
-                                        venueIsOn: venue?.isVenueOn
-                                      });
-                                      
-                                      try {
-                                        // Validate status is boolean
-                                        if (typeof newStatus !== 'boolean') {
-                                          toast.error('Invalid power state');
-                                          return;
-                                        }
-                                        
-                                        // Check if venue is ON before turning device ON
-                                        if (newStatus === true && venue && venue.isVenueOn === false) {
-                                          toast.error('Cannot turn ON device: Venue is currently OFF. Please turn on the venue first.');
-                                          // Reset checkbox to previous state
-                                          e.target.checked = device.isOn || false;
-                                          return;
-                                        }
-                                        
-                                        const response = await adminAPI.toggleAdminACPower(device.id, newStatus);
-                                        console.log('✅ AC power toggle response:', response?.data);
-                                        
-                                        // Update device state with response data if available
-                                        const updatedDevice = response?.data?.ac || response?.data?.data?.ac;
-                                        const finalStatus = updatedDevice?.isOn !== undefined ? updatedDevice.isOn : newStatus;
-                                        
-                                        setDevices(prev => prev.map(d => 
-                                          d.id === device.id ? { ...d, isOn: finalStatus } : d
-                                        ));
-                                        
-                                        toast.success(response?.data?.message || `Device ${finalStatus ? 'turned ON' : 'turned OFF'}`);
-                                        
-                                        // Reload venue data to sync state
-                                        await loadVenueData();
-                                      } catch (error) {
-                                        console.error('❌ Toggle AC power error:', error);
-                                        // Reset checkbox to previous state on error
-                                        e.target.checked = device.isOn || false;
-                                        
-                                        if (error.response?.status === 401) {
-                                          toast.error('Session expired. Please login again.');
-                                        } else if (error.response?.status === 400) {
-                                          const errorMsg = error.response?.data?.message || 'Invalid request. Please check if venue is ON.';
-                                          toast.error(errorMsg);
-                                        } else if (error.response?.status === 404) {
-                                          toast.error('Device not found or unauthorized');
-                                        } else {
-                                          toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to toggle device');
-                                        }
-                                      }
-                                    }}
-                                    className="sr-only peer"
-                                  />
-                                  <div className={`w-11 h-6 rounded-full peer ${
-                                    device.isOn ? 'bg-green-500' : 'bg-gray-300'
-                                  } peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all`}></div>
-                                  <span className="ml-2 text-sm text-gray-700">
-                                    {device.isOn ? 'On' : 'Off'}
-                                  </span>
-                                </label>
-                              </td>
-                              <td className="px-4 pr-4 py-4 align-middle">
-                                <div className="flex justify-center">
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // Prevent row click
-                                      setEventDeviceId(device.id);
-                                      setShowEventModal(true);
-                                    }}
-                                    className="w-8 h-8 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-full border border-blue-200 bg-white"
-                                    title="Create event for this device"
-                                  >
-                                    <Plus className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </td>
-                              <td className="px-4 pr-4 py-4 align-middle">
-                                <div className="flex justify-center">
-                                  <button
-                                    onClick={() => {
+                onViewDevice={(device, deviceVenueName) => {
                                       setSelectedDevice({
                                         ...device,
                                         venue: deviceVenueName
                                       });
                                       setShowDeviceModal(true);
                                     }}
-                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="View device details"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Panel - Charts and Scheduled Commands */}
-          <div className={hideHeader ? "space-y-6 w-full mt-4" : "space-y-12 -mt-36 max-w-md"}>
-            {/* Energy Chart */}
-            <div className="relative z-20 -mt-48">
-              <EnergyChartBox 
-                venue={venue} 
-                setVenue={setVenue}
-                organizationEnergy={selectedOrganizationId ? organizationEnergy : null}
-                organizationName={selectedOrganizationId ? organizations.find(org => org.id === selectedOrganizationId)?.name : null}
-                devices={devices}
-                onVenueUpdate={loadVenueData}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+                draggedDeviceId={draggedDeviceId}
+                dragOverDeviceId={dragOverDeviceId}
+                setDevices={setDevices}
+                loadVenueData={loadVenueData}
               />
             </div>
+      </div>
 
-            {/* Scheduled Commands for Device */}
+          {/* Right Panel - Charts and Scheduled Commands - Increased width, moved up and left */}
+          {/* When sidebar closed (dashboard), align right panel to right with bigger gap. When open, fill all remaining space */}
+          <div className={`transition-all duration-300 ${hideHeader 
+            ? "space-y-4 w-full mt-4 sm:mt-6" 
+            : sidebarOpen
+              ? "space-y-4 md:space-y-6 w-full lg:flex-1 lg:flex-grow lg:min-w-[280px] xl:min-w-[300px] 2xl:min-w-[350px] lg:max-w-none lg:-mt-32 xl:-mt-44 lg:self-start"
+              : "space-y-4 md:space-y-6 w-full lg:flex-[0_0_auto] lg:ml-auto lg:min-w-[280px] xl:min-w-[300px] 2xl:min-w-[350px] lg:-mt-32 xl:-mt-44 lg:self-start"
+          } flex-shrink-0 relative z-10`}>
+            {/* Energy Chart */}
+            <div className="relative z-18">
+            <EnergyChartBox 
+              venue={venue} 
+              setVenue={setVenue}
+              organizationEnergy={selectedOrganizationId ? organizationEnergy : null}
+              organizationName={selectedOrganizationId ? organizations.find(org => org.id === selectedOrganizationId)?.name : null}
+              organization={selectedOrganizationId ? organizations.find(org => org.id === selectedOrganizationId) : null}
+              setOrganization={(updater) => {
+                if (selectedOrganizationId) {
+                  setOrganizations(prev => prev.map(org => 
+                    org.id === selectedOrganizationId 
+                      ? (typeof updater === 'function' ? updater(org) : updater)
+                      : org
+                  ));
+                }
+              }}
+              devices={devices}
+              onVenueUpdate={loadVenueData}
+              onOrganizationUpdate={loadVenueData}
+              onDevicesUpdate={(venueId, powerState) => {
+                // Update devices in this venue to match venue power state
+                setDevices(prev => prev.map(device => 
+                  device.venueId === venueId ? { ...device, isOn: powerState } : device
+                ));
+              }}
+            />
+            </div>
+
+            {/* Scheduled Commands for Device - Moved down, increased width */}
+            <div className="w-full">
             <DeviceSchedulingSection 
               filteredDevices={filteredDevices}
               events={events}
               faultDevices={faultDevices}
-              totalEnergy={totalEnergy}
+              totalEnergy={venueEnergy}
               selectedDevice={selectedDevice}
+              venue={venue}
+              onReloadEvents={async () => {
+                await loadVenueData();
+                // Notify parent component to reload events list
+                if (onEventCreated) {
+                  setTimeout(async () => {
+                    await onEventCreated();
+                  }, 300);
+                }
+              }}
               onEventEdit={(event) => {
                 if (event && event.id) {
                   // Editing existing event
                   setSelectedEvent(event);
                   setEventDeviceId(event.deviceId);
+                  setShowEventModal(true);
                 } else {
-                  // Creating new event
+                  // Creating new event - open selection modal
                   setSelectedEvent(null);
                   setEventDeviceId(event?.deviceId || selectedDevice?.id);
+                  setShowEventTypeSelection(true);
                 }
-                setShowEventModal(true);
               }}
-              onEventDelete={() => {
-                // Delete is handled in DeviceSchedulingSection
+              onEventDelete={async () => {
+                // After delete, reload events in parent
+                if (onEventCreated) {
+                  setTimeout(async () => {
+                    console.log('📅 [VenueDetailsPage] onEventDelete - calling onEventCreated');
+                    await onEventCreated();
+                  }, 800);
+                }
               }}
-              onEventEnable={() => {
-                // Enable is handled in DeviceSchedulingSection
+              onEventEnable={async () => {
+                // After enable, reload events in parent
+                if (onEventCreated) {
+                  setTimeout(async () => {
+                    console.log('📅 [VenueDetailsPage] onEventEnable - calling onEventCreated');
+                    await onEventCreated();
+                  }, 800);
+                }
               }}
-              onEventDisable={() => {
-                // Disable is handled in DeviceSchedulingSection
+              onEventDisable={async () => {
+                // After disable, reload events in parent
+                if (onEventCreated) {
+                  setTimeout(async () => {
+                    console.log('📅 [VenueDetailsPage] onEventDisable - calling onEventCreated');
+                    await onEventCreated();
+                  }, 800);
+                }
               }}
-              onReloadEvents={loadVenueData}
             />
+            </div>
           </div>
         </div>
       </div>
@@ -1208,7 +1248,8 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
       {/* Alert Modal */}
       <NeedMaintenanceModal 
         isOpen={showAlertModal} 
-        onClose={() => setShowAlertModal(false)} 
+        onClose={() => setShowAlertModal(false)}
+        venueId={venueId}
       />
 
       {/* Device Details Modal */}
@@ -1221,19 +1262,47 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
         device={selectedDevice}
       />
 
+      {/* Event Type Selection Modal */}
+      <EventTypeSelectionModal
+        isOpen={showEventTypeSelection}
+        onClose={() => {
+            setShowEventTypeSelection(false);
+            setSelectedEventType(null);
+            setEventDeviceId(null);
+            setSelectedEvent(null);
+          }}
+        onSelectSimple={() => {
+                  setSelectedEventType('simple');
+                  setShowEventTypeSelection(false);
+                  setShowEventModal(true);
+                }}
+        onSelectRecurring={() => {
+                  setSelectedEventType('recurring');
+                  setShowEventTypeSelection(false);
+                  setShowEventModal(true);
+                }}
+        onSelectDevicePower={() => {
+                  console.log('🔧 [VenueDetailsPage] Device Power Control Event selected, eventDeviceId:', eventDeviceId);
+                  setSelectedEventType('device-power');
+                  setShowEventTypeSelection(false);
+                  setShowEventModal(true);
+                }}
+      />
+
       {/* Event Creation Modal */}
       {showEventModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[99]">
+          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b">
               <h3 className="text-lg font-semibold text-gray-900">
-                {selectedEvent ? 'Edit Event' : 'Create Event'}
+                {selectedEvent?.id ? 'Edit Event' : selectedEventType === 'recurring' ? 'Create Recurring Event' : selectedEventType === 'simple' ? 'Create Simple Event' : selectedEventType === 'device-power' ? 'Create On/Off Device Event' : 'Create Event'}
               </h3>
               <button
                 onClick={() => {
                   setShowEventModal(false);
                   setEventDeviceId(null);
                   setSelectedEvent(null);
+                  setSelectedEventType(null);
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1245,23 +1314,71 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
               <EventForm 
                 onSubmit={async (eventData) => {
                   try {
-                    const response = await adminAPI.createEvent(eventData);
-                    toast.success(response.data?.message || 'Event created successfully');
+                    console.log('📅 [VenueDetailsPage] Event form submitted:', {
+                      isUpdate: !!selectedEvent?.id,
+                      eventId: selectedEvent?.id,
+                      eventData: eventData
+                    });
+                    
+                    let response;
+                    if (selectedEvent?.id) {
+                      // Update existing event
+                      console.log('📅 [VenueDetailsPage] Updating event:', selectedEvent.id);
+                      response = await adminAPI.updateEvent(selectedEvent.id, eventData);
+                      console.log('📅 [VenueDetailsPage] Update event response:', response);
+                      toast.success(response.data?.message || 'Event updated successfully');
+                    } else {
+                      // Create new event
+                      console.log('📅 [VenueDetailsPage] Creating new event with data:', eventData);
+                      response = await adminAPI.createEvent(eventData);
+                      console.log('📅 [VenueDetailsPage] Create event response:', response);
+                      console.log('📅 [VenueDetailsPage] Response structure:', {
+                        hasData: !!response.data,
+                        hasDataData: !!response.data?.data,
+                        hasEvent: !!response.data?.data?.event,
+                        success: response.data?.success,
+                        message: response.data?.message
+                      });
+                      toast.success(response.data?.message || 'Event created successfully');
+                    }
+                    
                     setShowEventModal(false);
                     setEventDeviceId(null);
-                    // Reload events
+                    setSelectedEvent(null);
+                    setSelectedEventType(null);
+                    
+                    // Reload events in venue detail page
+                    console.log('📅 [VenueDetailsPage] Reloading venue data...');
                     await loadVenueData();
+                    console.log('📅 [VenueDetailsPage] Venue data reloaded');
+                    
+                    // Notify parent component to reload events list (for AdminDashboard)
+                    // Add delay to ensure backend has processed the event
+                    if (onEventCreated) {
+                      console.log('📅 [VenueDetailsPage] Calling onEventCreated callback...');
+                      setTimeout(async () => {
+                        console.log('📅 [VenueDetailsPage] Executing onEventCreated callback');
+                        await onEventCreated();
+                        console.log('📅 [VenueDetailsPage] onEventCreated callback completed');
+                      }, 800);
+                    } else {
+                      console.warn('⚠️ [VenueDetailsPage] onEventCreated callback not provided');
+                    }
                   } catch (error) {
-                    console.error('Error creating event:', error);
-                    toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to create event');
+                    console.error('❌ [VenueDetailsPage] Error saving event:', error);
+                    console.error('❌ [VenueDetailsPage] Error response:', error.response?.data);
+                    toast.error(error.response?.data?.message || error.response?.data?.error || `Failed to ${selectedEvent?.id ? 'update' : 'create'} event`);
                   }
                 }}
                 onCancel={() => {
                   setShowEventModal(false);
                   setEventDeviceId(null);
+                  setSelectedEventType(null);
                 }}
-                event={eventDeviceId ? { deviceId: eventDeviceId } : null}
+                event={selectedEvent || (eventDeviceId ? { deviceId: String(eventDeviceId) } : null)}
                 acs={devices}
+                eventType={selectedEventType}
+                disableDeviceSelection={!!((eventDeviceId || selectedEvent?.deviceId) && !selectedEvent?.id)}
               />
             </div>
           </div>
@@ -1272,3 +1389,4 @@ const VenueDetailsPage = ({ venueIdProp, hideHeader = false, onVenueChange }) =>
 };
 
 export default VenueDetailsPage;
+

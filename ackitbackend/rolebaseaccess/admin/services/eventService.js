@@ -13,6 +13,13 @@ class EventService {
     const transaction = await Event.sequelize.transaction();
 
     try {
+      // CRITICAL: Convert adminId to integer to ensure type matching with database
+      const adminIdInt = parseInt(adminId, 10);
+      if (isNaN(adminIdInt)) {
+        throw new Error(`Invalid adminId: ${adminId}`);
+      }
+      console.log("📅 EventService.createEvent - adminId:", adminId, "→ converted to:", adminIdInt);
+
       // Validate required fields
       if (
         !eventData.name ||
@@ -35,20 +42,43 @@ class EventService {
         throw new Error("deviceId is required for device events");
       }
 
-      // Validate temperature - temperature is REQUIRED for events
-      if (
-        eventData.temperature === null ||
-        eventData.temperature === undefined ||
-        eventData.temperature === ""
-      ) {
-        throw new Error("Temperature is required for events");
-      }
+      // Check if this is a device-power (on/off) event
+      const isDevicePowerEvent = eventData.eventType === "device-power" || 
+                                 eventData.controlDevicePower === true ||
+                                 eventData.controlDevicePower === "true";
 
-      const temperature = parseFloat(eventData.temperature);
-      if (isNaN(temperature) || temperature < 16 || temperature > 30) {
-        throw new Error(
-          "Temperature must be a number between 16 and 30 degrees"
-        );
+      // Validate temperature - temperature is REQUIRED for regular events, NOT for device-power events
+      let temperature = null;
+      if (!isDevicePowerEvent) {
+        // Temperature is required for regular events (simple/recurring)
+        if (
+          eventData.temperature === null ||
+          eventData.temperature === undefined ||
+          eventData.temperature === ""
+        ) {
+          throw new Error("Temperature is required for events");
+        }
+
+        temperature = parseFloat(eventData.temperature);
+        if (isNaN(temperature) || temperature < 16 || temperature > 30) {
+          throw new Error(
+            "Temperature must be a number between 16 and 30 degrees"
+          );
+        }
+      } else {
+        // For device-power events, temperature is optional (can be null)
+        if (eventData.temperature !== null && 
+            eventData.temperature !== undefined && 
+            eventData.temperature !== "") {
+          // If temperature is provided, validate it
+          temperature = parseFloat(eventData.temperature);
+          if (isNaN(temperature) || temperature < 16 || temperature > 30) {
+            throw new Error(
+              "Temperature must be a number between 16 and 30 degrees"
+            );
+          }
+        }
+        // If not provided, temperature will remain null (which is fine for on/off events)
       }
 
       // Check if this is a recurring event
@@ -530,10 +560,13 @@ class EventService {
         }
       }
 
-      // Set temperature when event is created
-      device.temperature = temperature; // Set temperature when event is created
-      device.lastTemperatureChange = new Date();
-      device.changedBy = "admin"; // Admin created the event
+      // Set temperature when event is created (only if temperature is provided)
+      // For device-power events, temperature can be null, so don't update device temperature
+      if (temperature !== null && temperature !== undefined) {
+        device.temperature = temperature; // Set temperature when event is created
+        device.lastTemperatureChange = new Date();
+        device.changedBy = "admin"; // Admin created the event
+      }
       await device.save({ transaction });
 
       // CRITICAL: Sequelize's timezone: "+05:00" setting causes it to convert dates
@@ -574,13 +607,16 @@ class EventService {
         deviceId: eventData.deviceId,
         organizationId: null, // No organization events
         createdBy: "admin",
-        adminId: adminId,
+        adminId: adminIdInt, // Use integer version
         managerId: null,
         startTime: startTime, // Date object - Sequelize will store as UTC TIMESTAMPTZ
         endTime: endTime, // Date object - Sequelize will store as UTC TIMESTAMPTZ
         originalEndTime: endTime, // Store original end time
-        temperature: temperature, // Temperature is required
-        powerOn: true, // Event will turn device ON when it starts
+        temperature: temperature, // Temperature is required for regular events, optional (null) for device-power events
+        powerOn: eventData.controlDevicePower ? true : false, // Turn device on only if power control is enabled
+        controlDevicePower: eventData.controlDevicePower || false,
+        deviceOnTime: eventData.controlDevicePower && eventData.deviceOnTime ? (isRecurring ? eventData.deviceOnTime : new Date(eventData.deviceOnTime)) : null,
+        deviceOffTime: eventData.controlDevicePower && eventData.deviceOffTime ? (isRecurring ? eventData.deviceOffTime : new Date(eventData.deviceOffTime)) : null,
         status: initialStatus || "scheduled", // "active" for immediate start, "scheduled" for recurring - ensure always valid
         parentAdminEventId: null,
         isDisabled: false,
@@ -619,7 +655,25 @@ class EventService {
         ),
       });
 
+      console.log("📅 [EventService] Creating event with data:", {
+        adminId: adminIdInt, // Use integer version
+        createdBy: "admin",
+        name: eventDataToCreate.name,
+        deviceId: eventDataToCreate.deviceId,
+        eventType: eventDataToCreate.eventType,
+        startTime: eventDataToCreate.startTime?.toISOString(),
+        endTime: eventDataToCreate.endTime?.toISOString()
+      });
+      
       const event = await Event.create(eventDataToCreate, { transaction });
+
+      console.log("✅ [EventService] Event created successfully:", {
+        eventId: event.id,
+        adminId: event.adminId,
+        createdBy: event.createdBy,
+        name: event.name,
+        deviceId: event.deviceId
+      });
 
       // CRITICAL: Log what was actually stored
       console.log("📅 Event stored, retrieved times:", {
@@ -709,6 +763,14 @@ class EventService {
               `✅ [EVENT-CREATE] Starting temperature sync to ${temperature}°C for device ${device.serialNumber}`
             );
 
+            // Determine event type for ESP32
+            let eventTypeStr = "simple";
+            if (event.isRecurring) {
+              eventTypeStr = "recurring";
+            } else if (event.controlDevicePower) {
+              eventTypeStr = "device-power";
+            }
+
             // Send event status message with temperature to show on device
             await ESPService.sendEventStatusMessage(
               device.serialNumber,
@@ -717,6 +779,9 @@ class EventService {
                 eventId: event.id,
                 eventName: event.name,
                 temperature: temperature,
+                eventType: eventTypeStr,
+                controlDevicePower: event.controlDevicePower || false,
+                powerOn: event.controlDevicePower ? (event.powerOn || false) : undefined,
               }
             );
             await ESPService.sendEventStatusMessage(
@@ -725,6 +790,8 @@ class EventService {
               {
                 eventId: event.id,
                 temperature: temperature,
+                eventType: eventTypeStr,
+                controlDevicePower: event.controlDevicePower || false,
               }
             );
             console.log(
@@ -749,6 +816,14 @@ class EventService {
             );
           }
 
+          // Determine event type for ESP32
+          let eventTypeStr = "simple";
+          if (event.isRecurring) {
+            eventTypeStr = "recurring";
+          } else if (event.controlDevicePower) {
+            eventTypeStr = "device-power";
+          }
+
           // Send event status message to ESP device (always send, even if device is OFF)
           if (!device.isOn) {
             await ESPService.sendEventStatusMessage(
@@ -758,6 +833,9 @@ class EventService {
                 eventId: event.id,
                 eventName: event.name,
                 temperature: temperature,
+                eventType: eventTypeStr,
+                controlDevicePower: event.controlDevicePower || false,
+                powerOn: event.controlDevicePower ? (event.powerOn || false) : undefined,
               }
             );
           }
@@ -821,14 +899,21 @@ class EventService {
   static async getAdminEvents(adminId, filters = {}) {
     try {
       console.log("📅 EventService.getAdminEvents - Starting query");
-      console.log("- adminId:", adminId);
+      console.log("- adminId:", adminId, "Type:", typeof adminId);
       console.log("- filters:", filters);
 
       const { Op } = require("sequelize");
 
+      // CRITICAL: Convert adminId to integer to ensure type matching with database
+      const adminIdInt = parseInt(adminId, 10);
+      if (isNaN(adminIdInt)) {
+        throw new Error(`Invalid adminId: ${adminId}`);
+      }
+      console.log("- adminId converted to integer:", adminIdInt);
+
       // Include both admin and manager events for this admin
       const where = {
-        adminId: adminId,
+        adminId: adminIdInt, // Use integer version
         [Op.or]: [
           { createdBy: "admin" },
           { createdBy: "manager" }, // Manager events also have adminId
@@ -843,7 +928,19 @@ class EventService {
         where.eventType = filters.eventType;
       }
 
-      console.log("- where clause:", where);
+      console.log("- where clause:", JSON.stringify(where, null, 2));
+
+      // DEBUG: Check if any events exist with this adminId (before filtering)
+      const allEventsForAdmin = await Event.findAll({
+        where: { adminId: adminIdInt },
+        attributes: ['id', 'name', 'adminId', 'createdBy', 'status', 'eventType', 'deviceId'],
+        raw: true,
+        limit: 10
+      });
+      console.log(`🔍 [DEBUG] Total events in DB with adminId ${adminIdInt}:`, allEventsForAdmin.length);
+      if (allEventsForAdmin.length > 0) {
+        console.log("🔍 [DEBUG] Sample events found:", JSON.stringify(allEventsForAdmin, null, 2));
+      }
 
       const Venue = require("../../../models/Venue/venue");
       const Manager = require("../../../models/Roleaccess/manager");
@@ -856,13 +953,13 @@ class EventService {
             model: AC,
             as: "device",
             attributes: ["id", "name", "serialNumber", "venueId"],
-            required: false,
+            required: false, // LEFT JOIN - don't filter out events without device
             include: [
               {
                 model: Venue,
                 as: "venue",
                 attributes: ["id", "name", "organizationId"],
-                required: false,
+                required: false, // LEFT JOIN - don't filter out events without venue
               },
             ],
           },
@@ -878,6 +975,8 @@ class EventService {
           ["startTime", "ASC"],
         ],
       });
+
+      console.log(`📅 EventService.getAdminEvents - Found ${events.length} events after query`);
 
       // Manually add organization info if needed
       // Get all organizationIds from venues
@@ -944,6 +1043,31 @@ class EventService {
           events.filter((e) => e.createdBy === "manager").length
         } manager)`
       );
+      
+      // Debug: Log first few events for debugging
+      if (events.length > 0) {
+        console.log("📅 [EventService] Sample events found:", events.slice(0, 3).map(e => ({
+          id: e.id,
+          name: e.name,
+          adminId: e.adminId,
+          createdBy: e.createdBy,
+          deviceId: e.deviceId
+        })));
+      } else {
+        console.warn("⚠️ [EventService] No events found for adminId:", adminIdInt);
+        // Check if there are ANY events in database
+        const allEventsCount = await Event.count();
+        console.log("📅 [EventService] Total events in database:", allEventsCount);
+        if (allEventsCount > 0) {
+          // Check what adminIds exist
+          const sampleEvents = await Event.findAll({
+            limit: 5,
+            attributes: ['id', 'name', 'adminId', 'createdBy', 'deviceId'],
+            raw: true
+          });
+          console.log("📅 [EventService] Sample events from database (all admins):", sampleEvents);
+        }
+      }
 
       // Convert Sequelize instances to plain objects for JSON serialization
       // CRITICAL: Ensure startTime and endTime are returned as UTC ISO strings
@@ -1136,12 +1260,22 @@ class EventService {
                 device.serialNumber,
                 event.temperature
               );
+              // Determine event type for ESP32
+              let eventTypeStr = "simple";
+              if (event.isRecurring) {
+                eventTypeStr = "recurring";
+              } else if (event.controlDevicePower) {
+                eventTypeStr = "device-power";
+              }
+
               await ESPService.sendEventStatusMessage(
                 device.serialNumber,
                 "event temp",
                 {
                   eventId: event.id,
                   temperature: event.temperature,
+                  eventType: eventTypeStr,
+                  controlDevicePower: event.controlDevicePower || false,
                 }
               );
             }
@@ -1274,7 +1408,7 @@ class EventService {
 
       // DISABLED: Auto-delete is now disabled - stopped events will remain in database for history
       // Events will stay in database even after being stopped for records and history
-      console.log(
+            console.log(
         `✅ Stopped event: ${event.name} (ID: ${eventId}) - Will remain in database (auto-delete disabled)`
       );
 

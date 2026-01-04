@@ -85,20 +85,23 @@ class ACService {
       if (!acData.ton) {
         console.log("❌ Ton validation failed!");
         throw new Error(
-          "Ton is required. Please select: 0.5, 1, 1.5, or 2 ton"
+          "Ton is required. Please select AC capacity in tons (1 to 10 ton)"
         );
       }
 
-      // Validate ton value is one of the allowed values
-      const allowedTons = ["0.5", "1", "1.5", "2"];
-      if (!allowedTons.includes(acData.ton)) {
-        throw new Error("Invalid ton value. Must be one of: 0.5, 1, 1.5, or 2");
+      // Validate ton value is between 1 and 10
+      const tonValue = parseFloat(acData.ton);
+      if (isNaN(tonValue) || tonValue < 1 || tonValue > 10 || !Number.isInteger(tonValue)) {
+        throw new Error("Invalid ton value. Must be an integer between 1 and 10 ton");
       }
+
+      // Convert ton to string to match ENUM format
+      const tonString = String(Math.floor(tonValue));
 
       console.log("✅ Venue ID validation passed");
       console.log("✅ Ton validation passed");
       console.log("- Final venueId value:", acData.venueId);
-      console.log("- Ton value:", acData.ton);
+      console.log("- Ton value:", tonString);
 
       // Verify that the venue belongs to this admin
       const venue = await Venue.findOne({
@@ -128,7 +131,7 @@ class ACService {
         name: acData.name,
         brand: acData.brand,
         model: acData.model,
-        ton: acData.ton, // Required field
+        ton: tonString, // Required field - converted to string for ENUM
         serialNumber: serialNumber,
         key: key,
         venueId: acData.venueId,
@@ -338,6 +341,19 @@ class ACService {
               `⚠️ [LOCK] Failed to send lock command to ESP32: ${ac.serialNumber} - ${result.message}`
             );
           }
+          
+          // Broadcast lock update to frontend
+          ESPService.broadcastToFrontend({
+            type: "LOCK_UPDATE",
+            serial: ac.serialNumber,
+            serialNumber: ac.serialNumber,
+            locked: action === "lock" ? 1 : 0,
+            venueId: ac.venueId,
+            timestamp: new Date().toISOString(),
+          });
+          console.log(
+            `📡 [LOCK] Broadcasted ${action === "lock" ? "LOCK" : "UNLOCK"} update to frontend`
+          );
         } else {
           console.log(
             `⚠️ [LOCK] AC ${ac.id} has no serial number, cannot send lock command`
@@ -504,6 +520,8 @@ class ACService {
           "lockReason",
           "lockedBy",
           "venueId",
+          "totalEnergyConsumed",
+          "lastEnergyCalculation",
           "createdAt",
           "updatedAt",
         ],

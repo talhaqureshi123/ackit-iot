@@ -33,6 +33,9 @@ class EventScheduler {
           await this.checkAndStartEvents();
           await this.checkAndEndEvents();
 
+          // Check for scheduled events that should be removed if device didn't connect within 5 seconds after end time
+          await this.checkAndRemoveOfflineEvents();
+
           // Check for events to auto-delete (waiting, started, complete, completed) every second
           await this.checkAndAutoDeleteEvents();
 
@@ -272,6 +275,20 @@ class EventScheduler {
 
       for (const event of eventsToStart) {
         try {
+          // Check if device is connected before starting event
+          if (event.deviceId) {
+            const device = await AC.findByPk(event.deviceId);
+            if (device && device.serialNumber) {
+              const isConnected = ESPService.isDeviceConnected(device.serialNumber);
+              if (!isConnected) {
+                console.log(
+                  `⚠️ [SCHEDULER] Event ${event.id} (${event.name}) scheduled but device ${device.serialNumber} is offline. Event will start when device connects.`
+                );
+                continue; // Skip starting event, keep it scheduled
+              }
+            }
+          }
+
           if (event.createdBy === "admin") {
             await EventService.startEvent(event.adminId, event.id);
             console.log(
@@ -417,6 +434,14 @@ class EventScheduler {
                     `✅ [EVENT] Auto-completed - Turned OFF device ${device.serialNumber}`
                   );
 
+                  // Determine event type for ESP32
+                  let eventTypeStr = "simple";
+                  if (event.isRecurring) {
+                    eventTypeStr = "recurring";
+                  } else if (event.controlDevicePower) {
+                    eventTypeStr = "device-power";
+                  }
+
                   // Send "event end" message to ESP device
                   ESPService.sendEventStatusMessage(
                     device.serialNumber,
@@ -425,6 +450,9 @@ class EventScheduler {
                       eventId: event.id,
                       eventName: event.name,
                       temperature: event.temperature,
+                      eventType: eventTypeStr,
+                      controlDevicePower: event.controlDevicePower || false,
+                      powerOff: event.controlDevicePower ? true : undefined,
                     }
                   );
                 }
@@ -463,7 +491,7 @@ class EventScheduler {
 
             // DISABLED: Auto-delete is now disabled - completed events will remain in database for history
             // Events will stay in database even after completion for records and history
-            console.log(
+                  console.log(
               `✅ Completed admin event: ${event.name} (ID: ${event.id}) - Will remain in database (auto-delete disabled)`
             );
           } else if (event.createdBy === "manager") {
@@ -508,6 +536,14 @@ class EventScheduler {
                     `✅ [EVENT] Auto-completed manager event - Turned OFF device ${device.serialNumber}`
                   );
 
+                  // Determine event type for ESP32
+                  let eventTypeStr = "simple";
+                  if (event.isRecurring) {
+                    eventTypeStr = "recurring";
+                  } else if (event.controlDevicePower) {
+                    eventTypeStr = "device-power";
+                  }
+
                   // Send "event end" message to ESP device
                   ESPService.sendEventStatusMessage(
                     device.serialNumber,
@@ -516,6 +552,9 @@ class EventScheduler {
                       eventId: event.id,
                       eventName: event.name,
                       temperature: event.temperature,
+                      eventType: eventTypeStr,
+                      controlDevicePower: event.controlDevicePower || false,
+                      powerOff: event.controlDevicePower ? true : undefined,
                     }
                   );
                 }
@@ -554,7 +593,7 @@ class EventScheduler {
 
             // DISABLED: Auto-delete is now disabled - completed events will remain in database for history
             // Events will stay in database even after completion for records and history
-            console.log(
+                  console.log(
               `✅ Completed manager event: ${event.name} (ID: ${event.id}) - Will remain in database (auto-delete disabled)`
             );
           }
@@ -570,60 +609,193 @@ class EventScheduler {
     }
   }
 
-  // Check and auto-delete events with specific statuses after 5 seconds
+  // Check for scheduled events that should be removed if device didn't connect within 5 seconds after end time
+  static async checkAndRemoveOfflineEvents() {
+    try {
+      const now = timezoneUtils.getCurrentUTCTime();
+      const nowUTCString = now.toISOString();
+      const fiveSecondsAgo = new Date(now.getTime() - 5000);
+      const fiveSecondsAgoUTCString = fiveSecondsAgo.toISOString();
+
+      // Find scheduled events whose endTime has passed more than 5 seconds ago
+      // These events should have started but device was offline, so remove them
+      const eventsToRemove = await Event.findAll({
+        where: {
+          status: "scheduled",
+          isDisabled: false,
+          [Op.and]: [
+            Sequelize.literal(
+              `"endTime" AT TIME ZONE 'UTC' <= '${fiveSecondsAgoUTCString}'::timestamptz`
+            ),
+          ],
+        },
+      });
+
+      for (const event of eventsToRemove) {
+        try {
+          // Check if device is still offline
+          if (event.deviceId) {
+            const device = await AC.findByPk(event.deviceId);
+            if (device && device.serialNumber) {
+              const isConnected = ESPService.isDeviceConnected(device.serialNumber);
+              if (!isConnected) {
+                // Device is still offline and event end time + 5 seconds has passed - remove event
+                const eventName = event.name;
+                const eventId = event.id;
+                const createdBy = event.createdBy;
+                
+                await event.destroy();
+                console.log(
+                  `🗑️ Removed scheduled event ${eventName} (ID: ${eventId}) - Device ${device.serialNumber} did not connect within 5 seconds after end time`
+                );
+
+                // Broadcast deletion to frontend
+                try {
+                  ESPService.broadcastToFrontend({
+                    type: "EVENT_DELETED",
+                    eventId: eventId,
+                    eventName: eventName,
+                    device_id: device.serialNumber,
+                    serialNumber: device.serialNumber,
+                    createdBy: createdBy,
+                    reason: "Device offline - event end time passed",
+                    timestamp: new Date().toISOString(),
+                  });
+                } catch (broadcastError) {
+                  console.error("⚠️ Error broadcasting event removed:", broadcastError);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error(
+            `❌ Error removing offline event ${event.id}:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error checking offline events to remove:", error);
+    }
+  }
+
+  // Check and auto-delete events after 5 seconds
+  // CRITICAL FIX: Only delete COMPLETED events that have ended more than 5 seconds ago
+  // DO NOT delete:
+  // - Active events (they're still running)
+  // - Scheduled events (they haven't started yet)
+  // - Recurring event templates (they generate instances)
+  // - Events that were just completed (wait 5 seconds after completion)
   static async checkAndAutoDeleteEvents() {
     try {
       const now = timezoneUtils.getCurrentUTCTime();
 
-      // Find events with status: scheduled (waiting), active (started), or completed
-      // that have been in that status for more than 5 seconds
-      // Note: Frontend shows "waiting" for scheduled events, "started" for active events
+      // CRITICAL: Only delete COMPLETED events that ended more than 5 seconds ago
+      // Events are marked as "completed" when they end, then deleted 5 seconds later
       const fiveSecondsAgo = new Date(now.getTime() - 5000);
 
+      // Find COMPLETED events whose endTime has passed more than 5 seconds ago
+      // AND whose completedAt is also more than 5 seconds ago (to ensure they were completed at least 5 seconds ago)
       const eventsToDelete = await Event.findAll({
         where: {
-          [Op.or]: [
-            { status: "scheduled" }, // Frontend shows as "waiting"
-            { status: "active" }, // Frontend shows as "started" or "In Process"
-            { status: "completed" },
+          [Op.and]: [
+            {
+              // CRITICAL: Only delete COMPLETED events
+              status: "completed",
+            },
+            {
+              // CRITICAL: Do NOT delete recurring event templates (they generate instances)
+              isRecurring: false,
+            },
+            {
+              // CRITICAL: Only delete if endTime has passed more than 5 seconds ago
+              endTime: {
+                [Op.lte]: fiveSecondsAgo, // endTime was more than 5 seconds ago
+              },
+            },
+            {
+              // CRITICAL: Only delete if completedAt exists and is more than 5 seconds ago
+              // This ensures the event was actually completed at least 5 seconds ago
+              completedAt: {
+                [Op.not]: null, // Must have completedAt timestamp
+                [Op.lte]: fiveSecondsAgo, // Completed more than 5 seconds ago
+              },
+            },
           ],
-          updatedAt: {
-            [Op.lte]: fiveSecondsAgo, // Updated more than 5 seconds ago
-          },
         },
       });
 
       for (const event of eventsToDelete) {
         try {
-          // Double-check status before deleting
+          // Double-check status and endTime before deleting
           const eventToDelete = await Event.findByPk(event.id);
           if (!eventToDelete) continue;
 
           const status = eventToDelete.status;
-          // DISABLED: Auto-delete is now disabled - events will remain in database
-          // Only delete if status is scheduled or active (NOT completed)
-          // Completed events should remain for history/records
-          if (
-            status === "scheduled" ||
-            status === "active"
-          ) {
-            // For scheduled/active events, only delete if end time has passed
-            if (
-              (status === "scheduled" || status === "active") &&
-              eventToDelete.endTime &&
-              eventToDelete.endTime > now
-            ) {
-              continue; // Don't delete if end time hasn't passed yet
-            }
+          const endTime = eventToDelete.endTime;
 
-            const eventName = eventToDelete.name;
-            const eventId = eventToDelete.id;
-            const createdBy = eventToDelete.createdBy;
-
-            await eventToDelete.destroy();
+          // CRITICAL SAFETY CHECK: Double-check that endTime has passed more than 5 seconds ago
+          if (!endTime) {
             console.log(
-              `🗑️ Auto-deleted ${status} ${createdBy} event: ${eventName} (ID: ${eventId}) after 5 seconds`
+              `⏭️ Skipping deletion of event ${eventToDelete.id} - no endTime set`
             );
+            continue;
+          }
+
+          // CRITICAL SAFETY CHECK: Verify event is actually completed
+          if (status !== "completed") {
+            console.log(
+              `⏭️ Skipping deletion of event ${eventToDelete.id} - status is "${status}", not "completed"`
+            );
+            continue; // Only delete completed events
+          }
+
+          // CRITICAL SAFETY CHECK: Do NOT delete recurring event templates
+          if (eventToDelete.isRecurring) {
+            console.log(
+              `⏭️ Skipping deletion of event ${eventToDelete.id} - is recurring event template (should not be deleted)`
+            );
+            continue; // Recurring templates should never be deleted
+          }
+
+          // CRITICAL SAFETY CHECK: Verify completedAt exists and is more than 5 seconds ago
+          const completedAt = eventToDelete.completedAt;
+          if (!completedAt) {
+            console.log(
+              `⏭️ Skipping deletion of event ${eventToDelete.id} - no completedAt timestamp`
+            );
+            continue;
+          }
+
+          const completedAtPlus5Seconds = new Date(completedAt.getTime() + 5000);
+          if (completedAtPlus5Seconds > now) {
+            console.log(
+              `⏭️ Skipping deletion of event ${eventToDelete.id} - completedAt (${completedAt}) + 5 seconds (${completedAtPlus5Seconds}) hasn't passed yet (now: ${now})`
+            );
+            continue; // Don't delete if completed less than 5 seconds ago
+          }
+
+          // Double-check endTime has passed more than 5 seconds ago
+          const endTimePlus5Seconds = new Date(endTime.getTime() + 5000);
+          if (endTimePlus5Seconds > now) {
+            console.log(
+              `⏭️ Skipping deletion of event ${eventToDelete.id} - endTime (${endTime}) + 5 seconds (${endTimePlus5Seconds}) hasn't passed yet (now: ${now})`
+            );
+            continue; // Don't delete if endTime + 5 seconds hasn't passed
+          }
+
+          // All checks passed - event can be deleted
+          console.log(
+            `✅ Event ${eventToDelete.id} (${status}) eligible for deletion - endTime (${endTime}) and completedAt (${completedAt}) passed more than 5 seconds ago`
+          );
+          const eventName = eventToDelete.name;
+          const eventId = eventToDelete.id;
+          const createdBy = eventToDelete.createdBy;
+
+          await eventToDelete.destroy();
+          console.log(
+            `🗑️ Auto-deleted ${status} ${createdBy} event: ${eventName} (ID: ${eventId}) after 5 seconds`
+          );
 
             // Broadcast deletion to frontend - CRITICAL: Broadcast to ALL clients
             try {
@@ -661,7 +833,6 @@ class EventScheduler {
                 broadcastError
               );
             }
-          }
         } catch (deleteError) {
           console.error(
             `❌ Error auto-deleting event ${event.id}:`,

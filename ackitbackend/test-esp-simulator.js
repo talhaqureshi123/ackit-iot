@@ -15,7 +15,7 @@ const { AC } = require("./models");
 // ============================================
 // Use same IP as backend server (from config or auto-detect)
 const serverConfig = require("./config/server.config");
-const SERVER_IP = serverConfig.SERVER_IP || "192.168.1.105";
+const SERVER_IP = serverConfig.SERVER_IP || "10.74.252.140";
 const SERVER_PORT = 5050; // WebSocket port (not HTTP port)
 const SERIAL_NUMBER = "AC-919834-359";
 const WEBSOCKET_PATH = "/esp32";
@@ -27,14 +27,34 @@ const RAILWAY_BACKEND_URL =
   process.env.RAILWAY_BACKEND_URL ||
   "https://ackit-iot-production.up.railway.app";
 const USE_RAILWAY = (() => {
+  // Debug: Log command line arguments
+  console.log("🔍 [DEBUG] Command line arguments:", process.argv);
+  console.log("🔍 [DEBUG] Environment variables:", {
+    RAILWAY_BACKEND_URL: process.env.RAILWAY_BACKEND_URL,
+    USE_RAILWAY: process.env.USE_RAILWAY
+  });
+  
   // Explicit flags take priority
-  if (process.argv.includes("--local")) return false;
-  if (process.argv.includes("--railway")) return true;
+  if (process.argv.includes("--local")) {
+    console.log("✅ [DEBUG] --local flag detected, forcing local mode");
+    return false;
+  }
+  if (process.argv.includes("--railway")) {
+    console.log("✅ [DEBUG] --railway flag detected, forcing Railway mode");
+    return true;
+  }
   // If RAILWAY_BACKEND_URL env var is set, use Railway by default
-  if (process.env.RAILWAY_BACKEND_URL) return true;
+  if (process.env.RAILWAY_BACKEND_URL) {
+    console.log("⚠️ [DEBUG] RAILWAY_BACKEND_URL env var found, using Railway mode");
+    return true;
+  }
   // Otherwise check USE_RAILWAY env var
-  if (process.env.USE_RAILWAY === "true") return true;
+  if (process.env.USE_RAILWAY === "true") {
+    console.log("⚠️ [DEBUG] USE_RAILWAY=true env var found, using Railway mode");
+    return true;
+  }
   // Default: Use Railway (production-ready)
+  console.log("⚠️ [DEBUG] No flags found, defaulting to Railway mode");
   return true;
 })();
 

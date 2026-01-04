@@ -91,6 +91,21 @@ const Event = sequelize.define(
       defaultValue: false,
       comment: "Whether to turn power on for this event",
     },
+    controlDevicePower: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: "Whether this event controls device power (on/off)",
+    },
+    deviceOnTime: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When to turn device ON (for non-recurring events, stored as UTC TIMESTAMPTZ; for recurring events, stored as TIME)",
+    },
+    deviceOffTime: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When to turn device OFF (for non-recurring events, stored as UTC TIMESTAMPTZ; for recurring events, stored as TIME)",
+    },
     // Event status
     status: {
       type: DataTypes.ENUM(

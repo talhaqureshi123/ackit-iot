@@ -6,6 +6,7 @@ import { BACKEND_IP, BACKEND_PORT, FRONTEND_WS_PORT, WS_URL } from '../config/ap
 import toast from 'react-hot-toast';
 import EventForm from '../components/EventForm';
 import VenueDetailsPage from './VenueDetailsPage';
+import ActivityLogTable from '../components/superadmin/ActivityLogTable';
 import { 
   Users, 
   Building, 
@@ -28,6 +29,7 @@ import {
   Pause,
   PlayCircle,
   Trash2,
+  Download,
   Edit,
   Plus,
   Minus,
@@ -37,7 +39,8 @@ import {
   BarChart3,
   User,
   UserPlus,
-  ArrowLeft
+  ArrowLeft,
+  Check
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -49,8 +52,37 @@ const AdminDashboard = () => {
   const [alerts, setAlerts] = useState([]);
   const [allAlerts, setAllAlerts] = useState([]); // Store all alerts (including device-level) for device highlighting
   const [alertsLoading, setAlertsLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [deviceViewMode, setDeviceViewMode] = useState('cards'); // 'cards' or 'table'
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    // Close sidebar by default if on dashboard/venue-dashboard tab
+    return false;
+  });
+  const [contentWidth, setContentWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const width = window.innerWidth;
+      if (width >= 1280) {
+        return 'calc(100% - 240px)';
+      } else if (width >= 1024) {
+        return 'calc(100% - 208px)';
+      }
+    }
+    return '100%';
+  });
+  const [contentMarginLeft, setContentMarginLeft] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const width = window.innerWidth;
+      if (width >= 1280) {
+        return '240px';
+      } else if (width >= 1024) {
+        return '208px';
+      }
+    }
+    return '0px';
+  });
+  const [deviceViewMode, setDeviceViewMode] = useState('table'); // 'cards' or 'table'
+  const [energyViewMode, setEnergyViewMode] = useState('device'); // 'device', 'venue', 'organization'
+  const [venueViewMode, setVenueViewMode] = useState('table'); // 'cards' or 'table'
+  const [organizationViewMode, setOrganizationViewMode] = useState('table'); // 'cards' or 'table'
+  const [managerViewMode, setManagerViewMode] = useState('table'); // 'cards' or 'table'
   
   // Create modals state
   const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
@@ -61,6 +93,16 @@ const AdminDashboard = () => {
   // Assign organization modal state
   const [showAssignOrgModal, setShowAssignOrgModal] = useState(false);
   const [selectedOrgForAssign, setSelectedOrgForAssign] = useState(null);
+
+  // Energy download modal state (with filters)
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [energyFilters, setEnergyFilters] = useState({
+    year: null,
+    month: null, // Format: 'YYYY-MM'
+    organizationId: null,
+    venueId: null,
+    deviceId: null
+  });
 
   // Helper functions to check if device/org is actually locked
   // Note: admin dashboard only has remote lock, restricted, and unlocked status
@@ -92,14 +134,32 @@ const AdminDashboard = () => {
   };
 
   // Check if venue devices are remote locked
+  // Venue shows as "Locked" only if ALL devices in the venue are locked (venue was explicitly locked)
+  // If only some devices are locked, venue shows as "Unlocked" (individual device locks don't lock the venue)
   const isVenueDevicesRemoteLocked = (venue) => {
-    if (!venue || !venue.acs || !Array.isArray(venue.acs)) {
+    if (!venue) return false;
+    
+    let venueACs = [];
+    if (venue.acs && Array.isArray(venue.acs)) {
+      venueACs = venue.acs;
+    } else {
       // If venue doesn't have acs array, check if it's in the data.acs
-      const venueACs = Array.isArray(data.acs) ? data.acs.filter(ac => ac.venueId === venue.id) : [];
-    return venueACs.some(ac => ac.currentState === "locked");
+      // Only count devices that specifically belong to this venue (not organization-level devices)
+      venueACs = Array.isArray(data.acs) ? data.acs.filter(ac => {
+        if (venue.organizationId && ac.venueId === venue.organizationId) {
+          return false; // This device belongs to organization, not this venue
+        }
+        return ac.venueId === venue.id;
+      }) : [];
     }
-    // Check if any AC in the venue has currentState === "locked"
-    return venue.acs.some(ac => ac.currentState === "locked");
+    
+    // Venue is locked only if ALL devices in the venue are locked
+    // If no devices, venue is not locked
+    if (venueACs.length === 0) return false;
+    
+    // Check if ALL devices are locked (not just some)
+    const allDevicesLocked = venueACs.every(ac => ac.currentState === "locked");
+    return allDevicesLocked;
   };
 
   // Check if a device is remote locked
@@ -125,6 +185,22 @@ const AdminDashboard = () => {
   const [selectedVenueId, setSelectedVenueId] = useState(null); // For sidebar venue details
   const [showACDetailsModal, setShowACDetailsModal] = useState(false);
   const [selectedACDetails, setSelectedACDetails] = useState(null);
+
+  // Debug: Log modal state changes
+  useEffect(() => {
+    console.log('🔍 Modal state changed:', {
+      showACDetailsModal,
+      selectedACDetails: selectedACDetails ? { id: selectedACDetails.id, name: selectedACDetails.name } : null,
+      shouldRender: showACDetailsModal && selectedACDetails
+    });
+    if (showACDetailsModal && selectedACDetails) {
+      console.log('✅ Modal should be visible now!');
+    } else if (showACDetailsModal && !selectedACDetails) {
+      console.warn('⚠️ Modal state is true but selectedACDetails is null!');
+    } else if (!showACDetailsModal && selectedACDetails) {
+      console.warn('⚠️ selectedACDetails is set but modal state is false!');
+    }
+  }, [showACDetailsModal, selectedACDetails]);
   const [energyData, setEnergyData] = useState({
     acs: {},
     organizations: {}
@@ -133,10 +209,22 @@ const AdminDashboard = () => {
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventActionLoading, setEventActionLoading] = useState({});
   const [showEventModal, setShowEventModal] = useState(false);
+  const [showEventTypeSelection, setShowEventTypeSelection] = useState(false);
+  const [selectedEventType, setSelectedEventType] = useState(null); // 'simple' or 'recurring'
   const [selectedEvent, setSelectedEvent] = useState(null);
+
+  // Debug: Log when showEventTypeSelection changes
+  useEffect(() => {
+    console.log('🔧 [AdminDashboard] showEventTypeSelection changed to:', showEventTypeSelection);
+    console.log('🔧 [AdminDashboard] selectedEvent:', selectedEvent);
+    console.log('🔧 [AdminDashboard] showEventModal:', showEventModal);
+  }, [showEventTypeSelection, selectedEvent, showEventModal]);
   const [localTemperatures, setLocalTemperatures] = useState({});
   const [temperatureLoading, setTemperatureLoading] = useState({});
   const [acPowerLoading, setAcPowerLoading] = useState({});
+  
+  // Track connected devices (Set of serialNumbers)
+  const [connectedDevices, setConnectedDevices] = useState(new Set());
 
   // Helper function to check if error is a restriction error
   const isRestrictionError = (error) => {
@@ -171,7 +259,7 @@ const AdminDashboard = () => {
           await loadData();
           loadAlerts();
           // Load events on initial mount to get accurate count for tab badge
-          loadEvents();
+          await loadEvents();
         } else {
           console.warn('⚠️ admin Dashboard - User not authenticated or wrong role');
         }
@@ -184,20 +272,62 @@ const AdminDashboard = () => {
     
     // Native WebSocket connection for real-time updates
     // Use WS_URL from config (handles Railway URL automatically)
-    const socket = new WebSocket(WS_URL);
+    // Note: WebSocket is optional - app works without it (with polling fallback)
+    let socket = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 3;
     
-    socket.onopen = () => {
-      console.log('✅ WebSocket connected to backend');
-    };
-    
-    socket.onmessage = (event) => {
+    const connectWebSocket = () => {
+      try {
+        socket = new WebSocket(WS_URL);
+        
+        socket.onopen = () => {
+          console.log('✅ WebSocket connected to backend');
+          reconnectAttempts = 0; // Reset on successful connection
+        };
+        
+        socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
         console.log('📨 WebSocket message received:', message);
         
+        // Handle device connection status
+        if (message.type === 'DEVICE_CONNECTED' && (message.serial || message.serialNumber)) {
+          const serialNumber = message.serial || message.serialNumber;
+          setConnectedDevices(prev => new Set([...prev, serialNumber]));
+          console.log(`✅ [DASHBOARD] Device ${serialNumber} marked as CONNECTED`);
+        }
+        
+        // Handle device disconnection
+        if (message.type === 'DEVICE_DISCONNECTED' && (message.serial || message.serialNumber)) {
+          const serialNumber = message.serial || message.serialNumber;
+          setConnectedDevices(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(serialNumber);
+            return newSet;
+          });
+          console.log(`❌ [DASHBOARD] Device ${serialNumber} marked as DISCONNECTED`);
+        }
+        
         // Handle direct POWER_UPDATE, TEMP_UPDATE, LOCK_UPDATE from ESP32
-        if (message.serial && (message.type === 'POWER_UPDATE' || message.type === 'TEMP_UPDATE' || message.type === 'LOCK_UPDATE')) {
-          const serialNumber = message.serial;
+        // Only update if device is actually connected (prevent false data)
+        if ((message.serial || message.serialNumber) && (message.type === 'POWER_UPDATE' || message.type === 'TEMP_UPDATE' || message.type === 'LOCK_UPDATE')) {
+          const serialNumber = message.serial || message.serialNumber;
+          
+          // Check if device is connected before updating (using functional update to get latest state)
+          let isConnected = false;
+          setConnectedDevices(prev => {
+            isConnected = prev.has(serialNumber);
+            if (!isConnected) {
+              console.warn(`⚠️ [DASHBOARD] Blocked ${message.type} update - Device ${serialNumber} not connected (preventing false data)`);
+            }
+            return prev; // Don't modify state - only check
+          });
+          
+          // Only proceed with update if device is connected
+          if (!isConnected) {
+            return; // Prevent false data updates
+          }
           setData(prevData => ({
             ...prevData,
             acs: prevData.acs.map(ac => {
@@ -214,6 +344,7 @@ const AdminDashboard = () => {
                 }
                 if (message.type === 'LOCK_UPDATE' && message.locked !== undefined) {
                   const isLocked = message.locked === 1;
+                  console.log(`🔒 [DASHBOARD] Device ${serialNumber} lock updated: ${ac.currentState} → ${isLocked ? 'locked' : 'unlocked'}`);
                   updated.currentState = isLocked ? 'locked' : 'unlocked';
                 }
                 return updated;
@@ -249,6 +380,36 @@ const AdminDashboard = () => {
                 return ac;
               })
             }));
+            
+            // Check and update venue power status if all devices are on/off
+            if (update.venueId && update.isOn !== undefined) {
+              const venueId = update.venueId;
+              setData(prevData => {
+                const venueACs = prevData.acs.filter(ac => ac.venueId === venueId);
+                const allDevicesOn = venueACs.length > 0 && venueACs.every(ac => ac.isOn === true);
+                const allDevicesOff = venueACs.length > 0 && venueACs.every(ac => ac.isOn === false);
+                
+                if (allDevicesOn || allDevicesOff) {
+                  return {
+                    ...prevData,
+                    organizations: prevData.organizations.map(org => {
+                      const updatedVenues = (org.venues || []).map(venue => {
+                        if (venue.id === venueId) {
+                          const newVenueState = allDevicesOn;
+                          if (venue.isVenueOn !== newVenueState) {
+                            console.log(`🏢 [DASHBOARD] Venue ${venue.name} power auto-updated: ${venue.isVenueOn} → ${newVenueState} (all devices ${allDevicesOn ? 'ON' : 'OFF'})`);
+                            return { ...venue, isVenueOn: newVenueState };
+                          }
+                        }
+                        return venue;
+                      });
+                      return { ...org, venues: updatedVenues };
+                    })
+                  };
+                }
+                return prevData;
+              });
+            }
             
             // Show toast notification for changes
             if (update.changedBy === 'esp_local') {
@@ -386,6 +547,37 @@ const AdminDashboard = () => {
           });
         }
 
+        // Handle venue power update
+        if (message.type === 'VENUE_POWER_UPDATE') {
+          console.log('🏢 [DASHBOARD] Venue power update received:', message);
+          setData(prevData => ({
+            ...prevData,
+            organizations: prevData.organizations.map(org => {
+              // Update venue in organization
+              const updatedVenues = (org.venues || []).map(venue => {
+                if (venue.id === message.venueId) {
+                  console.log(`🏢 [DASHBOARD] Venue ${venue.name} power updated: ${venue.isVenueOn} → ${message.isVenueOn}`);
+                  return { ...venue, isVenueOn: message.isVenueOn };
+                }
+                return venue;
+              });
+              
+              // Update organization if it has this venue
+              if (updatedVenues.length > 0 && updatedVenues.some(v => v.id === message.venueId)) {
+                return { ...org, venues: updatedVenues };
+              }
+              return org;
+            }),
+            // Also update ACs in this venue
+            acs: prevData.acs.map(ac => {
+              if (ac.venueId === message.venueId) {
+                return { ...ac, isOn: message.isVenueOn };
+              }
+              return ac;
+            })
+          }));
+        }
+
         // Handle alert messages
         if (message.type === 'ESP32_UPDATE' && message.data && message.data.type === 'ALERT_CREATED') {
           const alertData = message.data.alertData;
@@ -426,16 +618,31 @@ const AdminDashboard = () => {
     };
     
     socket.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
+      // Only log error if we haven't exceeded max attempts
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        console.warn('⚠️ WebSocket connection error (this is optional - app will work with polling):', error);
+      }
     };
     
     socket.onclose = () => {
-      console.log('🔌 WebSocket disconnected, attempting to reconnect...');
-      // Reconnect after 3 seconds
-      setTimeout(() => {
-        // Reconnection will be handled by useEffect cleanup and re-run
-      }, 3000);
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        console.log(`🔌 WebSocket disconnected, reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+        // Reconnect after 5 seconds
+        setTimeout(() => {
+          connectWebSocket();
+        }, 5000);
+      } else {
+        console.log('ℹ️ WebSocket connection unavailable - using polling fallback for updates');
+      }
     };
+      } catch (error) {
+        console.error('Error creating WebSocket connection:', error);
+      }
+    };
+    
+    // Attempt initial connection
+    connectWebSocket();
     
     // Fallback: Refresh alerts every 30 seconds (in case WebSocket misses updates)
     const alertsInterval = setInterval(() => {
@@ -443,16 +650,98 @@ const AdminDashboard = () => {
     }, 30000);
     
     return () => {
-      socket.close();
+      if (socket) {
+        socket.close();
+      }
       clearInterval(alertsInterval);
     };
   }, [user]); // Dependency on user state
 
+  // Calculate content width and margin based on sidebar state and window size
   useEffect(() => {
-    if (activeTab === 'events') {
-      loadEvents();
+    const calculateContentLayout = () => {
+      if (typeof window === 'undefined') return;
+      
+      const width = window.innerWidth;
+      let marginLeft = '0px';
+      let contentWidth = '100%';
+      
+      if (width >= 1280) {
+        // xl breakpoint
+        marginLeft = sidebarOpen ? '240px' : '64px';
+        contentWidth = sidebarOpen ? 'calc(100% - 240px)' : 'calc(100% - 64px)';
+      } else if (width >= 1024) {
+        // lg breakpoint
+        marginLeft = sidebarOpen ? '208px' : '56px';
+        contentWidth = sidebarOpen ? 'calc(100% - 208px)' : 'calc(100% - 56px)';
+      } else {
+        // Mobile - no sidebar margin
+        marginLeft = '0px';
+        contentWidth = '100%';
+      }
+      
+      setContentMarginLeft(marginLeft);
+      setContentWidth(contentWidth);
+    };
+    
+    calculateContentLayout();
+    
+    // Recalculate on window resize
+    window.addEventListener('resize', calculateContentLayout);
+    return () => window.removeEventListener('resize', calculateContentLayout);
+  }, [sidebarOpen]);
+
+  // Close sidebar by default when on venue-dashboard, keep it closed and disable expand
+  useEffect(() => {
+    if (activeTab === 'venue-dashboard') {
+      setSidebarOpen(false);
+    } else {
+      // Keep sidebar state as is for other tabs (user can toggle)
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    // Reload events when navigating to events tab
+    if (activeTab === 'events') {
+      console.log('📅 [AdminDashboard] Events tab opened - reloading events...');
+      // Add small delay to ensure any other data loading completes first
+      setTimeout(async () => {
+        try {
+          await loadEvents();
+          console.log('✅ [AdminDashboard] Events reloaded for Events tab');
+        } catch (error) {
+          console.error('❌ [AdminDashboard] Failed to reload events for Events tab:', error);
+        }
+      }, 300); // Increased delay slightly
+    }
+    // Also reload events when navigating to dashboard tab to ensure events are visible
+    if (activeTab === 'dashboard') {
+      console.log('📅 [AdminDashboard] Dashboard tab opened - reloading events...');
+      // Add small delay to ensure any other data loading completes first
+      setTimeout(async () => {
+        try {
+          await loadEvents();
+          console.log('✅ [AdminDashboard] Events reloaded for Dashboard tab');
+        } catch (error) {
+          console.error('❌ [AdminDashboard] Failed to reload events for Dashboard tab:', error);
+        }
+      }, 300);
+    }
+    // Reload events when navigating to venue-dashboard tab to ensure events are visible
+    if (activeTab === 'venue-dashboard') {
+      console.log('📅 [AdminDashboard] Venue dashboard tab opened - reloading events...');
+      // Add small delay to ensure any other data loading completes first
+      setTimeout(async () => {
+        try {
+          await loadEvents();
+          console.log('✅ [AdminDashboard] Events reloaded for Venue dashboard tab');
+        } catch (error) {
+          console.error('❌ [AdminDashboard] Failed to reload events for Venue dashboard tab:', error);
+        }
+      }, 300);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]); // Only depend on activeTab to avoid unnecessary re-renders
 
   // Monitor events for auto-start, completion and show notifications
   useEffect(() => {
@@ -586,9 +875,17 @@ const AdminDashboard = () => {
         })
       ]);
 
-      // Only update data if we got successful responses
-      // This preserves last known good data for restricted/locked admins during errors
-      if (orgsRes && acsRes) {
+      // Update data for each successful response individually
+      // This ensures partial data loads even if some APIs fail
+      console.log('📊 Data loading results:');
+      console.log('   Organizations:', orgsRes ? '✅' : '❌');
+      console.log('   ACs:', acsRes ? '✅' : '❌');
+      console.log('   Managers:', managersRes ? '✅' : '❌');
+      console.log('   Venues:', venuesRes ? '✅' : '❌');
+      console.log('   Logs:', logsRes ? '✅' : '❌');
+      
+      // Update data even if only some calls succeed
+      if (orgsRes || acsRes || managersRes || venuesRes || logsRes) {
         console.log('Organizations response:', orgsRes?.data);
         console.log('ACs response:', acsRes?.data);
 
@@ -634,7 +931,13 @@ const AdminDashboard = () => {
           
           // Also check venues for mixed temperatures
           const venuesWithMixed = (org.venues || []).map(venue => {
-            const venueACs = acs.filter(ac => ac.venueId === venue.id);
+            // Only count devices that specifically belong to this venue (not organization-level devices)
+            const venueACs = acs.filter(ac => {
+              if (venue.organizationId && ac.venueId === venue.organizationId) {
+                return false; // This device belongs to organization, not this venue
+              }
+              return ac.venueId === venue.id;
+            });
             const venueTemp = venue.temperature || 16;
             let venueHasMixed = false;
             
@@ -685,7 +988,13 @@ const AdminDashboard = () => {
         allVenuesFromAPI.forEach(venue => {
           if (!venuesMap.has(venue.id)) {
             // Calculate mixed temperatures for venues from API
-            const venueACs = acs.filter(ac => ac.venueId === venue.id);
+            // Only count devices that specifically belong to this venue (not organization-level devices)
+            const venueACs = acs.filter(ac => {
+              if (venue.organizationId && ac.venueId === venue.organizationId) {
+                return false; // This device belongs to organization, not this venue
+              }
+              return ac.venueId === venue.id;
+            });
             const venueTemp = venue.temperature || 16;
             let venueHasMixed = false;
             
@@ -718,7 +1027,13 @@ const AdminDashboard = () => {
             
             // Update venues with mixed temperatures
             const venuesWithMixed = orgVenuesFromAPI.map(venue => {
-              const venueACs = acs.filter(ac => ac.venueId === venue.id);
+              // Only count devices that specifically belong to this venue (not organization-level devices)
+              const venueACs = acs.filter(ac => {
+                if (venue.organizationId && ac.venueId === venue.organizationId) {
+                  return false; // This device belongs to organization, not this venue
+                }
+                return ac.venueId === venue.id;
+              });
               const venueTemp = venue.temperature || 16;
               let venueHasMixed = false;
               
@@ -743,7 +1058,13 @@ const AdminDashboard = () => {
           
           // Organization already has venues, just update with mixed temperatures
           const venuesWithMixed = existingVenues.map(venue => {
-            const venueACs = acs.filter(ac => ac.venueId === venue.id);
+            // Only count devices that specifically belong to this venue (not organization-level devices)
+            const venueACs = acs.filter(ac => {
+              if (venue.organizationId && ac.venueId === venue.organizationId) {
+                return false; // This device belongs to organization, not this venue
+              }
+              return ac.venueId === venue.id;
+            });
             const venueTemp = venue.temperature || 16;
             let venueHasMixed = false;
             
@@ -784,7 +1105,13 @@ const AdminDashboard = () => {
           
           if (venuesCount > 0) {
             org.venues.forEach((venue, idx) => {
-              const venueACs = acs.filter(ac => ac.venueId === venue.id);
+              // Only count devices that specifically belong to this venue (not organization-level devices)
+              const venueACs = acs.filter(ac => {
+                if (venue.organizationId && ac.venueId === venue.organizationId) {
+                  return false; // This device belongs to organization, not this venue
+                }
+                return ac.venueId === venue.id;
+              });
               console.log(`      ✅ Venue ${idx + 1}: "${venue.name}" (ID: ${venue.id}, orgId: ${venue.organizationId || 'N/A'})`);
               console.log(`         - ACs: ${venueACs.length}`);
               console.log(`         - Temp: ${venue.temperature}°C`);
@@ -834,16 +1161,27 @@ const AdminDashboard = () => {
         console.log('✅ Loaded activity logs:', logs.length);
         console.log('📋 Activity logs sample:', logs.slice(0, 2));
 
+        // Update only the fields that were successfully loaded
         setData(prev => ({
           ...prev,
-          organizations,
-          acs,
-          managers,
-          logs,
-          venues: allVenues, // Store all venues (from orgs + separate API)
+          // Only update if we got successful response, otherwise keep previous data
+          organizations: orgsRes ? organizations : prev.organizations,
+          acs: acsRes ? acs : prev.acs,
+          managers: managersRes ? managers : prev.managers,
+          logs: logsRes ? logs : prev.logs,
+          venues: venuesRes ? allVenues : prev.venues,
           // CRITICAL: Preserve events - don't clear them when loading other data
-          events: prev.events || []
+          // Only preserve if events already exist (don't overwrite with empty array)
+          events: Array.isArray(prev.events) && prev.events.length > 0 ? prev.events : (prev.events || [])
         }));
+        
+        console.log('✅ Data updated:', {
+          organizations: orgsRes ? organizations.length : 'kept previous',
+          acs: acsRes ? acs.length : 'kept previous',
+          managers: managersRes ? managers.length : 'kept previous',
+          venues: venuesRes ? allVenues.length : 'kept previous',
+          logs: logsRes ? logs.length : 'kept previous'
+        });
 
         // Mark initial loading as complete after first successful load
         setInitialLoading(false);
@@ -853,19 +1191,29 @@ const AdminDashboard = () => {
           console.warn('No organizations or ACs found for this admin');
         }
       } else {
-        // If we got errors, log them but don't update data (preserves last known good state)
+        // If ALL calls failed, log them but don't update data (preserves last known good state)
         // This allows restricted/locked admins to continue seeing data even if polling fails
+        console.warn('⚠️ All API calls failed, preserving last known data');
         if (!orgsRes) {
-          console.warn('Organizations fetch failed, preserving last known data');
+          console.warn('   ❌ Organizations fetch failed');
+        }
+        if (!acsRes) {
+          console.warn('   ❌ ACs fetch failed');
+        }
+        if (!managersRes) {
+          console.warn('   ❌ Managers fetch failed');
+        }
+        if (!venuesRes) {
+          console.warn('   ❌ Venues fetch failed');
+        }
+        if (!logsRes) {
+          console.warn('   ❌ Logs fetch failed');
         }
         // Even on error, mark initial loading as complete to show error state
         setInitialLoading(false);
-        if (!acsRes) {
-          console.warn('ACs fetch failed, preserving last known data');
-        }
         // Only show error toast on manual refresh, not during polling
         if (showLoading) {
-          toast.error('Failed to refresh data. Showing last known values.');
+          toast.error('Some data failed to load. Showing last known values.');
         }
       }
     } catch (error) {
@@ -1040,15 +1388,61 @@ const AdminDashboard = () => {
   const loadEvents = async () => {
     try {
       setEventsLoading(true);
+      console.log('📅 [AdminDashboard] Loading events from API...');
       const response = await adminAPI.getEvents();
-      console.log('admin Events API Response:', response);
+      console.log('📅 [AdminDashboard] Events API Response:', response);
+      console.log('📅 [AdminDashboard] Full response.data:', JSON.stringify(response.data, null, 2));
+      console.log('📅 [AdminDashboard] Response data structure:', {
+        hasData: !!response.data,
+        hasDataData: !!response.data?.data,
+        hasEvents: !!response.data?.data?.events,
+        hasDirectEvents: !!response.data?.events,
+        isArray: Array.isArray(response.data?.data),
+        isArrayDirect: Array.isArray(response.data),
+        dataType: typeof response.data?.data,
+        eventsType: typeof response.data?.data?.events,
+        eventsIsArray: Array.isArray(response.data?.data?.events),
+        eventsLength: Array.isArray(response.data?.data?.events) ? response.data.data.events.length : 'N/A'
+      });
+      
       // Backend returns: { success: true, data: { events: [...] } }
-      const events = response.data?.data?.events || response.data?.events || (Array.isArray(response.data?.data) ? response.data.data : (Array.isArray(response.data) ? response.data : []));
-      console.log('Parsed admin events:', events);
-      setData(prev => ({ ...prev, events: Array.isArray(events) ? events : [] }));
+      let events = null;
+      
+      // Try different response structures
+      if (response.data?.data?.events) {
+        events = response.data.data.events;
+        console.log('📅 [AdminDashboard] Using response.data.data.events:', events);
+      } else if (response.data?.events) {
+        events = response.data.events;
+        console.log('📅 [AdminDashboard] Using response.data.events:', events);
+      } else if (Array.isArray(response.data?.data)) {
+        events = response.data.data;
+        console.log('📅 [AdminDashboard] Using response.data.data (array):', events);
+      } else if (Array.isArray(response.data)) {
+        events = response.data;
+        console.log('📅 [AdminDashboard] Using response.data (array):', events);
+      } else {
+        events = [];
+        console.warn('⚠️ [AdminDashboard] No events found in response, using empty array');
+      }
+      
+      console.log('📅 [AdminDashboard] Final parsed events:', events);
+      console.log('📅 [AdminDashboard] Events is array:', Array.isArray(events));
+      console.log('📅 [AdminDashboard] Number of events:', Array.isArray(events) ? events.length : 0);
+      
+      if (Array.isArray(events)) {
+        setData(prev => ({ ...prev, events: events }));
+        console.log('✅ [AdminDashboard] Events loaded successfully:', events.length);
+        if (events.length > 0) {
+          console.log('📅 [AdminDashboard] First event sample:', events[0]);
+        }
+      } else {
+        console.warn('⚠️ [AdminDashboard] Events is not an array:', typeof events, events);
+        setData(prev => ({ ...prev, events: [] }));
+      }
     } catch (error) {
-      console.error('Load events error:', error);
-      console.error('Error response:', error.response?.data);
+      console.error('❌ [AdminDashboard] Load events error:', error);
+      console.error('❌ [AdminDashboard] Error response:', error.response?.data);
       if (error.response?.status !== 404) {
         toast.error('Failed to load events');
       }
@@ -1083,10 +1477,21 @@ const AdminDashboard = () => {
       setShowEventModal(false);
       setSelectedEvent(null);
       
-      // Wait a bit before reloading to ensure backend has processed
+      // Wait a bit before reloading to ensure backend has processed the event
+      // Increased delay to ensure database transaction is committed
       setTimeout(async () => {
-        await loadEvents();
-      }, 500);
+        console.log('🔄 [AdminDashboard] Reloading events after creation from dashboard');
+        try {
+          await loadEvents();
+          console.log('✅ [AdminDashboard] Events reloaded after creation');
+          // If Events tab is active, show success message
+          if (activeTab === 'events') {
+            toast.success('Events list refreshed', { duration: 2000 });
+          }
+        } catch (error) {
+          console.error('❌ [AdminDashboard] Failed to reload events after creation:', error);
+        }
+      }, 1500); // Increased from 800ms to 1500ms to ensure backend has committed
     } catch (error) {
       console.error('Create event error:', error);
       console.error('Error response:', error.response?.data);
@@ -1158,7 +1563,11 @@ const AdminDashboard = () => {
       
       setShowEventModal(false);
       setSelectedEvent(null);
+      // Reload events after update
+      setTimeout(async () => {
+        console.log('🔄 [AdminDashboard] Reloading events after update');
         await loadEvents();
+      }, 800);
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to update event';
       toast.error(errorMessage);
@@ -1170,7 +1579,9 @@ const AdminDashboard = () => {
   // Memoize callbacks and arrays for event form to prevent re-renders
   const handleCloseEventModal = useCallback(() => {
     setShowEventModal(false);
+    setShowEventTypeSelection(false);
     setSelectedEvent(null);
+    setSelectedEventType(null);
   }, []);
 
   const handleEventSubmit = useCallback((eventData) => {
@@ -1299,85 +1710,183 @@ const AdminDashboard = () => {
 
   const handleViewOrganizationDetails = async (orgId) => {
     try {
-      const res = await adminAPI.getOrganizationDetails(orgId);
-      setSelectedOrgDetails(res.data.data?.organization || res.data.organization);
-      setShowOrgDetailsModal(true);
-      // Load energy data for this organization
-      loadOrganizationEnergy(orgId);
+      // First, try to use existing data from data.organizations to show modal immediately
+      const existingOrg = data.organizations.find(org => org.id === orgId);
+      if (existingOrg) {
+        setSelectedOrgDetails(existingOrg);
+        setShowOrgDetailsModal(true);
+        // Load energy data for this organization (non-blocking)
+        loadOrganizationEnergy(orgId).catch(err => {
+          console.warn('Failed to load organization energy:', err);
+        });
+        
+        // Optionally fetch fresh data in background (non-blocking)
+        adminAPI.getOrganizationDetails(orgId)
+          .then(res => {
+            const orgData = res.data.data?.organization || res.data.organization;
+            if (orgData) {
+              setSelectedOrgDetails(orgData);
+            }
+          })
+          .catch(err => {
+            console.warn('Failed to fetch fresh organization details, using cached data:', err);
+          });
+      } else {
+        // If not in existing data, fetch from API
+        const res = await adminAPI.getOrganizationDetails(orgId);
+        setSelectedOrgDetails(res.data.data?.organization || res.data.organization);
+        setShowOrgDetailsModal(true);
+        // Load energy data for this organization
+        loadOrganizationEnergy(orgId).catch(err => {
+          console.warn('Failed to load organization energy:', err);
+        });
+      }
     } catch (error) {
-      toast.error('Failed to load organization details');
-      console.error('Error loading organization details:', error);
+      // If API call fails but we have existing data, still show modal
+      const existingOrg = data.organizations.find(org => org.id === orgId);
+      if (existingOrg) {
+        setSelectedOrgDetails(existingOrg);
+        setShowOrgDetailsModal(true);
+        toast.warning('Using cached data. Some details may be outdated.');
+        loadOrganizationEnergy(orgId).catch(err => {
+          console.warn('Failed to load organization energy:', err);
+        });
+      } else {
+        toast.error('Failed to load organization details');
+        console.error('Error loading organization details:', error);
+      }
     }
   };
 
   const handleViewVenueDetails = async (venueId) => {
     try {
-      const res = await adminAPI.getVenueDetails(venueId);
-      const venueData = res.data.data?.venue || res.data.venue || res.data.data;
-      if (venueData) {
-        setSelectedVenueDetails(venueData);
+      // First, try to use existing data from data.venues to show modal immediately
+      const existingVenue = data.venues?.find(venue => venue.id === venueId) || 
+                           data.organizations?.flatMap(org => org.venues || []).find(v => v.id === venueId);
+      if (existingVenue) {
+        setSelectedVenueDetails(existingVenue);
         setShowVenueDetailsModal(true);
+        
+        // Optionally fetch fresh data in background (non-blocking)
+        adminAPI.getVenueDetails(venueId)
+          .then(res => {
+            const venueData = res.data.data?.venue || res.data.venue || res.data.data;
+            if (venueData) {
+              setSelectedVenueDetails(venueData);
+            }
+          })
+          .catch(err => {
+            console.warn('Failed to fetch fresh venue details, using cached data:', err);
+          });
       } else {
-        toast.error('Venue details not found in response');
-        console.error('Venue details response:', res.data);
+        // If not in existing data, fetch from API
+        const res = await adminAPI.getVenueDetails(venueId);
+        const venueData = res.data.data?.venue || res.data.venue || res.data.data;
+        if (venueData) {
+          setSelectedVenueDetails(venueData);
+          setShowVenueDetailsModal(true);
+        } else {
+          toast.error('Venue details not found in response');
+          console.error('Venue details response:', res.data);
+        }
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to load venue details';
-      toast.error(errorMessage);
-      console.error('Error loading venue details:', error);
-      console.error('Error response:', error.response?.data);
+      // If API call fails but we have existing data, still show modal
+      const existingVenue = data.venues?.find(venue => venue.id === venueId) || 
+                           data.organizations?.flatMap(org => org.venues || []).find(v => v.id === venueId);
+      if (existingVenue) {
+        setSelectedVenueDetails(existingVenue);
+        setShowVenueDetailsModal(true);
+        toast.warning('Using cached data. Some details may be outdated.');
+      } else {
+        const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to load venue details';
+        toast.error(errorMessage);
+        console.error('Error loading venue details:', error);
+        console.error('Error response:', error.response?.data);
+      }
     }
   };
 
-  const handleViewACDetails = async (acId) => {
-    try {
-      const res = await adminAPI.getACDetails(acId);
-      const acData = res.data.data?.ac || res.data.ac || res.data.data;
-      if (acData) {
-        setSelectedACDetails(acData);
-        setShowACDetailsModal(true);
-        // Load energy data for this AC
-        loadACEnergy(acId);
-      } else {
-        toast.error('AC details not found in response');
-        console.error('AC details response:', res.data);
-      }
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to load AC details';
-      toast.error(errorMessage);
-      console.error('Error loading AC details:', error);
-      console.error('Error response:', error.response?.data);
-    }
-  };
-
-  const handleDeleteAC = async (acId, acName) => {
-    if (!window.confirm(`Are you sure you want to delete "${acName}"?\n\nThis will:\n- Delete the AC device permanently\n- Delete all related events\n- Delete all related activity logs\n- Delete all related system states\n\nThis action CANNOT be undone!`)) {
-      return;
-    }
+  const handleViewACDetails = (acId) => {
+    console.log('🔍 handleViewACDetails called with AC ID:', acId, 'Type:', typeof acId);
+    console.log('🔍 Available ACs:', data.acs.map(ac => ({ id: ac.id, name: ac.name, idType: typeof ac.id })));
     
-    try {
-      // Note: admin delete AC endpoint may not exist - this will show an error if not implemented
-      toast.error('Delete AC functionality is only available for admins. Please contact an admin to delete this device.');
-      // If backend endpoint is added later, uncomment below:
-      // const result = await adminAPI.deleteAC(acId);
-      // toast.success(result.data?.message || `AC device "${acName}" deleted successfully`);
-      // await loadData(false);
-      // if (showACDetailsModal && selectedACDetails?.id === acId) {
-      //   setShowACDetailsModal(false);
-      // }
-    } catch (error) {
-      toast.error(error.response?.data?.message || `Failed to delete AC device "${acName}". Only admins can delete devices.`);
+    // Convert acId to number for comparison (handle both string and number IDs)
+    const acIdNum = typeof acId === 'string' ? parseInt(acId) : acId;
+    
+    // First, try to use existing data from data.acs to show modal immediately
+    const existingAC = data.acs.find(ac => {
+      const acIdToCompare = typeof ac.id === 'string' ? parseInt(ac.id) : ac.id;
+      return acIdToCompare === acIdNum || ac.id === acId;
+    });
+    console.log('🔍 Existing AC found:', existingAC ? 'Yes' : 'No', existingAC);
+    
+    if (existingAC) {
+      console.log('✅ Using existing AC data, opening modal immediately...');
+      // Set both states together to ensure modal opens - use callback to ensure order
+      const acData = { ...existingAC };
+      
+      // Set selectedACDetails first, then modal state
+      setSelectedACDetails(acData);
+      
+      // Use a small timeout to ensure state is set before showing modal
+      setTimeout(() => {
+        setShowACDetailsModal(true);
+        console.log('✅ Modal state set to true after timeout');
+      }, 10);
+      
+      console.log('✅ Modal state being set - showACDetailsModal: will be true, selectedACDetails:', acData);
+      
+      // Load energy data for this AC (non-blocking)
+      loadACEnergy(acId).catch(err => {
+        console.warn('Failed to load AC energy:', err);
+      });
+      
+      // Optionally fetch fresh data in background (non-blocking)
+      adminAPI.getACDetails(acId)
+        .then(res => {
+          const freshAcData = res.data.data?.ac || res.data.ac || res.data.data;
+          if (freshAcData) {
+            console.log('✅ Fresh AC data received, updating...');
+            setSelectedACDetails(freshAcData);
+          }
+        })
+        .catch(err => {
+          console.warn('Failed to fetch fresh AC details, using cached data:', err);
+        });
+    } else {
+      console.log('⚠️ AC not found in existing data, fetching from API...');
+      // If not in existing data, fetch from API
+      adminAPI.getACDetails(acIdNum || acId)
+        .then(res => {
+          const acData = res.data.data?.ac || res.data.ac || res.data.data;
+          if (acData) {
+            console.log('✅ AC data fetched from API, opening modal...');
+            setSelectedACDetails(acData);
+            setTimeout(() => {
+              setShowACDetailsModal(true);
+            }, 10);
+            // Load energy data for this AC
+            loadACEnergy(acId).catch(err => {
+              console.warn('Failed to load AC energy:', err);
+            });
+          } else {
+            toast.error('AC details not found in response');
+            console.error('AC details response:', res.data);
+          }
+        })
+        .catch(error => {
+          console.error('❌ Error fetching AC details:', error);
+          const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to load AC details';
+          toast.error(errorMessage);
+          console.error('Error response:', error.response?.data);
+        });
     }
   };
-
 
   const handleToggleOrganizationPower = async (orgId, currentPowerState) => {
     try {
-      // Check if admin is unlocked
-      if (user?.status !== 'unlocked') {
-        toast.error('Only unlocked admins can toggle organization power');
-        return;
-      }
+      // Backend will check admin status - no need to check here
 
       // Ensure currentPowerState is a boolean (default to false if undefined)
       const currentState = currentPowerState === true || currentPowerState === 'true' || currentPowerState === 1;
@@ -1404,15 +1913,23 @@ const AdminDashboard = () => {
 
   const handleToggleVenuePower = async (venueId, currentPowerState) => {
     try {
-      // Check if admin is unlocked
-      if (user?.status !== 'unlocked') {
-        toast.error('Only unlocked admins can toggle venue power');
-        return;
-      }
+      // Backend will check admin status - no need to check here
 
       // Ensure currentPowerState is a boolean (default to false if undefined)
       const currentState = currentPowerState === true || currentPowerState === 'true' || currentPowerState === 1;
       const newPowerState = !currentState;
+      
+      // Check if trying to turn ON venue - verify organization is ON first
+      if (newPowerState) {
+        const venue = data.organizations?.flatMap(org => org.venues || []).find(v => v.id === venueId);
+        if (venue && venue.organizationId) {
+          const org = data.organizations.find(o => o.id === venue.organizationId);
+          if (org && !(org.isOrganizationOn === true || org.isOrganizationOn === 'true')) {
+            toast.error('Cannot turn ON venue: Organization is currently OFF. Please turn on the organization first.');
+            return;
+          }
+        }
+      }
       
       console.log('🔌 Toggling venue power:', {
         venueId,
@@ -1458,6 +1975,13 @@ const AdminDashboard = () => {
         // Check admin status only (no organization lock check for admins)
         const org = data.organizations.find(o => o.id === id);
         
+        // Check if organization is OFF - prevent temperature change
+        if (org && !(org.isOrganizationOn === true || org.isOrganizationOn === 'true')) {
+          toast.error('Cannot change temperature: Organization is currently OFF. Please turn on the organization first.');
+          setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+          return;
+        }
+        
         response = await adminAPI.setAdminOrganizationTemperature(id, temperature);
         responseTemp = response?.data?.organization?.temperature ?? response?.data?.temperature ?? temperature;
         responseOrgTemp = responseTemp;
@@ -1468,6 +1992,26 @@ const AdminDashboard = () => {
         toast.success('Organization temperature set successfully');
       } else if (type === 'venue') {
         // Check admin status only (no venue lock check for admins)
+        const venue = data.organizations
+          .flatMap(org => org.venues || [])
+          .find(v => v.id === id);
+        
+        // Check if venue is OFF - prevent temperature change
+        if (venue && !(venue.isVenueOn === true || venue.isVenueOn === 'true')) {
+          toast.error('Cannot change temperature: Venue is currently OFF. Please turn on the venue first.');
+          setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+          return;
+        }
+        
+        // Check if organization is OFF - prevent temperature change
+        if (venue && venue.organizationId) {
+          const org = data.organizations.find(o => o.id === venue.organizationId);
+          if (org && !(org.isOrganizationOn === true || org.isOrganizationOn === 'true')) {
+            toast.error('Cannot change temperature: Organization is currently OFF. Please turn on the organization first.');
+            setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+            return;
+          }
+        }
         
         response = await adminAPI.setVenueTemperature(id, temperature);
         responseTemp = response?.data?.venue?.temperature ?? response?.data?.temperature ?? temperature;
@@ -1475,10 +2019,7 @@ const AdminDashboard = () => {
         responseOrgMixed = response?.data?.organization?.hasMixedTemperatures;
         orgIdFromResponse = response?.data?.organization?.id ?? response?.data?.organizationId;
         
-        // Log the action
-        const venue = data.organizations
-          .flatMap(org => org.venues || [])
-          .find(v => v.id === id);
+        // Log the action (venue already declared above)
         
         // Admin actions are logged automatically by backend
         
@@ -1486,6 +2027,40 @@ const AdminDashboard = () => {
       } else if (type === 'ac') {
         // Check admin status only (no device lock check for admins)
         const ac = data.acs.find(a => a.id === id);
+        
+        // Revert action if device is offline
+        if (ac && ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
+          toast.error('⚠️ Device is offline. Action reverted.');
+          setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+          return;
+        }
+        
+        // Check if device is OFF - prevent temperature change
+        if (ac && !(ac.isOn === true || ac.isOn === 'true')) {
+          toast.error('Cannot change temperature: Device is currently OFF. Please turn on the device first.');
+          setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+          return;
+        }
+        
+        // Check if venue is OFF - prevent temperature change
+        if (ac && ac.venueId) {
+          const venue = data.organizations?.flatMap(org => org.venues || []).find(v => v.id === ac.venueId);
+          if (venue && !(venue.isVenueOn === true || venue.isVenueOn === 'true')) {
+            toast.error('Cannot change temperature: Venue is currently OFF. Please turn on the venue first.');
+            setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+            return;
+          }
+          
+          // Check if organization is OFF - prevent temperature change
+          if (venue && venue.organizationId) {
+            const org = data.organizations.find(o => o.id === venue.organizationId);
+            if (org && !(org.isOrganizationOn === true || org.isOrganizationOn === 'true')) {
+              toast.error('Cannot change temperature: Organization is currently OFF. Please turn on the organization first.');
+              setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+              return;
+            }
+          }
+        }
         
         response = await adminAPI.setAdminACTemperature(id, temperature);
         responseTemp = response?.data?.ac?.temperature ?? response?.data?.temperature ?? temperature;
@@ -1672,6 +2247,10 @@ const AdminDashboard = () => {
     await handleSetTemperature('organization', orgId, temperature);
   };
 
+  const handleSetVenueTemperature = async (venueId, temperature) => {
+    await handleSetTemperature('venue', venueId, temperature);
+  };
+
   const handleSetACTemperature = async (acId, temperature) => {
     await handleSetTemperature('ac', acId, temperature);
   };
@@ -1694,8 +2273,36 @@ const AdminDashboard = () => {
         return;
       }
       
+      // Revert action if device is offline
+      if (ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
+        toast.error('⚠️ Device is offline. Action reverted.');
+        return;
+      }
+      
       const currentState = ac.isOn || false;
       const newState = targetState !== undefined ? targetState : !currentState;
+      
+      // Check if trying to turn ON device - verify venue and organization are ON first
+      if (newState) {
+        // Find venue for this device
+        const venue = data.organizations?.flatMap(org => org.venues || []).find(v => v.id === ac.venueId);
+        if (venue) {
+          // Check if venue is ON
+          if (!(venue.isVenueOn === true || venue.isVenueOn === 'true')) {
+            toast.error('Cannot turn ON device: Venue is currently OFF. Please turn on the venue first.');
+            return;
+          }
+          
+          // Check if organization is ON
+          if (venue.organizationId) {
+            const org = data.organizations.find(o => o.id === venue.organizationId);
+            if (org && !(org.isOrganizationOn === true || org.isOrganizationOn === 'true')) {
+              toast.error('Cannot turn ON device: Organization is currently OFF. Please turn on the organization first.');
+              return;
+            }
+          }
+        }
+      }
       
       console.log('🔌 Toggling AC power:', {
         acId,
@@ -1797,37 +2404,41 @@ const AdminDashboard = () => {
 
   const handleRemoteLockAC = async (acId, reason = null) => {
     try {
-      // Get AC's venueId first
+      // Check if device is offline
       const ac = data.acs.find(a => a.id === acId);
-      if (ac && ac.venueId) {
-        const result = await adminAPI.remoteLockVenue(ac.venueId, reason);
-      toast.success(result.data?.message || 'Device remote locked successfully');
-        await loadData(false);
-      } else {
-        toast.error('Device venue not found');
+      if (ac && ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
+        toast.error('⚠️ Device is offline. Action reverted.');
+        return;
       }
+      
+      // Lock only this specific device (not the entire venue)
+      const result = await adminAPI.toggleACLockStatus(acId, 'lock', reason);
+      toast.success(result.data?.message || 'Device locked successfully');
+      await loadData(false);
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to remote lock device';
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to lock device';
       toast.error(errorMessage);
-      console.error('Remote lock AC error:', error);
+      console.error('Lock AC error:', error);
     }
   };
 
   const handleRemoteUnlockAC = async (acId) => {
     try {
-      // Get AC's venueId first
+      // Check if device is offline
       const ac = data.acs.find(a => a.id === acId);
-      if (ac && ac.venueId) {
-        const result = await adminAPI.remoteUnlockVenue(ac.venueId);
-      toast.success(result.data?.message || 'Device remote unlocked successfully');
-        await loadData(false);
-      } else {
-        toast.error('Device venue not found');
+      if (ac && ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
+        toast.error('⚠️ Device is offline. Action reverted.');
+        return;
       }
+      
+      // Unlock only this specific device (not the entire venue)
+      const result = await adminAPI.toggleACLockStatus(acId, 'unlock');
+      toast.success(result.data?.message || 'Device unlocked successfully');
+      await loadData(false);
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to remote unlock device';
-        toast.error(errorMessage);
-      console.error('Remote unlock AC error:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to unlock device';
+      toast.error(errorMessage);
+      console.error('Unlock AC error:', error);
     }
   };
 
@@ -2100,7 +2711,6 @@ const AdminDashboard = () => {
           </div>
 
           {/* Organization Power Control - Compact */}
-        {user?.status === 'unlocked' && (
           <div className="bg-blue-50 rounded-lg p-1.5 border border-blue-200 mb-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-700 flex items-center">
@@ -2115,7 +2725,8 @@ const AdminDashboard = () => {
                 </span>
                 <button
                   onClick={() => handleToggleOrganizationPower(org.id, org.isOrganizationOn || false)}
-                    className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+                  disabled={user?.status === 'restricted' || user?.status === 'locked'}
+                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
                     (org.isOrganizationOn === true || org.isOrganizationOn === 'true')
                       ? 'bg-blue-500' 
                       : 'bg-gray-400'
@@ -2131,7 +2742,6 @@ const AdminDashboard = () => {
               </div>
             </div>
           </div>
-        )}
 
           {/* Action Buttons - Compact */}
           <div className="flex gap-1.5 mt-auto">
@@ -2164,7 +2774,17 @@ const AdminDashboard = () => {
 
   const VenueCard = ({ venue }) => {
     const navigate = useNavigate();
-    const venueACs = Array.isArray(data.acs) ? data.acs.filter(ac => ac.venueId === venue.id) : [];
+    // CRITICAL: Only count devices that specifically belong to this venue
+    // A device belongs to a venue ONLY if ac.venueId === venue.id
+    // Exclude devices that belong to the parent organization (where venueId === organizationId)
+    const venueACs = Array.isArray(data.acs) ? data.acs.filter(ac => {
+      // Device must have venueId matching this venue's ID
+      // Exclude if device belongs to parent organization (not this specific venue)
+      if (venue.organizationId && ac.venueId === venue.organizationId) {
+        return false; // This device belongs to organization, not this venue
+      }
+      return ac.venueId === venue.id;
+    }) : [];
     const venueDeviceIds = venueACs.map(ac => ac.id);
     const isVenueOn = venue.isVenueOn === true || venue.isVenueOn === 'true' || venue.isVenueOn === 1;
     
@@ -2243,6 +2863,17 @@ const AdminDashboard = () => {
             }`}>
               {venue.status || 'active'}
             </span>
+            {isVenueDevicesRemoteLocked(venue) ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-yellow-500 text-white">
+                <Lock className="w-3 h-3 mr-0.5" />
+                Locked
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-green-500 text-white">
+                <Unlock className="w-3 h-3 mr-0.5" />
+                Unlocked
+              </span>
+            )}
             {hasAlert && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-600 text-white">
                 <AlertCircle className="w-3 h-3 mr-0.5" />
@@ -2489,6 +3120,17 @@ const AdminDashboard = () => {
               <Power className="w-3 h-3 mr-0.5" />
               {ac.isOn ? 'ON' : 'OFF'}
             </span>
+            {isDeviceRemoteLocked(ac) ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-yellow-500 text-white">
+                <Lock className="w-3 h-3 mr-0.5" />
+                Locked
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-green-500 text-white">
+                <Unlock className="w-3 h-3 mr-0.5" />
+                Unlocked
+              </span>
+            )}
             {hasAlert && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-600 text-white">
                 <AlertCircle className="w-3 h-3 mr-0.5" />
@@ -2531,9 +3173,9 @@ const AdminDashboard = () => {
                   handleSetTemperature('ac', ac.id, newTemp);
                 }}
                 disabled={hasEvent || temperatureLoading[`ac-${ac.id}`] || user?.status === 'restricted' || user?.status === 'locked' || (localTemperatures[`ac-${ac.id}`] !== undefined ? localTemperatures[`ac-${ac.id}`] : (ac.temperature ?? 16)) <= 16}
-                className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
+                className="w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-md"
               >
-                <Minus className="w-3 h-3" />
+                <Minus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
               </button>
               <input
                 type="number"
@@ -2542,10 +3184,10 @@ const AdminDashboard = () => {
                 step="1"
                 value={hasEvent && eventTemp ? eventTemp : (localTemperatures[`ac-${ac.id}`] !== undefined ? localTemperatures[`ac-${ac.id}`] : (ac.temperature ?? 16))}
                 disabled={hasEvent || temperatureLoading[`ac-${ac.id}`] || user?.status === 'restricted' || user?.status === 'locked'}
-                className={`w-20 sm:w-16 px-2 sm:px-1 py-1.5 sm:py-1 text-base sm:text-sm text-center font-bold border rounded bg-white text-gray-900 transition-colors ${
+                className={`w-28 sm:w-24 px-3 sm:px-2 py-2 sm:py-1.5 text-lg sm:text-base text-center font-bold border-2 rounded-lg bg-white text-gray-900 transition-colors ${
                   hasEvent || temperatureLoading[`ac-${ac.id}`] || user?.status === 'restricted' || user?.status === 'locked'
                     ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-500' 
-                    : 'border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 text-gray-900'
+                    : 'border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900'
                 }`}
                 onChange={(e) => {
                   const value = e.target.value;
@@ -2595,9 +3237,9 @@ const AdminDashboard = () => {
                   handleSetTemperature('ac', ac.id, newTemp);
                 }}
                 disabled={hasEvent || temperatureLoading[`ac-${ac.id}`] || user?.status === 'restricted' || user?.status === 'locked' || (localTemperatures[`ac-${ac.id}`] !== undefined ? localTemperatures[`ac-${ac.id}`] : (ac.temperature ?? 16)) >= 30}
-                className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
+                className="w-8 h-8 sm:w-7 sm:h-7 flex items-center justify-center rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-md"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
               </button>
             </div>
           </div>
@@ -2627,12 +3269,13 @@ const AdminDashboard = () => {
           <div className="flex gap-1 mt-auto">
             <button
               onClick={() => {
-                // Create a temporary event object with deviceId pre-selected
+                // Create a temporary event object with deviceId pre-selected (as string for select element)
                 const tempEvent = {
-                  deviceId: ac.id
+                  deviceId: String(ac.id)
                 };
+                console.log('🔧 [AdminDashboard] Device card + button clicked, setting deviceId:', tempEvent.deviceId, 'Device:', ac.name);
                 setSelectedEvent(tempEvent);
-                setShowEventModal(true);
+                setShowEventTypeSelection(true);
               }}
               disabled={user?.status === 'locked' || user?.status === 'restricted'}
               className="flex-1 flex items-center justify-center space-x-0.5 px-1.5 py-1 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
@@ -2646,21 +3289,17 @@ const AdminDashboard = () => {
               <span>Event</span>
             </button>
           <button
-            onClick={() => handleViewACDetails(ac.id)}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('🔍 View button clicked for AC ID:', ac.id);
+              handleViewACDetails(ac.id);
+            }}
               className="flex-1 flex items-center justify-center space-x-0.5 px-1.5 py-1 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
               title="View brand, model, serial number, organization, and more"
           >
               <Eye className="w-2.5 h-2.5" />
               <span>View</span>
-          </button>
-          <button
-            onClick={() => handleDeleteAC(ac.id, ac.name)}
-            disabled={user?.status === 'locked' || user?.status === 'restricted'}
-            className="flex items-center justify-center space-x-0.5 px-1.5 py-1 rounded-md text-xs font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-            title="Delete this AC device (Admin only)"
-          >
-            <Trash2 className="w-2.5 h-2.5" />
-            <span>Delete</span>
           </button>
           </div>
         </div>
@@ -2762,37 +3401,57 @@ const AdminDashboard = () => {
           if (isNaN(dateString.getTime())) {
             return 'N/A';
           }
+          // Date object is already in UTC (from backend)
           date = dateString;
         } else if (typeof dateString === 'string') {
           let dateValue = String(dateString).trim();
           
-          // Normalize format
+          // Normalize format (space to T)
           if (dateValue.includes(' ') && !dateValue.includes('T')) {
             dateValue = dateValue.replace(/\s+/, 'T');
           }
           
-          // CRITICAL: Ensure UTC parsing - add 'Z' if no timezone
-          if (dateValue.includes('T') && !dateValue.endsWith('Z') && !dateValue.match(/[+-]\d{2}:?\d{2}$/)) {
-            dateValue = dateValue.replace(/\.\d{3,}$/, '') + 'Z';
+          // CRITICAL: Check if timezone indicator exists
+          const hasZ = dateValue.endsWith('Z');
+          const hasOffset = dateValue.match(/[+-]\d{2}:?\d{2}$/);
+          const hasPKTOffset = dateValue.includes('+05:00') || dateValue.includes('+0500');
+          const hasTimezone = hasZ || hasOffset || hasPKTOffset;
+          
+          // CRITICAL: If NO timezone, add 'Z' to force UTC parsing
+          // Without 'Z', JavaScript parses as LOCAL time, causing 5-hour offset
+          if (!hasTimezone && (dateValue.includes('T') || dateValue.match(/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}/))) {
+            // Remove trailing spaces and milliseconds, then append 'Z'
+            dateValue = dateValue.replace(/\s+$/, '').replace(/\.\d{3,}$/, '');
+            if (!dateValue.endsWith('Z')) {
+              dateValue = dateValue + 'Z';
+            }
           }
           
+          // Parse as UTC
           date = new Date(dateValue);
           
           if (isNaN(date.getTime())) {
+            console.error('❌ Failed to parse time:', {
+              original: dateString,
+              attempted: dateValue
+            });
             return 'N/A';
           }
         } else {
           return 'N/A';
         }
         
-        // FINAL FIX: Use toLocaleTimeString with Asia/Karachi timezone
-        // This ensures UTC time is displayed as PKT
-        return date.toLocaleTimeString('en-PK', {
+        // CRITICAL: Date is in UTC, convert to PKT (UTC+5) for display
+        // Use Intl.DateTimeFormat for accurate timezone conversion
+        const formatter = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Karachi',
           hour: '2-digit',
           minute: '2-digit',
           hour12: true
         });
+        
+        const pkTime = formatter.format(date);
+        return pkTime;
       } catch (e) {
         console.error('❌ Time formatting error:', e, dateString);
         return 'N/A';
@@ -2815,48 +3474,57 @@ const AdminDashboard = () => {
       // Compare in UTC to match backend logic
       const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
       
-      // If event is active but endTime has passed (UTC), show "Complete"
-      const isCompleted = eventEndTime && eventEndTime.getTime() <= nowUTC.getTime() && status === 'active';
+      // If event endTime has passed OR status is completed, show "Ended"
+      const isCompleted = (eventEndTime && eventEndTime.getTime() <= nowUTC.getTime()) || 
+                         status === 'completed';
       
-      // Determine actual status based on time
+      // Determine actual status based on time and current status
       let actualStatus = status;
-      if (isWaitingToStart && (status === 'scheduled' || status === 'active')) {
-        actualStatus = 'waiting';
-      } else if (isCompleted) {
+      
+      // Priority 1: If endTime passed, mark as completed
+      if (isCompleted) {
         actualStatus = 'completed';
+      }
+      // Priority 2: If waiting to start, show as waiting
+      else if (isWaitingToStart && (status === 'scheduled' || status === 'active')) {
+        actualStatus = 'waiting';
+      }
+      // Priority 3: If active and not completed, show as active (In Process)
+      else if (status === 'active' && !isCompleted) {
+        actualStatus = 'active'; // Will show as "In Process"
       }
       
       const statusConfig = {
         waiting: {
-          color: 'bg-blue-500 text-white',
+          color: 'bg-yellow-400 text-white shadow-sm',
           text: 'Waiting'
         },
         scheduled: {
-          color: 'bg-blue-500 text-white',
+          color: 'bg-blue-500 text-white shadow-sm',
           text: 'Scheduled'
         },
         active: {
-          color: 'bg-blue-600 text-white',
+          color: 'bg-green-500 text-white shadow-sm',
           text: 'In Process'
         },
         completed: {
-          color: 'bg-gray-500 text-white',
-          text: 'Ended'
+          color: 'bg-gray-400 text-white shadow-sm',
+          text: 'Completed'
         },
         stopped: {
-          color: 'bg-gray-500 text-white',
+          color: 'bg-red-500 text-white shadow-sm',
           text: 'Stopped'
         },
         cancelled: {
-          color: 'bg-gray-500 text-white',
+          color: 'bg-gray-400 text-white shadow-sm',
           text: 'Cancelled'
         }
       };
       
-      const config = statusConfig[actualStatus] || { color: 'bg-gray-500 text-white', text: status.charAt(0).toUpperCase() + status.slice(1) };
+      const config = statusConfig[actualStatus] || { color: 'bg-gray-400 text-white shadow-sm', text: status.charAt(0).toUpperCase() + status.slice(1) };
       
       return (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold ${config.color}`}>
+        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${config.color}`}>
           {config.text}
         </span>
       );
@@ -2871,7 +3539,7 @@ const AdminDashboard = () => {
     }
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 w-full max-w-full overflow-x-hidden">
         {/* Header Section - Enhanced */}
         <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl shadow-2xl p-6 border-2 border-blue-400 overflow-hidden">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full -mr-20 -mt-20"></div>
@@ -2893,7 +3561,7 @@ const AdminDashboard = () => {
               <button
                 onClick={() => {
                   setSelectedEvent(null);
-                  setShowEventModal(true);
+                  setShowEventTypeSelection(true);
                 }}
                 disabled={user?.status === 'locked' || user?.status === 'restricted'}
                 className="flex items-center justify-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
@@ -2921,13 +3589,13 @@ const AdminDashboard = () => {
         </div>
 
         {!Array.isArray(data.events) || data.events.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-            <p>No events found</p>
-            <p className="text-sm mt-2 text-gray-400">Create an event to get started</p>
+          <div className="text-center py-16 bg-white rounded-2xl shadow-lg">
+            <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+            <p className="text-lg font-semibold text-gray-700 mb-2">No events found</p>
+            <p className="text-sm text-gray-500">Create an event to get started</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.isArray(data.events) && data.events.map((event) => {
               if (!event || !event.id) return null;
               const isLoading = eventActionLoading[event.id];
@@ -2943,112 +3611,126 @@ const AdminDashboard = () => {
               const nowUTC = new Date(now.toISOString());
               const eventStartTime = event.startTime ? new Date(event.startTime) : null;
               const eventEndTime = event.endTime ? new Date(event.endTime) : null;
-              const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
-              const isCompleted = eventEndTime && eventEndTime.getTime() <= nowUTC.getTime() && event.status === 'active';
               
+              // Check if event is waiting to start (startTime is in future)
+              const isWaitingToStart = eventStartTime && eventStartTime.getTime() > nowUTC.getTime();
+              
+              // Check if event is completed (endTime has passed OR status is completed)
+              const isCompleted = (eventEndTime && eventEndTime.getTime() <= nowUTC.getTime()) || 
+                                 event.status === 'completed';
+              
+              // Determine actual status based on time and current status
               let actualStatus = event.status;
-              if (isWaitingToStart && (event.status === 'scheduled' || event.status === 'active')) {
-                actualStatus = 'waiting';
-              } else if (isCompleted) {
+              
+              // Priority 1: If endTime passed, mark as completed
+              if (isCompleted) {
                 actualStatus = 'completed';
+              }
+              // Priority 2: If waiting to start, show as waiting
+              else if (isWaitingToStart && (event.status === 'scheduled' || event.status === 'active')) {
+                actualStatus = 'waiting';
+              }
+              // Priority 3: If active and not completed, show as active (In Process)
+              else if (event.status === 'active' && !isCompleted) {
+                actualStatus = 'active'; // Will show as "In Process"
               }
 
               return (
-                <div key={event.id} className={`bg-white rounded-2xl shadow-xl border-2 ${event.isDisabled ? 'border-blue-400' : 'border-gray-200'} hover:shadow-2xl hover:border-blue-400 hover:-translate-y-1 transition-all duration-300 overflow-hidden aspect-square flex flex-col`}>
-                  {/* Product Card Style Layout */}
-                  <div className="p-3 flex-1 flex flex-col">
-                    {/* Event Name - Enhanced */}
-                    <div className="mb-1.5 pb-1.5 border-b border-gray-200">
-                      <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-extrabold text-gray-900 truncate">
-                            {event.name}
-                          </h3>
-                        </div>
-                        <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-500 rounded-lg p-1.5 flex-shrink-0 shadow-md">
+                <div key={event.id} className={`bg-white rounded-2xl shadow-lg border-2 ${event.isDisabled ? 'border-blue-300' : 'border-gray-200'} hover:shadow-xl hover:border-blue-400 transition-all duration-300 overflow-hidden flex flex-col`}>
+                  {/* Card Header */}
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <div className="bg-white bg-opacity-20 rounded-lg p-1.5">
                           <Calendar className="w-4 h-4 text-white" />
                         </div>
+                        <h3 className="text-base font-bold text-white truncate flex-1">
+                          {event.name}
+                        </h3>
                       </div>
                     </div>
-
-                    {/* Status Badges - Compact */}
-                    <div className="flex items-center flex-wrap gap-1 mb-1.5">
-                      {getStatusBadge(event.status, event.isDisabled, event.startTime, event.endTime)}
+                    {/* Status Badge */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {getStatusBadge(actualStatus, event.isDisabled, event.startTime, event.endTime)}
                       {event.isRecurring && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-500 text-white">
-                          🔁
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-white bg-opacity-20 text-white backdrop-blur-sm">
+                          🔁 Recurring
                         </span>
                       )}
                       {event.parentRecurringEventId && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-blue-500 text-white">
-                          Inst
-                          </span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-white bg-opacity-20 text-white backdrop-blur-sm">
+                          Instance
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Body */}
+                  <div className="p-4 flex-1 flex flex-col">
+                    {/* Event Details */}
+                    <div className="space-y-2 mb-3">
+                      {/* Device Info */}
+                      <div className="flex items-center justify-between p-2 bg-blue-50 rounded-lg border border-blue-100">
+                        <div className="flex items-center space-x-2">
+                          <Thermometer className="w-3.5 h-3.5 text-blue-600" />
+                          <span className="text-xs font-medium text-gray-700">Device</span>
+                        </div>
+                        <span className="text-xs font-bold text-gray-900">
+                          {event.device?.name || `Device #${event.deviceId}`}
+                        </span>
+                      </div>
+
+                      {/* Temperature */}
+                      {event.temperature && (
+                        <div className="flex items-center justify-between p-2 bg-blue-50 rounded-lg border border-blue-100">
+                          <div className="flex items-center space-x-2">
+                            <Thermometer className="w-3.5 h-3.5 text-blue-600" />
+                            <span className="text-xs font-medium text-gray-700">Temp</span>
+                          </div>
+                          <span className="text-xs font-bold text-gray-900">{event.temperature}°C</span>
+                        </div>
+                      )}
+
+                      {/* Time Info */}
+                      <div className="p-2 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                        {event.isRecurring ? (
+                          <div>
+                            <div className="text-xs font-semibold text-gray-600 mb-0.5">Recurring</div>
+                            {event.timeStart && event.timeEnd && (
+                              <div className="text-xs font-bold text-gray-900">
+                                {event.timeStart} - {event.timeEnd}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <div>
+                              <div className="text-xs font-semibold text-gray-600 mb-0.5">Start</div>
+                              <div className="text-xs font-bold text-gray-900" title={formatDateTime(event.startTime)}>
+                                {formatTime(event.startTime)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold text-gray-600 mb-0.5">End</div>
+                              <div className="text-xs font-bold text-gray-900" title={formatDateTime(event.endTime)}>
+                                {formatTime(event.endTime)}
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </div>
-                      
-                    {/* Event Info - Compact */}
-                    <div className="bg-gray-50 rounded-lg p-1.5 mb-1.5 border border-gray-200">
-                      <div className="grid grid-cols-1 gap-1">
-                        <div className="flex items-center justify-between bg-white rounded px-1.5 py-1">
-                          <div className="flex items-center space-x-1">
-                            <Thermometer className="w-3 h-3 text-blue-600" />
-                            <span className="text-xs font-semibold text-gray-700">Device</span>
-                        </div>
-                          <span className="text-xs font-bold text-gray-900 truncate ml-1 max-w-[100px]">
-                            {event.device?.name || `#${event.deviceId}`}
-                          </span>
-                        </div>
-                        {event.temperature && (
-                          <div className="flex items-center justify-between bg-white rounded px-1.5 py-1">
-                            <div className="flex items-center space-x-1">
-                              <Thermometer className="w-3 h-3 text-blue-600" />
-                              <span className="text-xs font-semibold text-gray-700">Temp</span>
-                        </div>
-                            <span className="text-xs font-bold text-gray-900">{event.temperature}°C</span>
-                        </div>
-                        )}
-                        </div>
                     </div>
 
-                    {/* Time Info - Compact */}
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-1.5 mb-1.5 border border-blue-200">
-                      {event.isRecurring ? (
-                        <div className="space-y-0.5">
-                          <div className="text-xs font-semibold text-gray-700">Recurring</div>
-                          {event.timeStart && event.timeEnd && (
-                            <div className="text-xs font-bold text-gray-900">
-                              {event.timeStart} - {event.timeEnd}
-                          </div>
-                        )}
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          <div>
-                            <div className="text-xs font-semibold text-gray-700">Start</div>
-                            <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.startTime)}>
-                              {formatTime(event.startTime)}
-                          </div>
-                      </div>
-                          <div>
-                            <div className="text-xs font-semibold text-gray-700">End</div>
-                            <div className="text-xs font-bold text-gray-900 truncate" title={formatDateTime(event.endTime)}>
-                              {formatTime(event.endTime)}
-                        </div>
-                          </div>
-                          </div>
-                        )}
-                      </div>
-
-                    {/* Action Buttons - Compact */}
-                    <div className="flex flex-wrap gap-1.5 mt-auto">
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-1.5 mt-auto pt-3 border-t border-gray-200">
                       {canStart && (
                         <button
                           onClick={() => handleEventAction(event.id, 'start')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Start event"
                         >
-                          <Play className="w-3 h-3" />
+                          <Play className="w-3.5 h-3.5" />
                           <span>Start</span>
                         </button>
                       )}
@@ -3056,10 +3738,10 @@ const AdminDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'stop')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-gray-500 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Stop event"
                         >
-                          <Square className="w-3 h-3" />
+                          <Square className="w-3.5 h-3.5" />
                           <span>Stop</span>
                         </button>
                       )}
@@ -3067,10 +3749,10 @@ const AdminDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'enable')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Enable event"
                         >
-                          <Play className="w-3 h-3" />
+                          <Play className="w-3.5 h-3.5" />
                           <span>Enable</span>
                         </button>
                       )}
@@ -3078,10 +3760,10 @@ const AdminDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'disable')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Disable event"
                         >
-                          <Square className="w-3 h-3" />
+                          <Square className="w-3.5 h-3.5" />
                           <span>Disable</span>
                         </button>
                       )}
@@ -3092,10 +3774,10 @@ const AdminDashboard = () => {
                             setShowEventModal(true);
                           }}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Edit event"
                         >
-                          <Edit className="w-3 h-3" />
+                          <Edit className="w-3.5 h-3.5" />
                           <span>Edit</span>
                         </button>
                       )}
@@ -3103,16 +3785,16 @@ const AdminDashboard = () => {
                         <button
                           onClick={() => handleEventAction(event.id, 'delete')}
                           disabled={!!isLoading || user?.status === 'restricted' || user?.status === 'locked'}
-                          className="flex-1 flex items-center justify-center space-x-1 px-2 py-1.5 rounded-md text-xs font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
+                          className="flex-1 flex items-center justify-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm min-w-[70px]"
                           title="Delete event"
                         >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Del</span>
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
                         </button>
                       )}
                       {isLoading && (
                         <div className="flex-1 flex items-center justify-center min-w-[70px]">
-                          <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                         </div>
                       )}
                     </div>
@@ -3129,264 +3811,129 @@ const AdminDashboard = () => {
   const DashboardView = () => {
     // Show loading spinner during initial load
     if (initialLoading) {
-          return (
+      console.log('🔄 DashboardView: Showing loading spinner, initialLoading:', initialLoading);
+      return (
         <div className="flex items-center justify-center min-h-[400px] w-full">
           <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
-            </div>
-          );
-        }
+        </div>
+      );
+    }
+    
+    console.log('✅ DashboardView: Rendering dashboard content', {
+      initialLoading,
+      organizations: data.organizations?.length || 0,
+      acs: data.acs?.length || 0,
+      managers: data.managers?.length || 0
+    });
     
     const totalVenues = data.organizations.reduce((sum, org) => sum + (org.venues?.length || 0), 0);
     const activeACs = data.acs.filter(ac => ac.isOn === true || ac.isOn === 'true' || ac.isOn === 1).length;
     const totalEvents = Array.isArray(data.events) ? data.events.length : 0;
     const activeEvents = Array.isArray(data.events) ? data.events.filter(e => e.status === 'active').length : 0;
+    const totalManagers = data.managers?.length || 0;
 
     return (
-      <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full px-2 sm:px-0">
-        {/* Statistics Cards - Ultra Enhanced */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 w-full">
-          <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 text-white transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
-            <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-white opacity-5 rounded-full -ml-8 -mb-8 sm:-ml-12 sm:-mb-12"></div>
-            <div className="relative flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-                <p className="text-blue-100 text-xs sm:text-sm font-semibold mb-1 sm:mb-2 uppercase tracking-wide">Organizations</p>
-                <p className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-1 drop-shadow-lg">{data.organizations.length}</p>
-                <p className="text-blue-100 text-xs font-medium flex items-center">
-                  <span className="w-2 h-2 bg-blue-300 rounded-full mr-2 animate-pulse"></span>
-                  <span className="hidden sm:inline">Assigned to you</span>
-                  <span className="sm:hidden">Assigned</span>
-                </p>
-          </div>
-              <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
-                <Building className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
-          </div>
-        </div>
-      </div>
-          
-          <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 text-white transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
-            <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-white opacity-5 rounded-full -ml-8 -mb-8 sm:-ml-12 sm:-mb-12"></div>
-            <div className="relative flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <p className="text-blue-100 text-xs sm:text-sm font-semibold mb-1 sm:mb-2 uppercase tracking-wide">Total Venues</p>
-                <p className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-1 drop-shadow-lg">{totalVenues}</p>
-                <p className="text-blue-100 text-xs font-medium flex items-center">
-                  <span className="w-2 h-2 bg-blue-300 rounded-full mr-2 animate-pulse"></span>
-                  <span className="hidden sm:inline">Active venues</span>
-                  <span className="sm:hidden">Active</span>
-                </p>
-        </div>
-              <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
-                <MapPin className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
-                  </div>
-              </div>
-            </div>
-            
-          <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 text-white transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
-            <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-white opacity-5 rounded-full -ml-8 -mb-8 sm:-ml-12 sm:-mb-12"></div>
-            <div className="relative flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <p className="text-blue-100 text-xs sm:text-sm font-semibold mb-1 sm:mb-2 uppercase tracking-wide">AC Devices</p>
-                <p className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-1 drop-shadow-lg">{data.acs.length}</p>
-                <p className="text-blue-100 text-xs font-medium flex items-center">
-                  <span className="w-2 h-2 bg-blue-300 rounded-full mr-2 animate-pulse"></span>
-                  <span className="hidden sm:inline">{activeACs} powered ON</span>
-                  <span className="sm:hidden">{activeACs} ON</span>
-                </p>
-                </div>
-              <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
-                <Thermometer className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
-              </div>
-                </div>
-                        </div>
-                        
-          <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 text-white transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-10 rounded-full -mr-12 -mt-12 sm:-mr-16 sm:-mt-16"></div>
-            <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-white opacity-5 rounded-full -ml-8 -mb-8 sm:-ml-12 sm:-mb-12"></div>
-            <div className="relative flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <p className="text-blue-100 text-xs sm:text-sm font-semibold mb-1 sm:mb-2 uppercase tracking-wide">Events</p>
-                <p className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-1 drop-shadow-lg">{totalEvents}</p>
-                <p className="text-blue-100 text-xs font-medium flex items-center">
-                  <span className="w-2 h-2 bg-blue-300 rounded-full mr-2 animate-pulse"></span>
-                  <span className="hidden sm:inline">{activeEvents} active</span>
-                  <span className="sm:hidden">{activeEvents} active</span>
-                              </p>
-                            </div>
-              <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 transform group-hover:rotate-12 transition-transform duration-300 shadow-xl ml-2 flex-shrink-0">
-                <Calendar className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
-                            </div>
-                            </div>
-                            </div>
-                          </div>
-
-        {/* Alerts Section - Ultra Enhanced */}
-        {alerts.length > 0 && (
-          <div className="bg-gradient-to-br from-blue-50 via-blue-100 to-blue-50 border-l-4 border-blue-500 rounded-2xl shadow-2xl p-6 w-full transform hover:shadow-blue-500/20 transition-all duration-300">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-4">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-3 shadow-lg animate-pulse">
-                  <AlertCircle className="w-7 h-7 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-extrabold text-blue-900">
-                    Active Alerts
-                  </h3>
-                  <p className="text-sm text-blue-700 font-semibold mt-1">
-                    {alerts.length} alert{alerts.length !== 1 ? 's' : ''} require immediate attention
-                                  </p>
-                                </div>
-                              </div>
-              <button
-                onClick={handleCheckAlerts}
-                disabled={alertsLoading}
-                className="flex items-center px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-bold rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
-              >
-                <RefreshCw className={`w-5 h-5 mr-2 ${alertsLoading ? 'animate-spin' : ''}`} />
-                Check Now
-              </button>
-                            </div>
-            <div className="space-y-4 max-h-80 overflow-y-auto custom-scrollbar">
-              {alerts.slice(0, 3).map((alert, idx) => (
-                <div key={idx} className="bg-white rounded-xl p-5 border-2 border-blue-200 shadow-md hover:shadow-xl transition-all transform hover:-translate-y-1 hover:border-blue-400">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                        <span className="font-semibold text-gray-900">{alert.acName || 'Device Alert'}</span>
-                        {alert.organizationName && (
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">
-                            Org: {alert.organizationName}
-                          </span>
-                        )}
-                              </div>
-                      {alert.issue && (
-                        <div className="flex items-start space-x-2 text-sm text-blue-700">
-                          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-600" />
-                          <span className="font-medium">{alert.issue}</span>
-                                </div>
-                              )}
-                              </div>
-                              </div>
-                            </div>
-              ))}
-              {alerts.length > 3 && (
-                <p className="text-center text-sm text-blue-600 font-semibold pt-2">
-                  +{alerts.length - 3} more alerts
-                </p>
-              )}
-                              </div>
-                            </div>
-        )}
-
-        {/* Quick Stats Grid - Enhanced */}
+      <div className="space-y-4 sm:space-y-6 w-full px-2 sm:px-4 md:px-6 bg-gray-50 min-h-screen py-4 sm:py-6">
+        {/* Top Row - Metric Cards (White with Orange Icons) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 w-full">
-          {/* AC Devices Status */}
-          <div className="group bg-gradient-to-br from-white to-blue-50 rounded-2xl shadow-xl p-6 border-2 border-blue-100 hover:border-blue-300 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-3 shadow-lg transform group-hover:scale-110 transition-transform duration-300">
-                  <Thermometer className="w-7 h-7 text-white" />
-                                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">AC Devices</h3>
-                  <p className="text-sm text-gray-500 font-medium">Status Overview</p>
-                                </div>
-                                </div>
-                                </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-white rounded-xl shadow-sm">
-                <span className="text-sm font-semibold text-gray-700">Total Devices</span>
-                <span className="text-2xl font-extrabold text-gray-900">{data.acs.length}</span>
-                              </div>
-              <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-blue-50 rounded-xl shadow-sm border border-blue-200">
-                <span className="text-sm font-semibold text-gray-700">Powered ON</span>
-                <span className="text-2xl font-extrabold text-blue-600">{activeACs}</span>
-                                        </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl shadow-sm">
-                <span className="text-sm font-semibold text-gray-700">Powered OFF</span>
-                <span className="text-2xl font-extrabold text-gray-600">{data.acs.length - activeACs}</span>
-                                  </div>
-                                </div>
-                              </div>
-                              
-          {/* Recent Events */}
-          <div className="group bg-gradient-to-br from-white to-blue-50 rounded-2xl shadow-xl p-6 border-2 border-blue-100 hover:border-blue-300 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-3 shadow-lg transform group-hover:scale-110 transition-transform duration-300">
-                  <Calendar className="w-7 h-7 text-white" />
-                                  </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Recent Events</h3>
-                  <p className="text-sm text-gray-500 font-medium">Latest Activities</p>
-                                </div>
-                            </div>
-                          </div>
-            <div className="space-y-3">
-              {Array.isArray(data.events) && data.events.length > 0 ? (
-                <>
-                  {data.events.slice(0, 3).map((event, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-all border border-gray-100 hover:border-blue-200">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-gray-900 truncate">{event.name || 'Event'}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {event.device?.name || 'N/A'}
-                        </p>
-                      </div>
-                      <span className={`text-xs px-3 py-1.5 rounded-full font-semibold shadow-sm ${
-                        event.status === 'active' ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white' : 
-                        event.status === 'scheduled' ? 'bg-gradient-to-r from-blue-400 to-blue-500 text-white' : 
-                        'bg-gradient-to-r from-gray-400 to-gray-500 text-white'
-                      }`}>
-                        {event.status || 'inactive'}
-                                        </span>
-                                    </div>
-                                  ))}
-                  {data.events.length > 3 && (
-                    <p className="text-xs text-gray-500 text-center pt-2 font-semibold">
-                      +{data.events.length - 3} more events
-                    </p>
-                            )}
-                          </>
-              ) : (
-                <div className="text-center py-8">
-                  <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500 font-medium">No events found</p>
-                </div>
-              )}
+          {/* Total Staff Members / Managers */}
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 sm:mb-2">{totalManagers}</p>
+                <p className="text-sm sm:text-base text-gray-600 font-medium">Total Managers</p>
+              </div>
+              <div className="bg-blue-100 rounded-lg sm:rounded-xl p-3 sm:p-4">
+                <Users className="w-8 h-8 sm:w-10 sm:h-10 text-blue-500" />
+              </div>
             </div>
           </div>
 
-          {/* System Overview */}
-          <div className="group bg-gradient-to-br from-white to-blue-50 rounded-2xl shadow-xl p-6 border-2 border-blue-100 hover:border-blue-300 hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-3 shadow-lg transform group-hover:scale-110 transition-transform duration-300">
-                  <BarChart3 className="w-7 h-7 text-white" />
-                                  </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">System Overview</h3>
-                  <p className="text-sm text-gray-500 font-medium">Quick Stats</p>
-                                </div>
-                            </div>
-                          </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-blue-50 rounded-xl shadow-sm border border-blue-200">
-                <span className="text-sm font-semibold text-gray-700">Total Venues</span>
-                <span className="text-2xl font-extrabold text-blue-600">{totalVenues}</span>
-                      </div>
-              <div className="flex items-center justify-between p-3 bg-white rounded-xl shadow-sm">
-                <span className="text-sm font-semibold text-gray-700">Active Events</span>
-                <span className="text-2xl font-extrabold text-gray-900">{activeEvents}</span>
-                    </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl shadow-sm">
-                <span className="text-sm font-semibold text-gray-700">Total Alerts</span>
-                <span className="text-2xl font-extrabold text-gray-600">{alerts.length}</span>
-                  </div>
+          {/* Total Appliances / AC Devices */}
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 sm:mb-2">{data.acs.length}</p>
+                <p className="text-sm sm:text-base text-gray-600 font-medium">Total Appliances</p>
               </div>
+              <div className="bg-blue-100 rounded-lg sm:rounded-xl p-3 sm:p-4">
+                <Thermometer className="w-8 h-8 sm:w-10 sm:h-10 text-blue-500" />
+              </div>
+            </div>
+          </div>
+
+          {/* Total Sensors / Venues */}
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 hover:shadow-xl transition-shadow sm:col-span-2 lg:col-span-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 sm:mb-2">{totalVenues}</p>
+                <p className="text-sm sm:text-base text-gray-600 font-medium">Total Venues</p>
+              </div>
+              <div className="bg-blue-100 rounded-lg sm:rounded-xl p-3 sm:p-4">
+                <MapPin className="w-8 h-8 sm:w-10 sm:h-10 text-blue-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Row - Action Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 w-full">
+
+          {/* Add New Device Card */}
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-6 sm:p-8 hover:shadow-xl transition-shadow">
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Add New Device</h3>
+            <p className="text-xs sm:text-sm text-gray-600 mb-4 sm:mb-6">add device from here and start managing it right now</p>
+            <button
+              onClick={() => setShowCreateACModal(true)}
+              disabled={user?.status === 'locked' || user?.status === 'restricted'}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 sm:px-6 py-2 sm:py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm sm:text-base"
+            >
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+              Add +
+            </button>
+            <div className="mt-4 sm:mt-6 flex items-end justify-center space-x-2">
+              <div className="bg-gray-100 rounded-lg p-2 sm:p-3 w-12 h-16 sm:w-16 sm:h-20 flex items-center justify-center">
+                <Thermometer className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400" />
+              </div>
+              <div className="bg-gray-100 rounded-lg p-2 sm:p-3 w-12 h-20 sm:w-16 sm:h-24 flex items-center justify-center">
+                <Thermometer className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400" />
+              </div>
+              <div className="bg-gray-100 rounded-lg p-2 sm:p-3 w-12 h-16 sm:w-16 sm:h-20 flex items-center justify-center">
+                <Thermometer className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400" />
+              </div>
+            </div>
+          </div>
+
+          {/* Staff Management Card */}
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-6 sm:p-8 hover:shadow-xl transition-shadow">
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Staff Management</h3>
+            <p className="text-xs sm:text-sm text-gray-600 mb-4 sm:mb-6">See how many managers in your management list</p>
+            <div className="flex justify-center">
+              <div className="text-center p-4 sm:p-6 bg-blue-50 rounded-lg border border-blue-200 w-full max-w-xs">
+                <p className="text-3xl sm:text-4xl font-bold text-blue-600 mb-2">{totalManagers}</p>
+                <p className="text-base sm:text-lg font-semibold text-gray-700">Managers</p>
+              </div>
+            </div>
+          </div>
+
+          {/* System Info Card (Blue) */}
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl sm:rounded-2xl shadow-lg p-6 sm:p-8 hover:shadow-xl transition-shadow text-white md:col-span-2 lg:col-span-1">
+            <h3 className="text-xl sm:text-2xl font-bold mb-2">System Overview</h3>
+            <p className="text-xs sm:text-sm text-blue-100 mb-4 sm:mb-6">view system statistics and information</p>
+            <div className="space-y-3 sm:space-y-4">
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
+                <span className="text-xs sm:text-sm font-medium text-white">Total Organizations</span>
+                <span className="text-xl sm:text-2xl font-bold">{data.organizations.length}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
+                <span className="text-xs sm:text-sm font-medium text-white">Active Events</span>
+                <span className="text-xl sm:text-2xl font-bold">{activeEvents}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 sm:p-3 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
+                <span className="text-xs sm:text-sm font-medium text-white">Total Alerts</span>
+                <span className="text-xl sm:text-2xl font-bold">{alerts.length}</span>
+              </div>
+            </div>
           </div>
         </div>
           </div>
@@ -3407,6 +3954,7 @@ const AdminDashboard = () => {
 
     switch (activeTab) {
       case 'dashboard':
+        console.log('📊 [renderContent] Rendering dashboard tab', { initialLoading, dataLength: data.organizations?.length });
         return <DashboardView />;
       case 'venue-dashboard':
         // Show VenueDetailsPage in main content area (not in sidebar)
@@ -3426,13 +3974,33 @@ const AdminDashboard = () => {
         ) : [];
         
         return (
-          <div className="w-full min-h-screen">
+          <div className="w-full min-h-screen max-w-full overflow-x-hidden">
             {/* Show venue details if selected, otherwise show empty state */}
             {selectedVenueId ? (
               <VenueDetailsPage 
                 venueIdProp={selectedVenueId} 
                 hideHeader={true} 
+                sidebarOpen={sidebarOpen}
                 onVenueChange={(newVenueId) => setSelectedVenueId(newVenueId)}
+                onEventCreated={async () => {
+                  // Reload events list in AdminDashboard when event is created from venue detail page
+                  // Add delay to ensure backend has processed the event
+                  console.log('🔄 [AdminDashboard] Event created/updated from venue detail - will reload events');
+                  setTimeout(async () => {
+                    console.log('🔄 [AdminDashboard] Reloading events after creation from venue detail page');
+                    try {
+                      await loadEvents();
+                      console.log('✅ [AdminDashboard] Events reloaded successfully');
+                      // If Events tab is active, show success message
+                      if (activeTab === 'events') {
+                        toast.success('Events list refreshed');
+                      }
+                    } catch (error) {
+                      console.error('❌ [AdminDashboard] Failed to reload events:', error);
+                      toast.error('Failed to refresh events list');
+                    }
+                  }, 800);
+                }}
               />
             ) : (
               <div className="flex items-center justify-center h-64 px-6">
@@ -3445,8 +4013,8 @@ const AdminDashboard = () => {
             )}
           </div>
         );
-      case 'events':
-        return <AdminEventsView />;
+        case 'events':
+          return <AdminEventsView />;
       case 'venues':
         // Get all venues - from data.venues (which includes venues from orgs + separate API)
         // Also include organization info for each venue
@@ -3485,13 +4053,38 @@ const AdminDashboard = () => {
                     </span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowCreateVenueModal(true)}
-                  className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
-                >
-                  <Plus className="w-6 h-6 mr-2" />
-                  Add Venue
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* View Toggle */}
+                  <div className="flex items-center bg-white bg-opacity-20 rounded-lg p-1">
+                    <button
+                      onClick={() => setVenueViewMode('cards')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        venueViewMode === 'cards'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Cards
+                    </button>
+                    <button
+                      onClick={() => setVenueViewMode('table')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        venueViewMode === 'table'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Table
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowCreateVenueModal(true)}
+                    className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
+                  >
+                    <Plus className="w-6 h-6 mr-2" />
+                    Add Venue
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -3502,6 +4095,166 @@ const AdminDashboard = () => {
                 </div>
                 <p className="text-gray-800 text-xl sm:text-2xl font-bold mb-3">No Venues Found</p>
                 <p className="text-gray-600 text-sm sm:text-base mb-6">No venues are currently assigned to your organizations</p>
+              </div>
+            ) : venueViewMode === 'table' ? (
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Venue Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Devices</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Temperature</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {allVenuesWithOrg.map(venue => {
+                        const venueACs = data.acs.filter(ac => {
+                          if (venue.organizationId && ac.venueId === venue.organizationId) {
+                            return false;
+                          }
+                          return ac.venueId === venue.id;
+                        });
+                        const isVenueOn = venue.isVenueOn === true || venue.isVenueOn === 'true' || venue.isVenueOn === 1;
+                        const currentTemp = localTemperatures[`venue-${venue.id}`] !== undefined 
+                          ? localTemperatures[`venue-${venue.id}`] 
+                          : (venue.temperature ?? 16);
+                        const isLoading = temperatureLoading[`venue-${venue.id}`];
+                        
+                        return (
+                          <tr key={venue.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{venue.name}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="text-sm text-gray-900">{venue.organization?.name || 'N/A'}</span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="text-sm text-gray-900">{venueACs.length} device{venueACs.length !== 1 ? 's' : ''}</span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center space-x-1">
+                                <button
+                                  onClick={() => {
+                                    const newTemp = Math.max(16, currentTemp - 1);
+                                    handleTemperatureChange('venue', venue.id, newTemp);
+                                    handleSetVenueTemperature(venue.id, newTemp);
+                                  }}
+                                  disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked' || currentTemp <= 16}
+                                  className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <input
+                                  type="number"
+                                  min="16"
+                                  max="30"
+                                  step="1"
+                                  value={currentTemp}
+                                  disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked'}
+                                  className={`w-14 px-1 py-1 text-xs text-center font-bold border rounded bg-white transition-colors ${
+                                    isLoading || user?.status === 'restricted' || user?.status === 'locked'
+                                      ? 'opacity-50 cursor-not-allowed border-gray-200' 
+                                      : 'border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
+                                  }`}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === '') {
+                                      handleTemperatureChange('venue', venue.id, '');
+                                    } else {
+                                      const temp = parseInt(value);
+                                      if (!isNaN(temp)) {
+                                        handleTemperatureChange('venue', venue.id, temp);
+                                      }
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const value = e.target.value;
+                                    if (value === '') {
+                                      handleTemperatureChange('venue', venue.id, venue.temperature ?? 16);
+                                    } else {
+                                      const temp = parseInt(value);
+                                      if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                        handleSetVenueTemperature(venue.id, temp);
+                                      } else {
+                                        handleTemperatureChange('venue', venue.id, venue.temperature ?? 16);
+                                      }
+                                    }
+                                  }}
+                                  onKeyPress={(e) => {
+                                    if (e.key === 'Enter') {
+                                      const value = e.target.value;
+                                      if (value === '') {
+                                        handleTemperatureChange('venue', venue.id, venue.temperature ?? 16);
+                                      } else {
+                                        const temp = parseInt(value);
+                                        if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                          handleSetVenueTemperature(venue.id, temp);
+                                        }
+                                      }
+                                    }
+                                  }}
+                                />
+                                <button
+                                  onClick={() => {
+                                    const newTemp = Math.min(30, currentTemp + 1);
+                                    handleTemperatureChange('venue', venue.id, newTemp);
+                                    handleSetVenueTemperature(venue.id, newTemp);
+                                  }}
+                                  disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked' || currentTemp >= 30}
+                                  className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                                {isLoading && (
+                                  <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin ml-1"></div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <button
+                                onClick={() => {
+                                  if (user?.status !== 'restricted' && user?.status !== 'locked') {
+                                    handleToggleVenuePower(venue.id, venue.isVenueOn || false);
+                                  }
+                                }}
+                                disabled={user?.status === 'restricted' || user?.status === 'locked'}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  isVenueOn ? 'bg-green-500' : 'bg-gray-300'
+                                }`}
+                                title={isVenueOn ? 'Turn OFF' : 'Turn ON'}
+                              >
+                                <span
+                                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    isVenueOn ? 'translate-x-6' : 'translate-x-1'
+                                  }`}
+                                />
+                              </button>
+                              <span className="ml-2 text-sm text-gray-700">
+                                {isVenueOn ? 'On' : 'Off'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <button
+                                onClick={() => {
+                                  setSelectedVenueId(venue.id);
+                                  setActiveTab('venue-dashboard');
+                                }}
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="View venue details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
@@ -3532,13 +4285,38 @@ const AdminDashboard = () => {
                     </span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowCreateOrgModal(true)}
-                  className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
-                >
-                  <Plus className="w-6 h-6 mr-2" />
-                  Add Organization
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* View Toggle */}
+                  <div className="flex items-center bg-white bg-opacity-20 rounded-lg p-1">
+                    <button
+                      onClick={() => setOrganizationViewMode('cards')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        organizationViewMode === 'cards'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Cards
+                    </button>
+                    <button
+                      onClick={() => setOrganizationViewMode('table')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        organizationViewMode === 'table'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Table
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowCreateOrgModal(true)}
+                    className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
+                  >
+                    <Plus className="w-6 h-6 mr-2" />
+                    Add Organization
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -3739,11 +4517,172 @@ const AdminDashboard = () => {
 
             {/* Active Organizations */}
             {data.organizations.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
-                {data.organizations.map(org => (
-                  <OrganizationCard key={org.id} org={org} />
-                ))}
-              </div>
+              organizationViewMode === 'table' ? (
+                <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization Name</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Venues</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Devices</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Temperature</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {data.organizations.map(org => {
+                          const orgVenues = org.venues || data.venues.filter(v => v.organizationId === org.id);
+                          const orgACs = data.acs.filter(ac => 
+                            ac.organizationId === org.id || ac.organization?.id === org.id
+                          );
+                          const isOrgOn = org.isOrganizationOn === true || org.isOrganizationOn === 'true' || org.isOrganizationOn === 1;
+                          const currentTemp = localTemperatures[`organization-${org.id}`] !== undefined 
+                            ? localTemperatures[`organization-${org.id}`] 
+                            : (org.temperature ?? 16);
+                          const isLoading = temperatureLoading[`organization-${org.id}`];
+                          
+                          return (
+                            <tr key={org.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{org.name}</div>
+                                <div className="text-xs text-gray-500">{org.status || 'active'}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm text-gray-900">{orgVenues.length} venue{orgVenues.length !== 1 ? 's' : ''}</span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm text-gray-900">{orgACs.length} device{orgACs.length !== 1 ? 's' : ''}</span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center space-x-1">
+                                  <button
+                                    onClick={() => {
+                                      const newTemp = Math.max(16, currentTemp - 1);
+                                      handleTemperatureChange('organization', org.id, newTemp);
+                                      handleSetOrganizationTemperature(org.id, newTemp);
+                                    }}
+                                    disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked' || currentTemp <= 16}
+                                    className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="16"
+                                    max="30"
+                                    step="1"
+                                    value={currentTemp}
+                                    disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked'}
+                                    className={`w-14 px-1 py-1 text-xs text-center font-bold border rounded bg-white transition-colors ${
+                                      isLoading || user?.status === 'restricted' || user?.status === 'locked'
+                                        ? 'opacity-50 cursor-not-allowed border-gray-200' 
+                                        : 'border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
+                                    }`}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      if (value === '') {
+                                        handleTemperatureChange('organization', org.id, '');
+                                      } else {
+                                        const temp = parseInt(value);
+                                        if (!isNaN(temp)) {
+                                          handleTemperatureChange('organization', org.id, temp);
+                                        }
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const value = e.target.value;
+                                      if (value === '') {
+                                        handleTemperatureChange('organization', org.id, org.temperature ?? 16);
+                                      } else {
+                                        const temp = parseInt(value);
+                                        if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                          handleSetOrganizationTemperature(org.id, temp);
+                                        } else {
+                                          handleTemperatureChange('organization', org.id, org.temperature ?? 16);
+                                        }
+                                      }
+                                    }}
+                                    onKeyPress={(e) => {
+                                      if (e.key === 'Enter') {
+                                        const value = e.target.value;
+                                        if (value === '') {
+                                          handleTemperatureChange('organization', org.id, org.temperature ?? 16);
+                                        } else {
+                                          const temp = parseInt(value);
+                                          if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                            handleSetOrganizationTemperature(org.id, temp);
+                                          }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const newTemp = Math.min(30, currentTemp + 1);
+                                      handleTemperatureChange('organization', org.id, newTemp);
+                                      handleSetOrganizationTemperature(org.id, newTemp);
+                                    }}
+                                    disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked' || currentTemp >= 30}
+                                    className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                  {isLoading && (
+                                    <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin ml-1"></div>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <button
+                                  onClick={() => {
+                                    if (user?.status !== 'restricted' && user?.status !== 'locked') {
+                                      handleToggleOrganizationPower(org.id, org.isOrganizationOn || false);
+                                    }
+                                  }}
+                                  disabled={user?.status === 'restricted' || user?.status === 'locked'}
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    isOrgOn ? 'bg-green-500' : 'bg-gray-300'
+                                  }`}
+                                  title={isOrgOn ? 'Turn OFF' : 'Turn ON'}
+                                >
+                                  <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                      isOrgOn ? 'translate-x-6' : 'translate-x-1'
+                                    }`}
+                                  />
+                                </button>
+                                <span className="ml-2 text-sm text-gray-700">
+                                  {isOrgOn ? 'On' : 'Off'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-center">
+                                <button
+                                  onClick={() => {
+                                    loadOrganizationEnergy(org.id);
+                                    handleViewOrganizationDetails(org.id);
+                                  }}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="View organization details"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+                  {data.organizations.map(org => (
+                    <OrganizationCard key={org.id} org={org} />
+                  ))}
+                </div>
+              )
             ) : (
               <div className="bg-gradient-to-br from-white to-blue-50 p-8 sm:p-12 lg:p-16 rounded-xl sm:rounded-2xl shadow-2xl text-center border-2 border-blue-200">
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center shadow-lg">
@@ -3828,6 +4767,9 @@ const AdminDashboard = () => {
                             Device ID
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Organization
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Venue
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -3839,6 +4781,12 @@ const AdminDashboard = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Events
                           </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Eye className="w-4 h-4" />
+                              <span>View</span>
+                            </div>
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -3848,44 +4796,177 @@ const AdminDashboard = () => {
                           ) : [];
                           const venue = data.venues.find(v => v.id === ac.venueId);
                           
+                          // Find organization for this device
+                          const { org } = (() => {
+                            let org = null;
+                            if (ac.organization) {
+                              org = ac.organization;
+                            } else if (ac.organizationId) {
+                              org = data.organizations.find(o => o.id === ac.organizationId);
+                            } else if (venue) {
+                              org = data.organizations.find(o => 
+                                o.id === venue.organizationId || 
+                                (o.venues && o.venues.some(v => v.id === venue.id))
+                              );
+                            } else if (ac.venueId) {
+                              org = data.organizations.find(o => o.id === ac.venueId);
+                            }
+                            return { org };
+                          })();
+                          
+                          const currentTemp = localTemperatures[`ac-${ac.id}`] !== undefined 
+                            ? localTemperatures[`ac-${ac.id}`] 
+                            : (ac.temperature ?? 16);
+                          const isLoading = temperatureLoading[`ac-${ac.id}`] || acPowerLoading[ac.id];
+                          
                           return (
                             <tr key={ac.id} className="hover:bg-gray-50">
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm font-medium text-gray-900">{ac.name}</div>
-                                <div className="text-xs text-gray-500">{ac.serialNumber}</div>
+                                <div className="text-xs text-gray-500">{ac.serialNumber || 'N/A'}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm text-gray-900">{org ? org.name : 'N/A'}</span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <span className="text-sm text-gray-900">{getVenueName(ac)}</span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center space-x-2">
-                                  <span className="text-sm font-medium text-gray-900">
-                                    {ac.temperature || 16}°C
-                                  </span>
-                                  <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
-                                    <Plus className="w-4 h-4" />
+                                <div className="flex items-center space-x-1">
+                                  <button
+                                    onClick={() => {
+                                      const newTemp = Math.max(16, currentTemp - 1);
+                                      handleTemperatureChange('ac', ac.id, newTemp);
+                                      handleSetACTemperature(ac.id, newTemp);
+                                    }}
+                                    disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked' || currentTemp <= 16}
+                                    className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs"
+                                  >
+                                    <Minus className="w-3 h-3" />
                                   </button>
+                                  <input
+                                    type="number"
+                                    min="16"
+                                    max="30"
+                                    step="1"
+                                    value={currentTemp}
+                                    disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked'}
+                                    className={`w-14 px-1 py-1 text-xs text-center font-bold border rounded bg-white transition-colors ${
+                                      isLoading || user?.status === 'restricted' || user?.status === 'locked'
+                                        ? 'opacity-50 cursor-not-allowed border-gray-200' 
+                                        : 'border-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
+                                    }`}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      if (value === '') {
+                                        handleTemperatureChange('ac', ac.id, '');
+                                      } else {
+                                        const temp = parseInt(value);
+                                        if (!isNaN(temp)) {
+                                          handleTemperatureChange('ac', ac.id, temp);
+                                        }
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const value = e.target.value;
+                                      if (value === '') {
+                                        handleTemperatureChange('ac', ac.id, ac.temperature ?? 16);
+                                      } else {
+                                        const temp = parseInt(value);
+                                        if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                          handleSetACTemperature(ac.id, temp);
+                                        } else {
+                                          handleTemperatureChange('ac', ac.id, ac.temperature ?? 16);
+                                        }
+                                      }
+                                    }}
+                                    onKeyPress={(e) => {
+                                      if (e.key === 'Enter') {
+                                        const value = e.target.value;
+                                        if (value === '') {
+                                          handleTemperatureChange('ac', ac.id, ac.temperature ?? 16);
+                                        } else {
+                                          const temp = parseInt(value);
+                                          if (!isNaN(temp) && temp >= 16 && temp <= 30) {
+                                            handleSetACTemperature(ac.id, temp);
+                                          }
+                                        }
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const newTemp = Math.min(30, currentTemp + 1);
+                                      handleTemperatureChange('ac', ac.id, newTemp);
+                                      handleSetACTemperature(ac.id, newTemp);
+                                    }}
+                                    disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked' || currentTemp >= 30}
+                                    className="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold text-xs"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                  {isLoading && (
+                                    <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin ml-1"></div>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={ac.isOn}
-                                    readOnly
-                                    className="sr-only peer"
-                                  />
-                                  <div className={`w-11 h-6 rounded-full peer ${
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (!isLoading && user?.status !== 'restricted' && user?.status !== 'locked') {
+                                      handleToggleACPower(ac.id);
+                                    }
+                                  }}
+                                  disabled={isLoading || user?.status === 'restricted' || user?.status === 'locked'}
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
                                     ac.isOn ? 'bg-green-500' : 'bg-gray-300'
-                                  } peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all`}></div>
-                                  <span className="ml-3 text-sm text-gray-700">
-                                    {ac.isOn ? 'On' : 'Off'}
-                                  </span>
-                                </label>
+                                  }`}
+                                  title={ac.isOn ? 'Turn OFF' : 'Turn ON'}
+                                >
+                                  <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                      ac.isOn ? 'translate-x-6' : 'translate-x-1'
+                                    }`}
+                                  />
+                                </button>
+                                <span className="ml-2 text-sm text-gray-700">
+                                  {ac.isOn ? 'On' : 'Off'}
+                                </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                                <button 
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const tempEvent = {
+                                      deviceId: String(ac.id)
+                                    };
+                                    setSelectedEvent(tempEvent);
+                                    setShowEventTypeSelection(true);
+                                  }}
+                                  disabled={user?.status === 'locked' || user?.status === 'restricted'}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  title={user?.status === 'locked' || user?.status === 'restricted' ? 'Restricted/Locked admins cannot create events' : 'Create Event for this device'}
+                                >
                                   <Plus className="w-4 h-4" />
+                                </button>
+                                {deviceEvents.length > 0 && (
+                                  <span className="ml-2 text-xs text-gray-500">({deviceEvents.length})</span>
+                                )}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleViewACDetails(ac.id);
+                                  }}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="View device details"
+                                >
+                                  <Eye className="w-4 h-4" />
                                 </button>
                               </td>
                             </tr>
@@ -3918,6 +4999,153 @@ const AdminDashboard = () => {
         const activeACsCount = data.acs.filter(ac => ac.isOn).length;
         const totalACsCount = data.acs.length;
         
+        // Helper function to find organization and venue for a device
+        const getDeviceOrgAndVenue = (ac) => {
+          // Try to find organization
+          let org = null;
+          let venue = null;
+          
+          // Method 1: Check if device has direct organization relationship
+          if (ac.organization) {
+            org = ac.organization;
+          } else if (ac.organizationId) {
+            org = data.organizations.find(o => o.id === ac.organizationId);
+          }
+          
+          // Method 2: Find organization through venue
+          if (!org && ac.venueId) {
+            venue = data.venues.find(v => v.id === ac.venueId);
+            if (venue) {
+              org = data.organizations.find(o => 
+                o.id === venue.organizationId || 
+                (o.venues && o.venues.some(v => v.id === venue.id))
+              );
+            }
+          }
+          
+          // Method 3: Find organization by checking if venueId matches organizationId
+          if (!org && ac.venueId) {
+            org = data.organizations.find(o => o.id === ac.venueId);
+          }
+          
+          // Find venue if not found yet
+          if (!venue && ac.venueId) {
+            venue = data.venues.find(v => v.id === ac.venueId);
+          }
+          
+          return { org, venue };
+        };
+        
+        // Function to download energy report as CSV
+        const downloadEnergyReport = async () => {
+          try {
+            toast.info('Generating energy report...');
+            const response = await adminAPI.getEnergyReport();
+            const report = response.data?.data;
+            
+            if (!report || !report.organizations) {
+              toast.error('Failed to generate report');
+              return;
+            }
+
+            // Generate CSV content
+            let csvContent = 'Energy Consumption Report - Device → Venue → Organization Hierarchy\n';
+            csvContent += `Generated At: ${new Date(report.generatedAt).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}\n\n`;
+            
+            // Get months from first organization
+            const months = report.organizations[0]?.monthlyEnergy || [];
+            
+            // Section 1: Monthly Energy Summary by Organization
+            csvContent += '=== MONTHLY ENERGY SUMMARY BY ORGANIZATION ===\n';
+            csvContent += 'Organization,';
+            months.forEach(month => {
+              csvContent += `${month.month} ${month.year},`;
+            });
+            csvContent += 'Total\n';
+            
+            report.organizations.forEach(org => {
+              csvContent += `"${org.organizationName}",`;
+              let orgMonthlyTotal = 0;
+              org.monthlyEnergy.forEach(month => {
+                csvContent += `${month.energy.toFixed(2)},`;
+                orgMonthlyTotal += month.energy;
+              });
+              csvContent += `${org.totalEnergy.toFixed(2)}\n`;
+            });
+            
+            csvContent += '\n';
+            
+            // Section 2: Detailed Hierarchy (Device → Venue → Organization)
+            csvContent += '=== DETAILED ENERGY BREAKDOWN (Device → Venue → Organization) ===\n';
+            csvContent += 'Organization,Venue,Ton,Device Energy (KV),Venue Total (KV),Organization Total (KV),';
+            months.forEach(month => {
+              csvContent += `${month.month} ${month.year},`;
+            });
+            csvContent += '\n';
+            
+            // Process each organization
+            report.organizations.forEach(org => {
+              // Organization summary row
+              csvContent += `"${org.organizationName}",TOTAL,TOTAL,${org.totalEnergy.toFixed(2)},${org.totalEnergy.toFixed(2)},${org.totalEnergy.toFixed(2)},`;
+              org.monthlyEnergy.forEach(month => {
+                csvContent += `${month.energy.toFixed(2)},`;
+              });
+              csvContent += '\n';
+              
+              // Venue rows
+              org.venues.forEach(venue => {
+                // Venue summary row
+                csvContent += `"${org.organizationName}","${venue.venueName}",TOTAL,${venue.totalEnergy.toFixed(2)},${venue.totalEnergy.toFixed(2)},${org.totalEnergy.toFixed(2)},`;
+                // Calculate monthly venue energy (distribute proportionally)
+                org.monthlyEnergy.forEach(month => {
+                  const venueMonthlyEnergy = (venue.totalEnergy / org.totalEnergy) * month.energy;
+                  csvContent += `${venueMonthlyEnergy.toFixed(2)},`;
+                });
+                csvContent += '\n';
+                
+                // Device rows
+                venue.devices.forEach(device => {
+                  // Get ton value - check multiple possible field names
+                  let deviceTon = 'N/A';
+                  if (device.deviceTon) {
+                    deviceTon = String(device.deviceTon);
+                  } else if (device.ton) {
+                    deviceTon = String(device.ton);
+                  } else if (device.device?.ton) {
+                    deviceTon = String(device.device.ton);
+                  }
+                  csvContent += `"${org.organizationName}","${venue.venueName}","${deviceTon}",${device.energy.toFixed(2)},${venue.totalEnergy.toFixed(2)},${org.totalEnergy.toFixed(2)},`;
+                  // Calculate monthly device energy (distribute proportionally)
+                  org.monthlyEnergy.forEach(month => {
+                    const deviceMonthlyEnergy = (device.energy / org.totalEnergy) * month.energy;
+                    csvContent += `${deviceMonthlyEnergy.toFixed(2)},`;
+                  });
+                  csvContent += '\n';
+                });
+              });
+              
+              csvContent += '\n'; // Empty line between organizations
+            });
+            
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            const fileName = `energy_report_${new Date().toISOString().split('T')[0]}.csv`;
+            link.setAttribute('download', fileName);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            toast.success('Energy report downloaded successfully!');
+          } catch (error) {
+            console.error('Error downloading energy report:', error);
+            toast.error('Failed to download energy report');
+          }
+        };
+        
         return (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -3928,18 +5156,27 @@ const AdminDashboard = () => {
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">Monitor and track energy usage across all AC devices</p>
                 </div>
-                <button
-                  onClick={() => {
-                    // Refresh energy data for all ACs and organizations
-                    data.acs.forEach(ac => loadACEnergy(ac.id));
-                    data.organizations.forEach(org => loadOrganizationEnergy(org.id));
-                    toast.success('Refreshing energy data...');
-                  }}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowDownloadModal(true)}
+                    className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download Report
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Refresh energy data for all ACs and organizations
+                      data.acs.forEach(ac => loadACEnergy(ac.id));
+                      data.organizations.forEach(org => loadOrganizationEnergy(org.id));
+                      toast.success('Refreshing energy data...');
+                    }}
                 className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh All
                 </button>
+                </div>
             </div>
 
             {/* Summary Cards */}
@@ -3978,7 +5215,45 @@ const AdminDashboard = () => {
               </div>
             </div>
 
+            {/* View Mode Toggle Buttons */}
+            <div className="flex gap-2 mb-4 items-center">
+              <button
+                onClick={() => setEnergyViewMode('device')}
+                className={`flex items-center px-4 py-2 rounded-lg font-semibold transition-all ${
+                  energyViewMode === 'device'
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <Thermometer className="w-4 h-4 mr-2" />
+                Energy by Device
+              </button>
+              <button
+                onClick={() => setEnergyViewMode('venue')}
+                className={`flex items-center px-4 py-2 rounded-lg font-semibold transition-all ${
+                  energyViewMode === 'venue'
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <MapPin className="w-4 h-4 mr-2" />
+                Energy by Venue
+              </button>
+              <button
+                onClick={() => setEnergyViewMode('organization')}
+                className={`flex items-center px-4 py-2 rounded-lg font-semibold transition-all ${
+                  energyViewMode === 'organization'
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <Building className="w-4 h-4 mr-2" />
+                Energy by Organization
+              </button>
+            </div>
+
             {/* Organizations Energy Consumption */}
+            {energyViewMode === 'organization' && (
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Building className="w-5 h-5 mr-2 text-blue-600" />
@@ -4050,27 +5325,98 @@ const AdminDashboard = () => {
                 })}
               </div>
             </div>
+            )}
+
+            {/* Venues Energy Consumption */}
+            {energyViewMode === 'venue' && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <MapPin className="w-5 h-5 mr-2 text-blue-600" />
+                Energy by Venue
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+                {data.venues.map(venue => {
+                  // Get devices for this venue
+                  const venueACs = data.acs.filter(ac => {
+                    // Exclude devices that belong to parent organization
+                    if (venue.organizationId && ac.venueId === venue.organizationId) {
+                      return false;
+                    }
+                    return ac.venueId === venue.id;
+                  });
+                  
+                  const venueEnergy = venueACs.reduce((sum, ac) => sum + (ac.totalEnergyConsumed || 0), 0);
+                  const venueActiveACs = venueACs.filter(ac => ac.isOn).length;
+                  
+                  // Find organization for this venue
+                  const venueOrg = data.organizations.find(o => 
+                    o.id === venue.organizationId || 
+                    (o.venues && o.venues.some(v => v.id === venue.id))
+                  );
+                  
+                  return (
+                    <div key={venue.id} className="bg-white rounded-lg shadow-md p-5 border border-gray-200 hover:shadow-lg transition-shadow">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-900 mb-1">{venue.name}</h4>
+                          {venueOrg && (
+                            <p className="text-xs text-gray-500 mb-1">Organization: {venueOrg.name}</p>
+                          )}
+                          <p className="text-xs text-gray-500">{venueACs.length} AC device{venueACs.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedVenueId(venue.id);
+                            setActiveTab('venue-dashboard');
+                          }}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                          title="View venue details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Total Energy:</span>
+                          <span className="text-lg font-bold text-blue-600">
+                            {venueEnergy.toFixed(2)} kWh
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Active ACs:</span>
+                          <span className={`text-sm font-medium ${venueActiveACs > 0 ? 'text-blue-600' : 'text-gray-500'}`}>
+                            {venueActiveACs} / {venueACs.length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            )}
 
             {/* AC Devices Energy Consumption */}
+            {energyViewMode === 'device' && (
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Thermometer className="w-5 h-5 mr-2 text-blue-600" />
                 Energy by AC Device
               </h3>
-              <div className="bg-white rounded-lg shadow-md overflow-hidden">
+              <div className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-300">
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-gray-200 border-collapse">
+                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-300">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">AC Device</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ton</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Energy</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Off Load</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">On Load</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Rate</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Overload</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-300">AC Device</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-300">Organization</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-300">Ton</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-300">Status</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-300">Total Energy</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-300">On Load</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-300">Current Rate</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Overload</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -4079,8 +5425,8 @@ const AdminDashboard = () => {
                         const isLoading = energyLoading[`ac-${ac.id}`];
                         
                         return (
-                          <tr key={ac.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
+                          <tr key={ac.id} className="hover:bg-gray-50 border-b border-gray-200">
+                            <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
                               <div className="flex items-center">
                                 <div>
                                   <div className="text-sm font-medium text-gray-900">{ac.name}</div>
@@ -4088,49 +5434,49 @@ const AdminDashboard = () => {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">
-                                {ac.organization?.name || 'N/A'}
-                              </div>
+                            <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
+                              {(() => {
+                                const { org, venue } = getDeviceOrgAndVenue(ac);
+                                return (
+                                  <div className="text-sm">
+                                    <div className="font-medium text-gray-900">
+                                      {org ? org.name : 'N/A'}
+                                    </div>
+                                    {venue && (
+                                      <div className="text-xs text-gray-500">
+                                        Venue: {venue.name}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
+                            <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
+                              <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded border border-gray-300">
                                 {ac.ton} Ton
                               </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2 py-1 text-xs font-medium rounded ${
+                            <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
+                              <span className={`px-2 py-1 text-xs font-medium rounded border ${
                                   ac.isOn 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-gray-100 text-gray-800'
+                                    ? 'bg-green-100 text-green-800 border-green-300' 
+                                    : 'bg-gray-100 text-gray-800 border-gray-300'
                                 }`}>
                                   {ac.isOn ? 'ON' : 'OFF'}
                                 </span>
                                 {acEnergy?.isOnStartup && (
-                                <span className="ml-2 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
+                                <span className="ml-2 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded border border-yellow-300">
                                     Startup
                                   </span>
                                 )}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
                               <div className="text-sm font-semibold text-blue-600">
                                 {acEnergy ? acEnergy.totalEnergyConsumed.toFixed(2) : (ac.totalEnergyConsumed || 0).toFixed(2)} kWh
                               </div>
                             </td>
-                            {/* Off Load Column */}
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              {isLoading ? (
-                                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                              ) : acEnergy ? (
-                                <div className="text-sm font-medium text-gray-500">
-                                  0.00 kWh/hr
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-400">-</span>
-                              )}
-                            </td>
                             {/* On Load Column (Base Rate) */}
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
                               {isLoading ? (
                                 <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                               ) : acEnergy ? (
@@ -4149,7 +5495,7 @@ const AdminDashboard = () => {
                               )}
                             </td>
                             {/* Current Rate Column (Temperature Adjusted) */}
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
                               {isLoading ? (
                                 <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                               ) : acEnergy ? (
@@ -4224,6 +5570,592 @@ const AdminDashboard = () => {
                 )}
               </div>
             </div>
+            )}
+
+            {/* Download Report Modal with Filters */}
+            {showDownloadModal && (
+              <>
+                <style>{`
+                  @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                  }
+                  @keyframes slideUp {
+                    from { 
+                      opacity: 0;
+                      transform: translateY(20px) scale(0.95);
+                    }
+                    to { 
+                      opacity: 1;
+                      transform: translateY(0) scale(1);
+                    }
+                  }
+                `}</style>
+                <div 
+                  className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                  style={{
+                    animation: 'fadeIn 0.3s ease-out',
+                    backdropFilter: 'blur(4px)',
+                    WebkitBackdropFilter: 'blur(4px)'
+                  }}
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) {
+                      setShowDownloadModal(false);
+                      setEnergyFilters({ month: null, organizationId: null, venueId: null, deviceId: null });
+                    }
+                  }}
+                >
+                  <div 
+                    className="bg-white rounded-xl shadow-2xl shadow-gray-900/20 p-0 w-full max-w-5xl transform transition-all relative z-10"
+                    style={{
+                      animation: 'slideUp 0.4s ease-out',
+                      backdropFilter: 'none',
+                      WebkitBackdropFilter: 'none'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                  {/* Header */}
+                  <div className="bg-white border-b border-gray-200 px-6 py-5">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="text-xl font-semibold text-gray-900">Download Energy Report</h3>
+                        <p className="text-sm text-gray-500 mt-1">Select filters to customize your report</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowDownloadModal(false);
+                          setEnergyFilters({ month: null, organizationId: null, venueId: null, deviceId: null, year: null });
+                        }}
+                        className="text-gray-400 hover:text-gray-600 transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Content Area - Split Layout like EventForm */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+                    {/* Left Section - Filters (Blue) */}
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-8 md:p-10">
+                      <h3 className="text-2xl font-bold text-blue-700 mb-8">Report Filters</h3>
+                      <div className="space-y-6">
+                        {/* Month Selector */}
+                        <div>
+                          <label className="block text-sm font-semibold text-blue-900 mb-3">
+                            Select Month
+                          </label>
+                          <input
+                            type="month"
+                            value={energyFilters.month || ''}
+                            onChange={(e) => setEnergyFilters(prev => ({ ...prev, month: e.target.value }))}
+                            className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                          />
+                        </div>
+
+                      {/* Organization Dropdown */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Organization
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={energyFilters.organizationId || ''}
+                            onChange={(e) => {
+                              const orgId = e.target.value ? parseInt(e.target.value) : null;
+                              setEnergyFilters(prev => ({ 
+                                ...prev, 
+                                organizationId: orgId,
+                                venueId: null,
+                                deviceId: null
+                              }));
+                            }}
+                            className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-gray-700 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all cursor-pointer pr-10"
+                          >
+                            <option value="">All Organizations</option>
+                            {data.organizations.map(org => (
+                              <option key={org.id} value={org.id}>{org.name}</option>
+                            ))}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Venue Dropdown */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Venue
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={energyFilters.venueId || ''}
+                            onChange={(e) => {
+                              const venueId = e.target.value ? parseInt(e.target.value) : null;
+                              setEnergyFilters(prev => ({ 
+                                ...prev, 
+                                venueId: venueId,
+                                deviceId: null
+                              }));
+                            }}
+                            disabled={!energyFilters.organizationId}
+                            className={`w-full px-3 py-2.5 rounded-lg text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all pr-10 ${
+                              energyFilters.organizationId
+                                ? 'bg-gray-50 border border-gray-300 text-gray-700 cursor-pointer'
+                                : 'bg-gray-100 border border-gray-200 text-gray-400 cursor-not-allowed'
+                            }`}
+                          >
+                            <option value="">All Venues</option>
+                            {energyFilters.organizationId && data.venues
+                              .filter(venue => 
+                                venue.organizationId === energyFilters.organizationId ||
+                                (venue.organization && venue.organization.id === energyFilters.organizationId)
+                              )
+                              .map(venue => (
+                                <option key={venue.id} value={venue.id}>{venue.name}</option>
+                              ))}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
+                        {!energyFilters.organizationId && (
+                          <p className="text-xs text-gray-400 mt-1.5">Please select an organization first</p>
+                        )}
+                      </div>
+
+                      {/* Device Dropdown */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Device
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={energyFilters.deviceId || ''}
+                            onChange={(e) => {
+                              const deviceId = e.target.value ? parseInt(e.target.value) : null;
+                              setEnergyFilters(prev => ({ ...prev, deviceId: deviceId }));
+                            }}
+                            disabled={!energyFilters.venueId}
+                            className={`w-full px-3 py-2.5 rounded-lg text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all pr-10 ${
+                              energyFilters.venueId
+                                ? 'bg-gray-50 border border-gray-300 text-gray-700 cursor-pointer'
+                                : 'bg-gray-100 border border-gray-200 text-gray-400 cursor-not-allowed'
+                            }`}
+                          >
+                            <option value="">All Devices</option>
+                            {energyFilters.venueId && data.acs
+                              .filter(ac => ac.venueId === energyFilters.venueId)
+                              .map(ac => (
+                                <option key={ac.id} value={ac.id}>{ac.name} ({ac.brand} {ac.model})</option>
+                              ))}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
+                        {!energyFilters.venueId && (
+                          <p className="text-xs text-gray-400 mt-1.5">Please select a venue first</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Section - Download Options (White) */}
+                  <div className="bg-white p-8 md:p-10 border-l border-gray-200">
+                    <h3 className="text-2xl font-bold text-gray-900 mb-8">Download Options</h3>
+                    <div className="space-y-6">
+                      {/* Year Selector */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-900 mb-3">
+                          Select Year *
+                        </label>
+                        <input
+                          type="number"
+                          min="2020"
+                          max={new Date().getFullYear()}
+                          value={energyFilters.year || new Date().getFullYear()}
+                          onChange={(e) => setEnergyFilters(prev => ({ ...prev, year: e.target.value ? parseInt(e.target.value) : new Date().getFullYear() }))}
+                          className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                          placeholder="Enter year"
+                          required
+                        />
+                        <p className="mt-2 text-xs text-gray-500">Select the year for the report</p>
+                      </div>
+
+                      {/* Monthly Report Button */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-900 mb-3">
+                          Monthly Report
+                        </label>
+                        <button
+                          onClick={async () => {
+                            try {
+                              setShowDownloadModal(false);
+                              
+                              toast.loading('Generating monthly energy report...', { id: 'monthly-report' });
+                              
+                              let response;
+                              try {
+                                response = await adminAPI.getEnergyReport();
+                              } catch (apiError) {
+                                console.error('API Error:', apiError);
+                                toast.error(apiError.response?.data?.message || apiError.message || 'Failed to fetch energy report', { id: 'monthly-report' });
+                                return;
+                              }
+                              
+                              // Check if response is successful
+                              if (!response || !response.data) {
+                                console.error('Invalid API response:', response);
+                                toast.error('Invalid response from server', { id: 'monthly-report' });
+                                return;
+                              }
+                              
+                              // Handle different response structures
+                              let report = null;
+                              if (response.data?.data) {
+                                report = response.data.data;
+                              } else if (response.data?.organizations) {
+                                report = response.data;
+                              } else if (response.data?.success && response.data?.data) {
+                                report = response.data.data;
+                              } else {
+                                report = response.data;
+                              }
+                              
+                              if (!report || !report.organizations) {
+                                console.error('Invalid report structure:', {
+                                  response: response.data,
+                                  report: report,
+                                  hasOrganizations: !!report?.organizations
+                                });
+                                toast.error('Failed to generate report: Invalid data structure', { id: 'monthly-report' });
+                                return;
+                              }
+
+                              let filteredOrgs = report.organizations || [];
+                              
+                              if (energyFilters.organizationId) {
+                                filteredOrgs = filteredOrgs.filter(org => 
+                                  org.organizationId === energyFilters.organizationId ||
+                                  org.organizationId === parseInt(energyFilters.organizationId) ||
+                                  org.id === energyFilters.organizationId ||
+                                  org.id === parseInt(energyFilters.organizationId)
+                                );
+                              }
+
+                              // Check if we have any organizations
+                              if (filteredOrgs.length === 0) {
+                                toast.error('No data available for the selected filters', { id: 'monthly-report' });
+                                return;
+                              }
+
+                              // Filter by year if selected
+                              const selectedYear = energyFilters.year || new Date().getFullYear();
+                              
+                              let csvContent = 'Energy Consumption Report - Monthly (Device → Venue → Organization Hierarchy)\n';
+                              csvContent += `Generated At: ${report.generatedAt ? new Date(report.generatedAt).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}\n`;
+                              csvContent += `Report Type: Monthly\n`;
+                              csvContent += `Year: ${selectedYear}\n`;
+                              if (energyFilters.month) {
+                                csvContent += `Filtered Month: ${new Date(energyFilters.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}\n`;
+                              }
+                              csvContent += '\n';
+                              
+                              // Filter months by selected year
+                              const months = filteredOrgs[0]?.monthlyEnergy?.filter(m => m.year === selectedYear) || [];
+                              
+                              csvContent += '=== MONTHLY ENERGY SUMMARY BY ORGANIZATION ===\n';
+                              csvContent += 'Organization,';
+                              months.forEach(month => {
+                                csvContent += `${month.month} ${month.year},`;
+                              });
+                              csvContent += 'Total\n';
+                              
+                              filteredOrgs.forEach(org => {
+                                const orgName = org.organizationName || org.name || 'N/A';
+                                csvContent += `"${orgName}",`;
+                                let orgMonthlyTotal = 0;
+                                const orgMonths = org.monthlyEnergy?.filter(m => m.year === selectedYear) || [];
+                                orgMonths.forEach(month => {
+                                  csvContent += `${(month.energy || 0).toFixed(2)},`;
+                                  orgMonthlyTotal += (month.energy || 0);
+                                });
+                                csvContent += `${orgMonthlyTotal.toFixed(2)}\n`;
+                              });
+                              
+                              csvContent += '\n';
+                              
+                              csvContent += '=== DETAILED HIERARCHY (Device → Venue → Organization) ===\n';
+                              csvContent += 'Organization,Venue,Ton,Total Energy (kWh)\n';
+                              
+                              filteredOrgs.forEach(org => {
+                                const orgName = org.organizationName || org.name || 'N/A';
+                                const venues = org.venues || [];
+                                
+                                if (venues.length === 0) {
+                                  // If no venues, still add organization row
+                                  csvContent += `"${orgName}","N/A","N/A","0.00"\n`;
+                                } else {
+                                  venues.forEach(venue => {
+                                    const venueName = venue.venueName || venue.name || 'N/A';
+                                    const devices = venue.devices || [];
+                                    
+                                    if (devices.length === 0) {
+                                      // If no devices, still add venue row
+                                      csvContent += `"${orgName}","${venueName}","N/A","0.00"\n`;
+                                    } else {
+                                      devices.forEach(device => {
+                                        // Get ton value - check multiple possible field names
+                                        let deviceTon = 'N/A';
+                                        if (device.deviceTon !== undefined && device.deviceTon !== null) {
+                                          deviceTon = String(device.deviceTon);
+                                        } else if (device.ton !== undefined && device.ton !== null) {
+                                          deviceTon = String(device.ton);
+                                        } else if (device.device?.ton !== undefined && device.device?.ton !== null) {
+                                          deviceTon = String(device.device.ton);
+                                        }
+                                        
+                                        // Debug logging
+                                        if (deviceTon === 'N/A') {
+                                          console.warn('⚠️ Device ton missing:', {
+                                            deviceId: device.deviceId || device.id,
+                                            deviceName: device.deviceName || device.name,
+                                            device: device
+                                          });
+                                        }
+                                        
+                                        const deviceEnergy = device.energy || 0;
+                                        csvContent += `"${orgName}","${venueName}","${deviceTon}","${deviceEnergy.toFixed(2)}"\n`;
+                                      });
+                                    }
+                                  });
+                                }
+                              });
+                              
+                              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                              const link = document.createElement('a');
+                              const url = URL.createObjectURL(blob);
+                              link.setAttribute('href', url);
+                              link.setAttribute('download', `energy-report-monthly-${selectedYear}-${new Date().toISOString().split('T')[0]}.csv`);
+                              link.style.visibility = 'hidden';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              
+                              toast.success('Monthly energy report downloaded successfully!', { id: 'monthly-report' });
+                              
+                              setEnergyFilters({ month: null, organizationId: null, venueId: null, deviceId: null, year: null });
+                            } catch (error) {
+                              console.error('Download error:', error);
+                              console.error('Error details:', {
+                                message: error.message,
+                                stack: error.stack,
+                                response: error.response?.data
+                              });
+                              toast.error(error.message || 'Failed to download monthly energy report', { id: 'monthly-report' });
+                            }
+                          }}
+                          className="w-full flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Monthly Report
+                        </button>
+                        <p className="mt-2 text-xs text-gray-500">Download monthly breakdown for selected year</p>
+                      </div>
+
+                      {/* Yearly Report Button */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-900 mb-3">
+                          Yearly Report
+                        </label>
+                        <button
+                          onClick={async () => {
+                            try {
+                              setShowDownloadModal(false);
+                              
+                              toast.loading('Generating yearly energy report...', { id: 'yearly-report' });
+                              
+                              let response;
+                              try {
+                                response = await adminAPI.getEnergyReport();
+                              } catch (apiError) {
+                                console.error('API Error:', apiError);
+                                toast.error(apiError.response?.data?.message || apiError.message || 'Failed to fetch energy report', { id: 'yearly-report' });
+                                return;
+                              }
+                              
+                              // Check if response is successful
+                              if (!response || !response.data) {
+                                console.error('Invalid API response:', response);
+                                toast.error('Invalid response from server', { id: 'yearly-report' });
+                                return;
+                              }
+                              
+                              // Handle different response structures
+                              let report = null;
+                              if (response.data?.data) {
+                                report = response.data.data;
+                              } else if (response.data?.organizations) {
+                                report = response.data;
+                              } else if (response.data?.success && response.data?.data) {
+                                report = response.data.data;
+                              } else {
+                                report = response.data;
+                              }
+                              
+                              if (!report || !report.organizations) {
+                                console.error('Invalid report structure:', {
+                                  response: response.data,
+                                  report: report,
+                                  hasOrganizations: !!report?.organizations
+                                });
+                                toast.error('Failed to generate report: Invalid data structure', { id: 'yearly-report' });
+                                return;
+                              }
+
+                              let filteredOrgs = report.organizations || [];
+                              
+                              if (energyFilters.organizationId) {
+                                filteredOrgs = filteredOrgs.filter(org => 
+                                  org.organizationId === energyFilters.organizationId ||
+                                  org.organizationId === parseInt(energyFilters.organizationId) ||
+                                  org.id === energyFilters.organizationId ||
+                                  org.id === parseInt(energyFilters.organizationId)
+                                );
+                              }
+
+                              // Check if we have any organizations
+                              if (filteredOrgs.length === 0) {
+                                toast.error('No data available for the selected filters', { id: 'yearly-report' });
+                                return;
+                              }
+
+                              // Filter by year if selected
+                              const selectedYear = energyFilters.year || new Date().getFullYear();
+                              
+                              let csvContent = 'Energy Consumption Report - Yearly (Device → Venue → Organization Hierarchy)\n';
+                              csvContent += `Generated At: ${report.generatedAt ? new Date(report.generatedAt).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}\n`;
+                              csvContent += `Report Type: Yearly\n`;
+                              csvContent += `Year: ${selectedYear}\n`;
+                              csvContent += '\n';
+                              
+                              csvContent += '=== YEARLY ENERGY SUMMARY BY ORGANIZATION ===\n';
+                              csvContent += 'Organization,Total Energy (kWh)\n';
+                              
+                              filteredOrgs.forEach(org => {
+                                // Calculate total energy for selected year
+                                const orgMonths = org.monthlyEnergy?.filter(m => m.year === selectedYear) || [];
+                                const yearlyTotal = orgMonths.reduce((sum, month) => sum + (month.energy || 0), 0);
+                                const orgName = org.organizationName || org.name || 'N/A';
+                                csvContent += `"${orgName}",${yearlyTotal.toFixed(2)}\n`;
+                              });
+                              
+                              csvContent += '\n';
+                              
+                              csvContent += '=== DETAILED HIERARCHY (Device → Venue → Organization) ===\n';
+                              csvContent += 'Organization,Venue,Ton,Total Energy (kWh)\n';
+                              
+                              filteredOrgs.forEach(org => {
+                                const orgName = org.organizationName || org.name || 'N/A';
+                                const venues = org.venues || [];
+                                
+                                if (venues.length === 0) {
+                                  // If no venues, still add organization row
+                                  csvContent += `"${orgName}","N/A","N/A","0.00"\n`;
+                                } else {
+                                  venues.forEach(venue => {
+                                    const venueName = venue.venueName || venue.name || 'N/A';
+                                    const devices = venue.devices || [];
+                                    
+                                    if (devices.length === 0) {
+                                      // If no devices, still add venue row
+                                      csvContent += `"${orgName}","${venueName}","N/A","0.00"\n`;
+                                    } else {
+                                      devices.forEach(device => {
+                                        // Get ton value - check multiple possible field names
+                                        let deviceTon = 'N/A';
+                                        if (device.deviceTon !== undefined && device.deviceTon !== null) {
+                                          deviceTon = String(device.deviceTon);
+                                        } else if (device.ton !== undefined && device.ton !== null) {
+                                          deviceTon = String(device.ton);
+                                        } else if (device.device?.ton !== undefined && device.device?.ton !== null) {
+                                          deviceTon = String(device.device.ton);
+                                        }
+                                        
+                                        // Debug logging
+                                        if (deviceTon === 'N/A') {
+                                          console.warn('⚠️ Device ton missing:', {
+                                            deviceId: device.deviceId || device.id,
+                                            deviceName: device.deviceName || device.name,
+                                            device: device
+                                          });
+                                        }
+                                        
+                                        const deviceEnergy = device.energy || 0;
+                                        csvContent += `"${orgName}","${venueName}","${deviceTon}","${deviceEnergy.toFixed(2)}"\n`;
+                                      });
+                                    }
+                                  });
+                                }
+                              });
+                              
+                              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                              const link = document.createElement('a');
+                              const url = URL.createObjectURL(blob);
+                              link.setAttribute('href', url);
+                              link.setAttribute('download', `energy-report-yearly-${selectedYear}-${new Date().toISOString().split('T')[0]}.csv`);
+                              link.style.visibility = 'hidden';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              
+                              toast.success('Yearly energy report downloaded successfully!', { id: 'yearly-report' });
+                              
+                              setEnergyFilters({ month: null, organizationId: null, venueId: null, deviceId: null, year: null });
+                            } catch (error) {
+                              console.error('Download error:', error);
+                              console.error('Error details:', {
+                                message: error.message,
+                                stack: error.stack,
+                                response: error.response?.data
+                              });
+                              toast.error(error.message || 'Failed to download yearly energy report', { id: 'yearly-report' });
+                            }
+                          }}
+                          className="w-full flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Yearly Report
+                        </button>
+                        <p className="mt-2 text-xs text-gray-500">Download yearly summary for selected year</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer with Cancel Button */}
+                <div className="bg-white border-t border-gray-200 px-6 py-4 flex justify-end">
+                  <button
+                    onClick={() => {
+                      setShowDownloadModal(false);
+                      setEnergyFilters({ month: null, organizationId: null, venueId: null, deviceId: null, year: null });
+                    }}
+                    className="px-6 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                </div>
+              </div>
+              </>
+            )}
           </div>
         );
       case 'alerts':
@@ -4462,13 +6394,38 @@ const AdminDashboard = () => {
                   </span>
                 </div>
                 </div>
-                <button
-                  onClick={() => setShowCreateManagerModal(true)}
-                  className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
-                >
-                  <UserPlus className="w-6 h-6 mr-2" />
-                  Add Manager
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* View Toggle */}
+                  <div className="flex items-center bg-white bg-opacity-20 rounded-lg p-1">
+                    <button
+                      onClick={() => setManagerViewMode('cards')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        managerViewMode === 'cards'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Cards
+                    </button>
+                    <button
+                      onClick={() => setManagerViewMode('table')}
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                        managerViewMode === 'table'
+                          ? 'bg-white text-blue-600 shadow-md'
+                          : 'text-white hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      Table
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowCreateManagerModal(true)}
+                    className="flex items-center px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 font-bold shadow-xl hover:shadow-2xl transition-all transform hover:scale-105"
+                  >
+                    <UserPlus className="w-6 h-6 mr-2" />
+                    Add Manager
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -4486,6 +6443,99 @@ const AdminDashboard = () => {
                   <UserPlus className="w-5 h-5 mr-2" />
                   Add Manager
                 </button>
+              </div>
+            ) : managerViewMode === 'table' ? (
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manager Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organizations</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {data.managers.map(manager => (
+                        <tr key={manager.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{manager.name}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{manager.email}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              manager.status === 'unlocked' ? 'bg-green-100 text-green-800' : 
+                              manager.status === 'locked' ? 'bg-red-100 text-red-800' : 
+                              manager.status === 'restricted' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {manager.status || 'unlocked'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-900">
+                              {manager.organizations?.length || 0} organization{(manager.organizations?.length || 0) !== 1 ? 's' : ''}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedOrgForAssign({ id: null, managerId: manager.id });
+                                  setShowAssignOrgModal(true);
+                                }}
+                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                title="Assign organizations"
+                              >
+                                <UserPlus className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleUpdateManagerStatus(manager.id, 'unlocked')}
+                                disabled={manager.status === 'unlocked'}
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                  manager.status === 'unlocked'
+                                    ? 'bg-green-100 text-green-600 cursor-not-allowed opacity-50'
+                                    : 'text-green-600 hover:bg-green-50'
+                                }`}
+                                title="Unlock manager"
+                              >
+                                <Unlock className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleUpdateManagerStatus(manager.id, 'restricted')}
+                                disabled={manager.status === 'restricted'}
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                  manager.status === 'restricted'
+                                    ? 'bg-yellow-100 text-yellow-600 cursor-not-allowed opacity-50'
+                                    : 'text-yellow-600 hover:bg-yellow-50'
+                                }`}
+                                title="Restrict manager"
+                              >
+                                <Lock className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleUpdateManagerStatus(manager.id, 'locked')}
+                                disabled={manager.status === 'locked'}
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                  manager.status === 'locked'
+                                    ? 'bg-red-100 text-red-600 cursor-not-allowed opacity-50'
+                                    : 'text-red-600 hover:bg-red-50'
+                                }`}
+                                title="Lock manager"
+                              >
+                                <Lock className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
@@ -4585,127 +6635,18 @@ const AdminDashboard = () => {
           </div>
         );
       case 'logs':
-        try {
-          console.log('📋 Rendering activity logs tab');
-          console.log('📋 Activity logs data:', data.logs);
-          console.log('📋 Activity logs length:', data.logs?.length);
-          
-          const formatDate = (dateString) => {
-            if (!dateString) return 'N/A';
-            try {
-              const date = new Date(dateString);
-              if (isNaN(date.getTime())) return 'Invalid Date';
-              return date.toLocaleString('en-PK', { 
-                timeZone: 'Asia/Karachi',
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              });
-            } catch (error) {
-              console.error('Date formatting error:', error);
-              return 'N/A';
-            }
-          };
-
-          return (
-            <div className="space-y-4 sm:space-y-6 lg:space-y-8 p-2 sm:p-4">
-              {/* Header Section */}
-              <div className="group relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-lg sm:rounded-xl lg:rounded-2xl shadow-lg sm:shadow-xl lg:shadow-2xl p-3 sm:p-4 lg:p-6 xl:p-8 border-2 border-blue-400 overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 sm:w-40 sm:h-40 bg-white opacity-10 rounded-full -mr-16 sm:-mr-20 -mt-16 sm:-mt-20"></div>
-                <div className="absolute bottom-0 left-0 w-24 h-24 sm:w-32 sm:h-32 bg-white opacity-5 rounded-full -ml-12 sm:-ml-16 -mb-12 sm:-mb-16"></div>
-                <div className="relative flex items-center space-x-3 sm:space-x-4 lg:space-x-5">
-                  <div className="bg-white bg-opacity-25 rounded-xl sm:rounded-2xl p-2 sm:p-3 lg:p-4 shadow-xl">
-                    <Activity className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h2 className="text-lg sm:text-xl lg:text-2xl xl:text-3xl font-extrabold text-white mb-1 sm:mb-2 drop-shadow-lg break-words">Activity Logs</h2>
-                    <p className="text-blue-100 text-xs sm:text-sm lg:text-base font-medium mb-2 sm:mb-3">Track all system activities and changes</p>
-                    <span className="inline-block bg-white bg-opacity-25 text-white px-3 py-1 sm:px-4 sm:py-1.5 lg:px-5 lg:py-2 rounded-full text-xs sm:text-sm font-bold shadow-lg backdrop-blur-sm">
-                      {data.logs?.length || 0} Total Log{(data.logs?.length || 0) !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Activity Logs List */}
-              {data.logs && Array.isArray(data.logs) && data.logs.length > 0 ? (
-                <div className="space-y-3 sm:space-y-4">
-                  {data.logs.map((log, index) => {
-                    if (!log) return null;
-                    return (
-                      <div key={log.id || `log-${index}`} className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-3 sm:p-4 lg:p-6 border-l-4 border-blue-500">
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0 mb-2">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 break-words mb-1">
-                              {log.action || 'Activity'}
-                            </h3>
-                            <p className="text-xs sm:text-sm text-gray-600 break-words">
-                              {typeof log.details === 'object' 
-                                ? (log.details?.message || JSON.stringify(log.details)) 
-                                : (log.details || log.message || 'No details available')}
-                            </p>
-                          </div>
-                          <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-0 sm:ml-4 flex-shrink-0">
-                            <span className="text-xs text-gray-500 whitespace-nowrap">
-                              {formatDate(log.createdAt || log.timestamp)}
-                            </span>
-                            {log.targetType && (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ml-2 ${
-                                log.targetType === 'admin' 
-                                  ? 'bg-red-100 text-red-800' 
-                                  : log.targetType === 'manager'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : log.targetType === 'organization'
-                                  ? 'bg-purple-100 text-purple-800'
-                                  : log.targetType === 'ac'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {log.targetType}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {(log.admin || log.user) && (
-                          <div className="mt-2 text-xs text-gray-500">
-                            By: {log.admin?.name || log.user?.name || log.admin?.email || log.user?.email || 'System'}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-            ) : (
-                <div className="bg-gradient-to-br from-white to-blue-50 p-6 sm:p-8 lg:p-12 xl:p-16 rounded-lg sm:rounded-xl lg:rounded-2xl shadow-xl lg:shadow-2xl text-center border-2 border-blue-200">
-                  <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-full p-4 sm:p-5 lg:p-6 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 mx-auto mb-4 sm:mb-6 flex items-center justify-center shadow-lg">
-                    <Activity className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 text-blue-600" />
-                </div>
-                  <p className="text-gray-800 text-base sm:text-lg lg:text-xl xl:text-2xl font-bold mb-2 sm:mb-3">No Activity Logs Found</p>
-                  <p className="text-gray-600 text-sm sm:text-base font-medium">Activity logs will appear here as actions are performed</p>
-              </div>
-            )}
+        return (
+          <div className="w-full max-w-full overflow-x-hidden">
+            <ActivityLogTable logs={data.logs} loading={loading} />
           </div>
         );
-        } catch (error) {
-          console.error('❌ Error rendering activity logs:', error);
-          return (
-            <div className="p-4 sm:p-6">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <h3 className="text-red-800 font-semibold mb-2">Error Loading Activity Logs</h3>
-                <p className="text-red-600 text-sm">{error.message}</p>
-              </div>
-            </div>
-          );
-        }
       default:
         return null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex w-full">
+    <div className="min-h-screen bg-gray-50 flex w-full overflow-x-hidden">
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div 
@@ -4715,36 +6656,55 @@ const AdminDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-48 sm:w-52 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-52 sm:w-60 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
-        <div className={`p-2 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
+        <div className={`p-3 sm:p-4 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
-            <div className="flex items-center space-x-1.5">
-              <div className="bg-white rounded-lg p-1 flex items-center justify-center">
-                <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-5 h-5 object-contain" />
+            <div className="flex items-center space-x-3">
+              <div className="bg-white rounded-lg p-2 flex items-center justify-center shadow-sm">
+                <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
               </div>
               <div>
-                <h2 className="text-sm font-bold">admin Panel</h2>
-                <p className="text-xs text-blue-200">Control Center</p>
+                <h2 className="text-base font-bold text-white tracking-tight">Admin Panel</h2>
+                <p className="text-xs text-blue-200 font-medium mt-0.5">Control Center</p>
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+            <div className="bg-white rounded-lg p-2 flex items-center justify-center shadow-sm">
               <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+          {/* Collapse button - only show when sidebar is open, hide expand button on dashboard */}
+          {sidebarOpen ? (
+            <button
+              onClick={() => {
+                // Allow collapse on all tabs except dashboard (dashboard sidebar always collapsed)
+                if (activeTab !== 'venue-dashboard') {
+                  setSidebarOpen(false);
+                }
+              }}
+              className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
+              title="Collapse sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          ) : (
+            // Show expand button only if NOT on dashboard tab
+            activeTab !== 'venue-dashboard' && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
+                title="Expand sidebar"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )
+          )}
         </div>
 
         {/* Navigation Menu */}
         <nav className="flex-1 overflow-y-auto py-1.5">
-          <div className="px-1.5 space-y-0.5">
+          <div className="px-2 space-y-0.5">
             {tabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -4758,19 +6718,19 @@ const AdminDashboard = () => {
                       setSidebarOpen(false);
                     }
                   }}
-                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-1.5 sm:px-2' : 'justify-center px-2'} py-1.5 sm:py-2 rounded-lg transition-all duration-200 touch-manipulation ${
+                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-2' : 'justify-center px-2'} py-1.5 rounded-lg transition-all duration-200 touch-manipulation focus:outline-none focus:ring-0 ${
                     isActive
-                      ? 'bg-white text-blue-600 shadow-lg'
+                      ? 'bg-white text-blue-600 shadow-lg font-semibold'
                       : 'text-blue-100 hover:bg-blue-700 hover:text-white'
                   }`}
                   title={!sidebarOpen ? tab.label : ''}
                 >
-                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-4 h-4 sm:w-5 sm:h-5'}`} />
+                  <Icon className={`${sidebarOpen ? 'w-4 h-4 mr-2' : 'w-4 h-4'} flex-shrink-0`} />
                   {sidebarOpen && (
                     <>
-                      <span className="text-sm font-medium flex-1 text-left">{tab.label}</span>
+                      <span className="text-xs font-medium flex-1 text-left tracking-tight">{tab.label}</span>
                       {tab.count !== undefined && (
-                        <span className={`ml-2 py-0.5 px-2 rounded-full text-xs font-semibold ${
+                        <span className={`ml-1.5 py-0.5 px-1.5 rounded-full text-[10px] font-bold min-w-[18px] text-center ${
                           tab.badge === 'red' && tab.count > 0
                             ? 'bg-red-500 text-white'
                             : isActive
@@ -4791,18 +6751,18 @@ const AdminDashboard = () => {
         {/* Sidebar Dashboard Panel - REMOVED - No longer showing in sidebar */}
 
         {/* Sidebar Footer */}
-        <div className="p-1.5 border-t border-blue-700">
-          <div className={`${sidebarOpen ? 'px-2' : 'px-2'} py-1.5 bg-blue-700 rounded-lg`}>
+        <div className="p-2 border-t border-blue-700">
+          <div className={`${sidebarOpen ? 'px-2.5' : 'px-2'} py-2 bg-blue-700 rounded-lg`}>
             <div className={`flex items-center ${sidebarOpen ? 'space-x-2' : 'justify-center'}`}>
-              <div className="bg-blue-600 rounded-full p-1.5">
+              <div className="bg-blue-600 rounded-full p-1.5 flex-shrink-0">
                 <User className="w-4 h-4" />
               </div>
               {sidebarOpen && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{user?.name || 'admin'}</p>
-                  <p className="text-xs text-blue-200 truncate">{user?.email || 'admin@example.com'}</p>
+                  <p className="text-xs font-medium text-white truncate">{user?.name || 'Admin'}</p>
+                  <p className="text-[10px] text-blue-200 truncate mt-0.5 leading-tight">{user?.email || 'admin@example.com'}</p>
                 {user?.status && (
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium mt-1.5 capitalize ${
                     user.status === 'unlocked' 
                         ? 'bg-green-500 text-white' 
                       : user.status === 'locked'
@@ -4820,48 +6780,71 @@ const AdminDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-48 xl:ml-52' : 'lg:ml-14 xl:ml-16'} transition-all duration-300 bg-gray-50 min-h-screen flex flex-col`}>
+      <div 
+        className={`flex-1 transition-all duration-300 bg-gray-50 min-h-screen flex flex-col overflow-x-hidden ${
+          sidebarOpen 
+            ? 'lg:ml-[208px] xl:ml-[240px]' 
+            : 'lg:ml-[56px] xl:ml-[64px]'
+        }`}
+        style={{
+          marginLeft: contentMarginLeft || undefined,
+          width: contentWidth || undefined
+        }}
+      >
         {/* Top Header - 10% height */}
-        <header className="bg-white shadow-md border-b sticky top-0 z-20 w-full h-[10vh] flex-shrink-0 flex items-center">
-          <div className="px-4 sm:px-6 w-full">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-3">
+        <header className="bg-white shadow-md border-b sticky top-0 z-20 w-full min-h-[60px] sm:h-[10vh] flex-shrink-0 flex items-center">
+          <div className="px-3 sm:px-4 md:px-6 w-full">
+            <div className="flex justify-between items-center gap-2 sm:gap-3">
+              <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
                 <button
                   onClick={() => setSidebarOpen(!sidebarOpen)}
-                  className="lg:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="lg:hidden p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                 >
-                  <Menu className="w-6 h-6" />
+                  <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
-                <div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                {/* Back button for Overview tab to go back to Dashboard */}
+                {activeTab === 'dashboard' && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('venue-dashboard');
+                      setSidebarOpen(false);
+                    }}
+                    className="p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                    title="Back to Dashboard"
+                  >
+                    <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </button>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900 truncate">
                     {tabs.find(t => t.id === activeTab)?.label || 'Dashboard'}
                   </h1>
-                  <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                  <p className="text-xs sm:text-sm text-gray-600 mt-0.5 sm:mt-1 truncate">
                     Welcome back, {user?.name || 'admin'}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className="flex items-center space-x-1.5 sm:space-x-2 md:space-x-3 flex-shrink-0">
               {alerts.length > 0 && (
-                  <div className="flex items-center space-x-2 bg-red-50 px-3 py-1 rounded-lg border border-red-200">
-                    <AlertCircle className="w-4 h-4 text-red-600" />
-                  <span className="text-sm font-medium text-red-800">
+                  <div className="hidden sm:flex items-center space-x-1.5 sm:space-x-2 bg-red-50 px-2 sm:px-3 py-1 rounded-lg border border-red-200">
+                    <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-600" />
+                  <span className="text-xs sm:text-sm font-medium text-red-800">
                     {alerts.length} Alert{alerts.length !== 1 ? 's' : ''}
                   </span>
                 </div>
               )}
                 <button
                   onClick={loadData}
-                  className="p-2 sm:p-2.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-1.5 sm:p-2 md:p-2.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                   title="Refresh Data"
                 >
-                  <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${loading ? 'animate-spin' : ''}`} />
                 </button>
                 <button
                   onClick={logout}
-                  className="flex items-center px-3 sm:px-4 py-2 sm:py-2.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="flex items-center px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 text-xs sm:text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <LogOut className="w-4 h-4 sm:mr-2" />
+                  <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 sm:mr-2" />
                   <span className="hidden sm:inline">Logout</span>
                 </button>
               </div>
@@ -4871,21 +6854,113 @@ const AdminDashboard = () => {
 
         {/* Content - 90% height */}
         <main className="p-4 sm:p-6 w-full overflow-x-hidden flex-1 h-[90vh] overflow-y-auto">
-          <div className="w-full max-w-none">
+          <div className="w-full max-w-full overflow-x-hidden">
             {/* Main Content */}
             {renderContent()}
           </div>
         </main>
       </div>
 
+      {/* Event Type Selection Modal */}
+      {showEventTypeSelection && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-10 backdrop-blur-[2px] flex items-center justify-center z-[100]"
+          onClick={() => {
+            setShowEventTypeSelection(false);
+            setSelectedEventType(null);
+            setSelectedEvent(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full mx-4 p-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-bold text-gray-900 text-center flex-1">Choose Option</h3>
+              <button
+                onClick={() => {
+                  setShowEventTypeSelection(false);
+                  setSelectedEventType(null);
+                  setSelectedEvent(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Options */}
+            <div className="grid grid-cols-3 gap-6">
+              {/* Simple Event */}
+              <button
+                onClick={() => {
+                  setSelectedEventType('simple');
+                  setShowEventTypeSelection(false);
+                  setShowEventModal(true);
+                }}
+                className="relative group flex flex-col items-center p-6 rounded-xl border-2 border-gray-200 hover:border-blue-500 transition-all duration-200"
+              >
+                <div className="relative mb-4">
+                  <div className="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-500 transition-colors">
+                    <Calendar className="w-8 h-8 text-blue-600 group-hover:text-white transition-colors" />
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-cyan-400 rounded-full"></div>
+                </div>
+                <span className="text-sm font-semibold text-gray-900">Simple Event</span>
+              </button>
+
+              {/* Recurring Event */}
+              <button
+                onClick={() => {
+                  setSelectedEventType('recurring');
+                  setShowEventTypeSelection(false);
+                  setShowEventModal(true);
+                }}
+                className="relative group flex flex-col items-center p-6 rounded-xl border-2 border-gray-300 bg-gray-50 hover:border-purple-500 transition-all duration-200"
+              >
+                <div className="relative mb-4">
+                  <div className="w-16 h-16 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-500 transition-colors">
+                    <RefreshCw className="w-8 h-8 text-purple-600 group-hover:text-white transition-colors" />
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-cyan-400 rounded-full"></div>
+                </div>
+                <span className="text-sm font-semibold text-gray-900">Recurring Event</span>
+                <div className="absolute bottom-2 right-2">
+                  <Check className="w-5 h-5 text-cyan-500" />
+                </div>
+              </button>
+
+              {/* Device Power Control */}
+              <button
+                onClick={() => {
+                  setSelectedEventType('device-power');
+                  setShowEventTypeSelection(false);
+                  setShowEventModal(true);
+                }}
+                className="relative group flex flex-col items-center p-6 rounded-xl border-2 border-gray-200 hover:border-green-500 transition-all duration-200"
+              >
+                <div className="relative mb-4">
+                  <div className="w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-500 transition-colors">
+                    <Power className="w-8 h-8 text-green-600 group-hover:text-white transition-colors" />
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-cyan-400 rounded-full"></div>
+                </div>
+                <span className="text-sm font-semibold text-gray-900">Device Power</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Organization Details Modal */}
       {/* Event Modal */}
       {showEventModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[99]">
+          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b">
               <h3 className="text-lg font-semibold text-gray-900">
-                {selectedEvent ? 'Edit Event' : 'Create Event'}
+                {selectedEvent?.id ? 'Edit Event' : selectedEventType === 'recurring' ? 'Create Recurring Event' : selectedEventType === 'simple' ? 'Create Simple Event' : selectedEventType === 'device-power' ? 'Create On/Off Device Event' : 'Create Event'}
               </h3>
               <button
                 onClick={handleCloseEventModal}
@@ -4901,6 +6976,8 @@ const AdminDashboard = () => {
                 onCancel={handleCloseEventModal}
                   event={selectedEvent}
                 acs={memoizedAcs}
+                eventType={selectedEventType}
+                disableDeviceSelection={!!(selectedEvent?.deviceId && !selectedEvent?.id)}
               />
             </div>
           </div>
@@ -5176,12 +7253,6 @@ const AdminDashboard = () => {
                         <div className="flex items-center space-x-2">
                           <span className="font-medium">Organization:</span>
                           <span>{selectedVenueDetails.organization.name}</span>
-                        </div>
-                      )}
-                      {selectedVenueDetails.organizationSize && (
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium">Size:</span>
-                          <span>{selectedVenueDetails.organizationSize}</span>
                         </div>
                       )}
                       <div className="flex items-center space-x-2">
@@ -5735,20 +7806,6 @@ const AdminDashboard = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Organization Size *</label>
-                <select
-                  name="organizationSize"
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select Size</option>
-                  <option value="Small">Small</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Large">Large</option>
-                  <option value="Enterprise">Enterprise</option>
-                </select>
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                 <input
                   type="text"
@@ -5970,11 +8027,10 @@ const AdminDashboard = () => {
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="">Select Capacity</option>
-                  <option value="0.5">0.5 Ton</option>
-                  <option value="1">1 Ton</option>
-                  <option value="1.5">1.5 Ton</option>
-                  <option value="2">2 Ton</option>
+                  <option value="">Select Ton</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(ton => (
+                    <option key={ton} value={ton}>{ton} Ton</option>
+                  ))}
                 </select>
               </div>
               <div>

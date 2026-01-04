@@ -1190,6 +1190,22 @@ class LockService {
         console.log(
           `📡 [VENUE-LOCK] WebSocket commands: ${wsCommandsSent} sent, ${wsCommandsSkipped} skipped`
         );
+        
+        // Broadcast lock updates to frontend for all devices
+        for (const ac of lockedACs) {
+          ESPService.broadcastToFrontend({
+            type: "LOCK_UPDATE",
+            serial: ac.serialNumber,
+            serialNumber: ac.serialNumber,
+            locked: 1,
+            venueId: venueId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        
+        console.log(
+          `📡 [VENUE-LOCK] Broadcasted ${lockedACs.length} device lock updates to frontend`
+        );
       } catch (wsError) {
         console.error("❌ [VENUE-LOCK] WebSocket command error (non-critical):", wsError.message);
         // Don't fail the operation if WebSocket fails
@@ -1308,6 +1324,22 @@ class LockService {
 
         console.log(
           `📡 [VENUE-UNLOCK] WebSocket commands: ${wsCommandsSent} sent, ${wsCommandsSkipped} skipped`
+        );
+        
+        // Broadcast unlock updates to frontend for all devices
+        for (const ac of unlockedACs) {
+          ESPService.broadcastToFrontend({
+            type: "LOCK_UPDATE",
+            serial: ac.serialNumber,
+            serialNumber: ac.serialNumber,
+            locked: 0,
+            venueId: venueId,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        
+        console.log(
+          `📡 [VENUE-UNLOCK] Broadcasted ${unlockedACs.length} device unlock updates to frontend`
         );
       } catch (wsError) {
         console.error("❌ [VENUE-UNLOCK] WebSocket command error (non-critical):", wsError.message);

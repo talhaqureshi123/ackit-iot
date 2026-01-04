@@ -5,7 +5,15 @@ const ManagerAuth = require("../authentication/managerAuth");
 
 // ==================== AUTHENTICATION ROUTES ====================
 // Login route (not protected)
-router.post("/login", ManagerAuth.login);
+router.post("/login", async (req, res, next) => {
+  try {
+    console.log("📥 Manager login route hit");
+    await ManagerAuth.login(req, res);
+  } catch (error) {
+    console.error("❌ Error in manager login route wrapper:", error);
+    next(error);
+  }
+});
 
 // Manager logout (no auth required)
 router.post("/logout", ManagerAuth.logout);
@@ -210,6 +218,9 @@ router.get(
   "/organizations/:organizationId/energy",
   managerController.getOrganizationEnergy
 );
+
+// Get comprehensive energy report (device → venue → organization with monthly data)
+router.get("/energy/report", managerController.getEnergyReport);
 
 // ==================== EVENT MANAGEMENT ROUTES ====================
 // Create event - Only unrestricted managers can create events

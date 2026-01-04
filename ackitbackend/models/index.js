@@ -8,6 +8,7 @@ const SuperAdmin = require("./Roleaccess/superadmin");
 const ActivityLog = require("./Activity log/activityLog");
 const SystemState = require("./SystemState/systemState");
 const Event = require("./Event/event");
+const PlanRequest = require("./PlanRequest/planRequest");
 
 // Define associations
 // Admin associations with Manager
@@ -198,6 +199,25 @@ Event.belongsTo(Event, {
   as: "parentAdminEvent",
 });
 
+// PlanRequest associations
+Admin.hasMany(PlanRequest, {
+  foreignKey: "adminId",
+  as: "planRequests",
+});
+PlanRequest.belongsTo(Admin, {
+  foreignKey: "adminId",
+  as: "admin",
+});
+
+SuperAdmin.hasMany(PlanRequest, {
+  foreignKey: "reviewedBy",
+  as: "reviewedPlanRequests",
+});
+PlanRequest.belongsTo(SuperAdmin, {
+  foreignKey: "reviewedBy",
+  as: "reviewer",
+});
+
 module.exports = {
   Admin,
   Manager,
@@ -208,4 +228,5 @@ module.exports = {
   ActivityLog,
   SystemState,
   Event,
+  PlanRequest,
 };

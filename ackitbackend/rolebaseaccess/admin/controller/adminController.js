@@ -19,6 +19,7 @@ const Services = require("../../../services");
 const ESPService = Services.getESPService();
 const EnergyConsumptionService = require("../services/energyConsumptionService");
 const EventService = require("../services/eventService");
+const PlanRequest = require("../../../models/PlanRequest/planRequest");
 // Import session helper
 const SessionHelper = require("../../../middleware/sessionHelper");
 class AdminController {
@@ -2195,9 +2196,27 @@ class AdminController {
         );
       }
 
-      // Update ALL AC temperatures (ON and OFF both) - EXCEPT devices with active events
-      if (devicesToUpdate.length > 0 && venueIds.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
+      // Filter devices to only update CONNECTED devices
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      const connectedDevicesToUpdate = devicesToUpdate.filter((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      const offlineDevices = devicesToUpdate.filter((ac) => {
+        if (!ac.serialNumber) return true;
+        return !ESPService.isDeviceConnected(ac.serialNumber);
+      });
+
+      if (offlineDevices.length > 0) {
+        console.warn(
+          `⚠️ [ADMIN-ORG-TEMP] Skipping ${offlineDevices.length} offline device(s): ${offlineDevices.map((ac) => ac.serialNumber || ac.name).join(", ")}`
+        );
+      }
+
+      // Update ONLY CONNECTED AC temperatures (ON and OFF both) - EXCEPT devices with active events
+      if (connectedDevicesToUpdate.length > 0 && venueIds.length > 0) {
+        const deviceIdsToUpdate = connectedDevicesToUpdate.map((ac) => ac.id);
         await AC.update(
           {
             temperature: finalTemperature,
@@ -2214,11 +2233,11 @@ class AdminController {
         );
         console.log(
           `✅ [ADMIN-ORG-TEMP] Updated ${
-            devicesToUpdate.length
-          } AC temperatures (${
-            devicesToUpdate.filter((ac) => ac.isOn).length
+            connectedDevicesToUpdate.length
+          } connected AC temperatures (${
+            connectedDevicesToUpdate.filter((ac) => ac.isOn).length
           } ON, ${
-            devicesToUpdate.filter((ac) => !ac.isOn).length
+            connectedDevicesToUpdate.filter((ac) => !ac.isOn).length
           } OFF): ${oldOrgTemp}°C → ${finalTemperature}°C`
         );
       }
@@ -2249,8 +2268,8 @@ class AdminController {
         let sentCount = 0;
         let skippedCount = 0;
 
-        // Only send WebSocket commands to devices without active events
-        for (const ac of devicesToUpdate) {
+        // Only send WebSocket commands to CONNECTED devices without active events
+        for (const ac of connectedDevicesToUpdate) {
           if (ac.serialNumber) {
             console.log(`   └─ Processing device: ${ac.serialNumber}`);
             // Use startTemperatureSync with serial number for proper sync
@@ -2341,9 +2360,13 @@ class AdminController {
         success: true,
         message: `Organization temperature set to ${actualTemperature}°C. Updated ${
           allOrgVenues.length
-        } venues and ${devicesToUpdate.length} devices (${
-          devicesToUpdate.filter((ac) => ac.isOn).length
-        } ON, ${devicesToUpdate.filter((ac) => !ac.isOn).length} OFF)${
+        } venues and ${connectedDevicesToUpdate.length} connected devices (${
+          connectedDevicesToUpdate.filter((ac) => ac.isOn).length
+        } ON, ${connectedDevicesToUpdate.filter((ac) => !ac.isOn).length} OFF)${
+          offlineDevices.length > 0
+            ? `. ${offlineDevices.length} device(s) skipped (offline)`
+            : ""
+        }${
           devicesSkipped.length > 0
             ? `. ${devicesSkipped.length} device(s) skipped due to active events`
             : ""
@@ -2355,9 +2378,10 @@ class AdminController {
           hasMixedTemperatures: false, // Organization temp set, so no mixed (all venues now have same temp)
         },
         venuesUpdated: allOrgVenues.length,
-        acsUpdated: acs.length,
-        acsOnUpdated: acsOn.length,
-        acsOffUpdated: acsOff.length,
+        acsUpdated: connectedDevicesToUpdate.length,
+        acsOnUpdated: connectedDevicesToUpdate.filter((ac) => ac.isOn).length,
+        acsOffUpdated: connectedDevicesToUpdate.filter((ac) => !ac.isOn).length,
+        offlineDevicesSkipped: offlineDevices.length,
         note: "Admin override: Temperature changed for all venues and devices (ON/OFF both). Manager locks are temporarily bypassed.",
         adminOverride: true,
       });
@@ -2388,6 +2412,27 @@ class AdminController {
       console.log("- Organization ID:", organizationId);
       console.log("- Power State:", powerState);
       console.log("- Power State Type:", typeof powerState);
+
+      // CRITICAL: Check if admin is unlocked (status === 'active')
+      // Only unlocked (active) admins can toggle organization power
+      const Admin = require("../../../models/Roleaccess/admin");
+      const admin = await Admin.findByPk(adminId, {
+        attributes: ["id", "name", "email", "status"],
+      });
+
+      if (!admin) {
+        return res.status(404).json({
+          success: false,
+          message: "Admin not found",
+        });
+      }
+
+      if (admin.status !== "active") {
+        return res.status(403).json({
+          success: false,
+          message: "Only active admins can toggle organization power",
+        });
+      }
 
       // Validate organizationId
       if (!organizationId || isNaN(parseInt(organizationId))) {
@@ -2447,6 +2492,27 @@ class AdminController {
       const { venueId } = req.params;
       const { powerState } = req.body;
       const adminId = req.admin.id;
+
+      // CRITICAL: Check if admin is unlocked (status === 'active')
+      // Only unlocked (active) admins can toggle venue power
+      const Admin = require("../../../models/Roleaccess/admin");
+      const admin = await Admin.findByPk(adminId, {
+        attributes: ["id", "name", "email", "status"],
+      });
+
+      if (!admin) {
+        return res.status(404).json({
+          success: false,
+          message: "Admin not found",
+        });
+      }
+
+      if (admin.status !== "active") {
+        return res.status(403).json({
+          success: false,
+          message: "Only active admins can toggle venue power",
+        });
+      }
 
       if (!venueId || isNaN(parseInt(venueId))) {
         return res.status(400).json({
@@ -2569,8 +2635,26 @@ class AdminController {
         );
       }
 
-      if (devicesToUpdate.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
+      // Filter devices to only update CONNECTED devices
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      const connectedDevicesToUpdate = devicesToUpdate.filter((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      const offlineDevices = devicesToUpdate.filter((ac) => {
+        if (!ac.serialNumber) return true;
+        return !ESPService.isDeviceConnected(ac.serialNumber);
+      });
+
+      if (offlineDevices.length > 0) {
+        console.warn(
+          `⚠️ [ADMIN-VENUE-TEMP] Skipping ${offlineDevices.length} offline device(s): ${offlineDevices.map((ac) => ac.serialNumber || ac.name).join(", ")}`
+        );
+      }
+
+      if (connectedDevicesToUpdate.length > 0) {
+        const deviceIdsToUpdate = connectedDevicesToUpdate.map((ac) => ac.id);
         await AC.update(
           {
             temperature: tempValue,
@@ -2585,7 +2669,7 @@ class AdminController {
           }
         );
         console.log(
-          `✅ [ADMIN-VENUE-TEMP] Updated ${devicesToUpdate.length} ACs in venue to ${tempValue}°C (${devicesSkipped.length} skipped due to active events)`
+          `✅ [ADMIN-VENUE-TEMP] Updated ${connectedDevicesToUpdate.length} connected ACs in venue to ${tempValue}°C (${devicesSkipped.length} skipped due to active events, ${offlineDevices.length} skipped offline)`
         );
       }
 
@@ -2600,8 +2684,8 @@ class AdminController {
         let sentCount = 0;
         let skippedCount = 0;
 
-        // Only send WebSocket commands to devices without active events
-        for (const ac of devicesToUpdate) {
+        // Only send WebSocket commands to CONNECTED devices without active events
+        for (const ac of connectedDevicesToUpdate) {
           if (ac.serialNumber) {
             try {
               console.log(`   └─ Processing device: ${ac.serialNumber}`);
@@ -2744,6 +2828,26 @@ class AdminController {
         }
       }
 
+      // Emit VENUE_UPDATED event for real-time sync
+      try {
+        const Services = require("../../../services");
+        const ESPService = Services.getESPService();
+        await ESPService.emitVenueUpdated(venueId, {
+          updateType: "temperature",
+          temperature: tempValue,
+          changedBy: "admin",
+        });
+        console.log(
+          `📢 [ADMIN-VENUE-TEMP] Emitted VENUE_UPDATED event for venue ${venueId}`
+        );
+      } catch (emitError) {
+        console.error(
+          "⚠️ Error emitting VENUE_UPDATED event:",
+          emitError
+        );
+        // Don't fail the operation if event emission fails
+      }
+
       // Reload venue to get actual updated temperature from database
       const updatedVenue = await Venue.findOne({
         where: { id: venueId, adminId: adminId },
@@ -2770,8 +2874,12 @@ class AdminController {
       res.json({
         success: true,
         message: `Venue temperature updated to ${actualTemperature}°C. Updated ${
-          devicesToUpdate.length
-        } devices${
+          connectedDevicesToUpdate.length
+        } connected devices${
+          offlineDevices.length > 0
+            ? `. ${offlineDevices.length} device(s) skipped (offline)`
+            : ""
+        }${
           devicesSkipped.length > 0
             ? `. ${devicesSkipped.length} device(s) skipped due to active events`
             : ""
@@ -3088,7 +3196,25 @@ class AdminController {
         // Don't fail the whole operation if WebSocket fails
       }
 
-      // Broadcast real-time update to all frontend clients (admin and manager)
+      // Emit DEVICE_UPDATED event for real-time sync
+      try {
+        await ESPService.emitDeviceUpdated(ac.id, {
+          updateType: "temperature",
+          temperature: finalTemperature,
+          changedBy: "admin",
+        });
+        console.log(
+          `📢 [ADMIN-CONTROLLER-AC] Emitted DEVICE_UPDATED event for device ${ac.id}`
+        );
+      } catch (emitError) {
+        console.error(
+          "⚠️ Error emitting DEVICE_UPDATED event:",
+          emitError
+        );
+        // Don't fail the operation if event emission fails
+      }
+
+      // Broadcast real-time update to all frontend clients (admin and manager) - legacy support
       try {
         ESPService.broadcastToFrontend({
           device_id: ac.serialNumber,
@@ -3303,6 +3429,34 @@ class AdminController {
       const newStatus =
         status === true || status === "on" || status === "active";
 
+      // Check organization power state - if organization is OFF, cannot turn ON device
+      if (venue && venue.organizationId && newStatus) {
+        // Find organization (stored in Venue model with same name as organization)
+        const Organization = require("../../../models/Organization/organization");
+        const organizationModel = await Organization.findOne({
+          where: { id: venue.organizationId, adminId: adminId },
+        });
+        
+        if (organizationModel) {
+          // Find organization's venue entry (power state is stored in Venue model)
+          const organizationVenue = await Venue.findOne({
+            where: {
+              name: organizationModel.name,
+              adminId: adminId,
+            },
+          });
+          
+          // If organization exists and is OFF, cannot turn on device
+          if (organizationVenue && !organizationVenue.isVenueOn) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Cannot turn ON device: Organization is currently OFF. Please turn on the organization first.",
+            });
+          }
+        }
+      }
+
       // Check if AC was locked by manager (admin has superiority to override)
       const wasLockedByManager =
         ac.currentState === "locked" &&
@@ -3412,8 +3566,32 @@ class AdminController {
         // Don't fail the whole operation if WebSocket fails
       }
 
-      // Broadcast real-time update to all frontend clients (admin and manager)
+      // Emit DEVICE_UPDATED event for real-time sync
       try {
+        const Services = require("../../../services");
+        const ESPService = Services.getESPService();
+        await ESPService.emitDeviceUpdated(ac.id, {
+          updateType: "power",
+          isOn: newStatus,
+          changedBy: "admin",
+        });
+        console.log(
+          `📢 [ADMIN-CONTROLLER-POWER] Emitted DEVICE_UPDATED event for device ${ac.id}`
+        );
+      } catch (emitError) {
+        console.error(
+          "⚠️ Error emitting DEVICE_UPDATED event:",
+          emitError
+        );
+        // Don't fail the operation if event emission fails
+      }
+
+      // Broadcast real-time update to all frontend clients
+      try {
+        const Services = require("../../../services");
+        const ESPService = Services.getESPService();
+        
+        // Broadcast device power update
         ESPService.broadcastToFrontend({
           device_id: ac.serialNumber,
           serialNumber: ac.serialNumber,
@@ -3424,6 +3602,128 @@ class AdminController {
           venueId: ac.venueId,
           timestamp: new Date().toISOString(),
         });
+        
+        // Check and update venue power status based on all devices
+        if (ac.venueId) {
+          const { Op } = require("sequelize");
+          const allDevicesInVenue = await AC.findAll({
+            where: { venueId: ac.venueId },
+            attributes: ["id", "isOn"],
+          });
+          
+          const allDevicesOn = allDevicesInVenue.length > 0 && allDevicesInVenue.every(d => d.isOn === true);
+          const allDevicesOff = allDevicesInVenue.length > 0 && allDevicesInVenue.every(d => d.isOn === false);
+          
+          // Get venue to check current state
+          const venue = await Venue.findByPk(ac.venueId, {
+            attributes: ["id", "name", "isVenueOn", "organizationId"],
+          });
+          
+          if (venue) {
+            let venueShouldBeOn = venue.isVenueOn;
+            
+            // If all devices are ON, venue should be ON
+            if (allDevicesOn && !venue.isVenueOn) {
+              await venue.update({ isVenueOn: true });
+              venueShouldBeOn = true;
+            }
+            // If all devices are OFF, venue should be OFF
+            else if (allDevicesOff && venue.isVenueOn) {
+              await venue.update({ isVenueOn: false });
+              venueShouldBeOn = false;
+            }
+            
+            // Broadcast venue power update if it changed
+            if (venueShouldBeOn !== venue.isVenueOn || allDevicesOn || allDevicesOff) {
+              ESPService.broadcastToFrontend({
+                type: "VENUE_POWER_UPDATE",
+                venueId: venue.id,
+                venueName: venue.name,
+                isVenueOn: venueShouldBeOn,
+                organizationId: venue.organizationId,
+                changedBy: "device_power_change",
+                timestamp: new Date().toISOString(),
+              });
+              console.log(
+                `📡 [ADMIN-CONTROLLER-POWER] Broadcasted venue power update: ${venue.name} → ${venueShouldBeOn ? "ON" : "OFF"}`
+              );
+            }
+          }
+        }
+        
+        console.log(
+          `📡 [ADMIN-CONTROLLER-POWER] Broadcasted power change to all frontend clients`
+        );
+      } catch (broadcastError) {
+        console.error("⚠️ Error broadcasting power change:", broadcastError);
+        // Don't fail the operation if broadcast fails
+      }
+
+      // Broadcast real-time update to all frontend clients (admin and manager)
+      try {
+        const Services = require("../../../services");
+        const ESPService = Services.getESPService();
+        
+        // Broadcast device power update
+        ESPService.broadcastToFrontend({
+          device_id: ac.serialNumber,
+          serialNumber: ac.serialNumber,
+          temperature: ac.temperature,
+          isOn: newStatus,
+          changedBy: "admin",
+          organizationId: ac.organizationId,
+          venueId: ac.venueId,
+          timestamp: new Date().toISOString(),
+        });
+        
+        // Check and update venue power status based on all devices
+        if (ac.venueId) {
+          const { Op } = require("sequelize");
+          const allDevicesInVenue = await AC.findAll({
+            where: { venueId: ac.venueId },
+            attributes: ["id", "isOn"],
+          });
+          
+          const allDevicesOn = allDevicesInVenue.length > 0 && allDevicesInVenue.every(d => d.isOn === true);
+          const allDevicesOff = allDevicesInVenue.length > 0 && allDevicesInVenue.every(d => d.isOn === false);
+          
+          // Get venue to check current state
+          const venue = await Venue.findByPk(ac.venueId, {
+            attributes: ["id", "name", "isVenueOn", "organizationId"],
+          });
+          
+          if (venue) {
+            let venueShouldBeOn = venue.isVenueOn;
+            
+            // If all devices are ON, venue should be ON
+            if (allDevicesOn && !venue.isVenueOn) {
+              await venue.update({ isVenueOn: true });
+              venueShouldBeOn = true;
+            }
+            // If all devices are OFF, venue should be OFF
+            else if (allDevicesOff && venue.isVenueOn) {
+              await venue.update({ isVenueOn: false });
+              venueShouldBeOn = false;
+            }
+            
+            // Broadcast venue power update if it changed
+            if (venueShouldBeOn !== venue.isVenueOn || allDevicesOn || allDevicesOff) {
+              ESPService.broadcastToFrontend({
+                type: "VENUE_POWER_UPDATE",
+                venueId: venue.id,
+                venueName: venue.name,
+                isVenueOn: venueShouldBeOn,
+                organizationId: venue.organizationId,
+                changedBy: "device_power_change",
+                timestamp: new Date().toISOString(),
+              });
+              console.log(
+                `📡 [ADMIN-CONTROLLER-POWER] Broadcasted venue power update: ${venue.name} → ${venueShouldBeOn ? "ON" : "OFF"}`
+              );
+            }
+          }
+        }
+        
         console.log(
           `📡 [ADMIN-CONTROLLER-POWER] Broadcasted power change to all frontend clients`
         );
@@ -4468,6 +4768,25 @@ class AdminController {
     }
   }
 
+  // Get energy consumption report (device → venue → organization with monthly data)
+  async getEnergyReport(req, res) {
+    try {
+      // Session validated by authenticateAdmin middleware
+      const adminId = req.admin.id;
+      
+      const report = await EnergyConsumptionService.getEnergyReport(adminId);
+      
+      res.status(200).json(report);
+    } catch (error) {
+      console.error('Get energy report error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error generating energy report',
+        error: error.message,
+      });
+    }
+  }
+
   // Set AC mode (eco/normal/high)
   async setACMode(req, res) {
     try {
@@ -4584,7 +4903,16 @@ class AdminController {
     try {
       // Session validated by authenticateAdmin middleware
       const adminId = req.admin.id;
+      console.log("📅 AdminController.createEvent - Request received");
+      console.log("- adminId:", adminId, "Type:", typeof adminId);
+      console.log("- req.admin:", req.admin);
+      console.log("- req.body:", req.body);
       const result = await EventService.createEvent(adminId, req.body);
+      console.log("✅ AdminController.createEvent - Event created:", {
+        eventId: result.data?.event?.id,
+        adminId: result.data?.event?.adminId,
+        createdBy: result.data?.event?.createdBy
+      });
       res.status(201).json(result);
     } catch (error) {
       console.error("Create event error:", error);
@@ -4625,7 +4953,8 @@ class AdminController {
       // Session validated by authenticateAdmin middleware
       const adminId = req.admin.id;
       console.log("📅 AdminController.getEvents - Request received");
-      console.log("- adminId:", adminId);
+      console.log("- adminId:", adminId, "Type:", typeof adminId);
+      console.log("- req.admin:", req.admin);
       console.log("- query params:", req.query);
 
       const filters = {
@@ -4638,6 +4967,22 @@ class AdminController {
         result.data?.events?.length || 0,
         "events"
       );
+      if (result.data?.events?.length === 0) {
+        console.warn("⚠️ AdminController.getEvents - No events found for adminId:", adminId);
+        console.warn("⚠️ Checking if events exist in database...");
+        // Quick check - count all events
+        const Event = require("../../../models/Event/event");
+        const allEventsCount = await Event.count();
+        console.log("📅 AdminController.getEvents - Total events in database:", allEventsCount);
+        if (allEventsCount > 0) {
+          const sampleEvents = await Event.findAll({
+            limit: 5,
+            attributes: ['id', 'name', 'adminId', 'createdBy', 'deviceId'],
+            raw: true
+          });
+          console.log("📅 AdminController.getEvents - Sample events from database:", sampleEvents);
+        }
+      }
       res.json(result);
     } catch (error) {
       console.error("❌ AdminController.getEvents - Error:", error);
@@ -4866,6 +5211,198 @@ class AdminController {
         success: false,
         message: "Error deleting AC device",
         error: error.message,
+      });
+    }
+  }
+
+  // PLAN MANAGEMENT FUNCTIONS
+
+  // Get admin's current plan
+  async getMyPlan(req, res) {
+    try {
+      const adminId = req.user.id;
+      const admin = await Admin.findByPk(adminId, {
+        attributes: ["id", "name", "email", "plan"],
+      });
+
+      if (!admin) {
+        return res.status(404).json({
+          success: false,
+          message: "Admin not found",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          plan: admin.plan || "basic",
+        },
+        message: "Plan retrieved successfully",
+      });
+    } catch (error) {
+      console.error("Get my plan error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error retrieving plan",
+        error: error.message,
+      });
+    }
+  }
+
+  // Get my plan requests
+  async getMyPlanRequests(req, res) {
+    try {
+      const adminId = req.admin.id;
+
+      const requests = await PlanRequest.findAll({
+        where: {
+          adminId: adminId,
+        },
+        order: [["createdAt", "DESC"]],
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          requests: requests,
+        },
+        message: "Plan requests retrieved successfully",
+      });
+    } catch (error) {
+      console.error("Get my plan requests error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error retrieving plan requests",
+        error: error.message,
+      });
+    }
+  }
+
+  // Request plan upgrade
+  async requestPlanUpgrade(req, res) {
+    try {
+      const adminId = req.admin.id;
+      const { plan, message } = req.body || {};
+
+      if (!plan) {
+        return res.status(400).json({
+          success: false,
+          message: "Plan is required",
+        });
+      }
+
+      // Validate plan
+      const validPlans = ["basic", "advanced", "premium", "custom"];
+      if (!validPlans.includes(plan)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid plan. Valid plans are: basic, advanced, premium, custom",
+        });
+      }
+
+      // Get current admin plan
+      const admin = await Admin.findByPk(adminId, {
+        attributes: ["id", "name", "email", "plan"],
+      });
+
+      if (!admin) {
+        return res.status(404).json({
+          success: false,
+          message: "Admin not found",
+        });
+      }
+
+      const currentPlan = admin.plan || "basic";
+
+      // Check if already on requested plan
+      if (currentPlan === plan) {
+        return res.status(400).json({
+          success: false,
+          message: `You are already on ${plan} plan`,
+        });
+      }
+
+      // Check if there's already a pending request
+      let existingRequest;
+      try {
+        existingRequest = await PlanRequest.findOne({
+          where: {
+            adminId: adminId,
+            status: "pending",
+          },
+        });
+      } catch (findError) {
+        console.error("Error checking existing request:", findError);
+        // If table doesn't exist, we'll try to create it or handle the error
+        if (findError.name === 'SequelizeDatabaseError' && findError.message.includes('does not exist')) {
+          return res.status(500).json({
+            success: false,
+            message: "Database table not found. Please contact administrator to set up the database.",
+            error: "plan_requests table does not exist"
+          });
+        }
+        throw findError;
+      }
+
+      if (existingRequest) {
+        return res.status(400).json({
+          success: false,
+          message: "You already have a pending plan upgrade request",
+        });
+      }
+
+      // Create plan request
+      let planRequest;
+      try {
+        planRequest = await PlanRequest.create({
+          adminId: adminId,
+          currentPlan: currentPlan,
+          requestedPlan: plan,
+          message: message || null,
+          status: "pending",
+        });
+      } catch (createError) {
+        console.error("Error creating plan request:", createError);
+        // Handle specific database errors
+        if (createError.name === 'SequelizeDatabaseError') {
+          if (createError.message.includes('does not exist')) {
+            return res.status(500).json({
+              success: false,
+              message: "Database table not found. Please contact administrator to set up the database.",
+              error: "plan_requests table does not exist"
+            });
+          }
+          if (createError.message.includes('foreign key')) {
+            return res.status(500).json({
+              success: false,
+              message: "Database constraint error. Please contact administrator.",
+              error: createError.message
+            });
+          }
+        }
+        throw createError;
+      }
+
+      res.status(201).json({
+        success: true,
+        data: {
+          request: planRequest,
+        },
+        message: "Plan upgrade request submitted successfully. Super Admin will review your request.",
+      });
+    } catch (error) {
+      console.error("Request plan upgrade error:", error);
+      console.error("Error stack:", error.stack);
+      console.error("Error details:", {
+        adminId: req.admin?.id,
+        plan: req.body?.plan,
+        message: req.body?.message
+      });
+      res.status(500).json({
+        success: false,
+        message: "Error submitting plan upgrade request",
+        error: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
     }
   }

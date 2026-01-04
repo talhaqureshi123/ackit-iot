@@ -207,6 +207,9 @@ router.patch("/acs/:acId/mode", adminController.setACMode);
 // Manually trigger energy calculation for an AC
 router.post("/acs/:acId/energy/calculate", adminController.calculateACEnergy);
 
+// Get comprehensive energy report (device → venue → organization with monthly data)
+router.get("/energy/report", adminController.getEnergyReport);
+
 // ==================== MONITORING & LOGS ROUTES ====================
 // Unused routes - commented for production
 // router.get("/logs/manager-activity", adminController.getManagerActivityLogs); // Not used in frontend
@@ -288,6 +291,16 @@ router.patch("/events/:eventId", adminController.updateEvent);
 
 // Delete event
 router.delete("/events/:eventId", adminController.deleteEvent);
+
+// ==================== PLAN MANAGEMENT ROUTES ====================
+// Get admin's current plan
+router.get("/plan", adminController.getMyPlan);
+
+// Get admin's plan requests
+router.get("/plan/requests", adminController.getMyPlanRequests);
+
+// Request plan upgrade
+router.post("/plan/request", adminController.requestPlanUpgrade);
 
 // ==================== TEST ROUTES ====================
 // Test routes removed for production

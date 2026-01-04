@@ -1,11 +1,12 @@
 import axios from "axios";
-import { BACKEND_BASE_URL } from "../config/api";
+import { BACKEND_BASE_URL, BACKEND_IP, BACKEND_PORT } from "../config/api";
 
 // Determine API base URL based on environment
 // Production: Use full backend URL (Railway)
 // Development: Use Vite proxy (/api)
 const isProduction =
   import.meta.env.PROD || import.meta.env.MODE === "production";
+const USE_PROXY = !isProduction; // Use proxy in development
 const API_BASE_URL = isProduction
   ? `${BACKEND_BASE_URL}/api` // Production: Full backend URL
   : "/api"; // Development: Vite proxy
@@ -95,34 +96,16 @@ api.interceptors.response.use(
         url.includes("/admin/login") ||
         url.includes("/manager/login");
 
-      // Don't auto-logout for lock/unlock operations, status checks, view details, or login attempts
-      // Also don't auto-logout immediately after login (give session time to establish)
-      const isRecentLogin =
-        Date.now() - parseInt(localStorage.getItem("loginTime") || "0") < 5000; // 5 seconds grace period
+      // Note: 401 error handling is now role-specific:
+      // - SuperAdmin: apiSuperAdmin.js
+      // - Admin: apiAdmin.js
+      // - Manager: apiManager.js
+      // This general api.js interceptor only handles basic cases
+      // For role-specific 401 handling, use the respective API client
 
-      if (
-        !isStatusOperation &&
-        !isToggleOperation &&
-        !isUnlockOperation &&
-        !isLockOperation &&
-        !isViewDetailsOperation &&
-        !isLoginOperation &&
-        !isRecentLogin
-      ) {
-        console.warn("⚠️ 401 error detected - auto-logging out");
-        console.warn("⚠️ URL:", url);
-        console.warn("⚠️ Is recent login:", isRecentLogin);
-        // Silent logout - no console logs
-        localStorage.removeItem("user");
-        localStorage.removeItem("role");
-        localStorage.removeItem("sessionId");
-        localStorage.removeItem("loginTime");
-        window.location.href = "/login";
-      } else if (isRecentLogin) {
-        console.log(
-          "ℹ️ 401 error on recent login - ignoring (session establishing)"
-        );
-      }
+      // Basic 401 handling - just reject, don't auto-logout
+      // Role-specific interceptors will handle logout logic
+      return Promise.reject(error);
     }
     // All other errors (403, 500, etc.) - silent handling, no console logs
 
@@ -130,26 +113,10 @@ api.interceptors.response.use(
   }
 );
 
-// Shared API endpoints (Super Admin and general)
-// Note: Admin and Manager endpoints are now in separate files:
-// - apiAdmin.js for admin endpoints
-// - apiManager.js for manager endpoints
-export const superAdminAPI = {
-  // Super Admin
-  superAdminLogin: (credentials) => api.post("/superadmin/login", credentials),
-  getAllAdmins: () => api.get("/superadmin/admins"),
-  getAdminDetails: (adminId) => api.get(`/superadmin/admins/${adminId}`),
-  createAdmin: (adminData) => api.post("/superadmin/admins", adminData),
-  suspendAdmin: (adminId, reason) =>
-    api.post(`/superadmin/admins/${adminId}/suspend`, { reason }),
-  resumeAdmin: (adminId) => api.post(`/superadmin/admins/${adminId}/resume`),
-  getSuperAdminActivityLogs: () => api.get("/superadmin/logs"),
-};
-
-// Legacy export for backward compatibility (will be removed later)
-// Use adminAPI from apiAdmin.js or managerAPI from apiManager.js instead
-export const authAPI = {
-  ...superAdminAPI,
-};
+// Note: All role-specific API endpoints are now in separate files:
+// - apiSuperAdmin.js for SuperAdmin endpoints
+// - apiAdmin.js for Admin endpoints
+// - apiManager.js for Manager endpoints
+// This file (api.js) is kept for general/shared API calls if needed
 
 export default api;

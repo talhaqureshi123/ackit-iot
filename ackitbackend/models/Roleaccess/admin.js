@@ -42,6 +42,10 @@ const Admin = sequelize.define(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    plan: {
+      type: DataTypes.ENUM("basic", "advanced", "premium", "custom"),
+      defaultValue: "basic",
+    },
   },
   {
     tableName: "admins",

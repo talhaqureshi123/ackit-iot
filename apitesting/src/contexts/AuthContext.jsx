@@ -28,6 +28,7 @@ export const AuthProvider = ({ children }) => {
         console.log('AuthContext - Checking stored data:');
         console.log('  Stored user:', storedUser);
         console.log('  Stored role:', storedRole);
+        console.log('  All localStorage keys:', Object.keys(localStorage));
         
         if (storedUser && storedRole) {
           try {
@@ -36,10 +37,25 @@ export const AuthProvider = ({ children }) => {
             
             // Validate parsed user has required fields
             if (parsedUser && parsedUser.email && parsedUser.role) {
+              // CRITICAL: Set user state immediately to prevent redirect
               setUser(parsedUser);
               console.log('✅ User restored from localStorage');
+              console.log('✅ Restored user details:', {
+                id: parsedUser.id,
+                email: parsedUser.email,
+                role: parsedUser.role,
+                name: parsedUser.name
+              });
+              // Set loading to false immediately after setting user
+              setLoading(false);
+              return; // Exit early since we have valid user
             } else {
               console.warn('⚠️ Invalid user data in localStorage, clearing...');
+              console.warn('⚠️ Missing fields:', {
+                hasEmail: !!parsedUser?.email,
+                hasRole: !!parsedUser?.role,
+                hasId: !!parsedUser?.id
+              });
               // Clear invalid data directly
               localStorage.removeItem('user');
               localStorage.removeItem('role');
@@ -48,6 +64,7 @@ export const AuthProvider = ({ children }) => {
             }
           } catch (parseError) {
             console.error('❌ Failed to parse user data from localStorage:', parseError);
+            console.error('❌ Raw stored user data:', storedUser);
             // Clear corrupted data directly
             localStorage.removeItem('user');
             localStorage.removeItem('role');
@@ -56,6 +73,7 @@ export const AuthProvider = ({ children }) => {
           }
         } else {
           console.log('ℹ️ No stored user data found');
+          console.log('ℹ️ Checking if data was cleared by another process...');
         }
       } catch (error) {
         console.error('❌ Auth check failed:', error);
@@ -69,8 +87,9 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password, role) => {
+    // Declare endpoint at function scope to ensure it's accessible in catch block
+    let endpoint = '';
     try {
-      let endpoint = '';
       switch (role) {
         case 'superadmin':
           endpoint = '/superadmin/login';
@@ -85,19 +104,30 @@ export const AuthProvider = ({ children }) => {
           throw new Error('Invalid role');
       }
 
-      console.log('Attempting login:', { email, role, endpoint });
+      console.log('🔐 Attempting login:', { email, role, endpoint });
       
       // Use proxy-based API clients (apiAdmin/apiManager) instead of direct connection
       // This ensures cookies work properly with Vite proxy
       let response;
-      if (role === 'admin') {
-        response = await apiAdmin.post(endpoint, { email, password });
-      } else if (role === 'manager') {
-        response = await apiManager.post(endpoint, { email, password });
-      } else {
-        // SuperAdmin uses direct connection (no proxy needed for now)
-        const { api } = await import('../services/api');
-        response = await api.post(endpoint, { email, password });
+      try {
+        if (role === 'admin') {
+          console.log('🔐 Using apiAdmin for login');
+          response = await apiAdmin.post(endpoint, { email, password });
+        } else if (role === 'manager') {
+          console.log('🔐 Using apiManager for login');
+          response = await apiManager.post(endpoint, { email, password });
+        } else {
+          // SuperAdmin uses dedicated apiSuperAdmin for consistency and cookie support
+          console.log('🔐 Using apiSuperAdmin for login');
+          const { apiSuperAdmin } = await import('../services/apiSuperAdmin');
+          response = await apiSuperAdmin.post(endpoint, { email, password });
+        }
+      } catch (apiError) {
+        console.error('❌ API call error:', apiError);
+        console.error('   Error message:', apiError.message);
+        console.error('   Error response:', apiError.response?.data);
+        console.error('   Error status:', apiError.response?.status);
+        throw apiError; // Re-throw to be caught by outer catch
       }
       
       console.log('📥 Login response received:', response);
@@ -105,15 +135,19 @@ export const AuthProvider = ({ children }) => {
       console.log('📥 Login response.status:', response.status);
       console.log('📥 Login response.headers:', response.headers);
       console.log('📥 Login response.headers.set-cookie:', response.headers['set-cookie']);
-      console.log('📥 Login response.headers["set-cookie"]:', response.headers['set-cookie']);
       
       // Check if cookie was set in browser
       const cookiesAfterLogin = document.cookie;
       console.log('🍪 Cookies in browser after login:', cookiesAfterLogin);
       console.log('🍪 Has ackit.sid after login:', cookiesAfterLogin.includes('ackit.sid'));
-      console.log('📥 Login response.headers.set-cookie:', response.headers['set-cookie']);
-      console.log('🍪 Browser cookies after login:', document.cookie);
-      console.log('🍪 Has ackit.sid after login:', document.cookie.includes('ackit.sid'));
+      
+      // Check response structure
+      console.log('🔍 Checking response structure:');
+      console.log('   response.data exists:', !!response.data);
+      console.log('   response.data.success:', response.data?.success);
+      console.log('   response.data.data exists:', !!response.data?.data);
+      console.log('   response.data.data.user exists:', !!response.data?.data?.user);
+      console.log('   response.data.user exists:', !!response.data?.user);
       
       if (response.data && response.data.success) {
         // Handle different response structures
@@ -122,31 +156,51 @@ export const AuthProvider = ({ children }) => {
         
         console.log('🔍 Extracted userData:', userData);
         console.log('🔍 Extracted sessionId:', sessionId);
+        console.log('🔍 UserData type:', typeof userData);
+        console.log('🔍 UserData keys:', userData ? Object.keys(userData) : 'null');
         
         if (!userData) {
           console.error('❌ No user data in response:', response.data);
           console.error('❌ Full response structure:', JSON.stringify(response.data, null, 2));
+          console.error('❌ Response.data.data:', response.data.data);
+          console.error('❌ Response.data.user:', response.data.user);
           throw new Error('Login response missing user data');
+        }
+        
+        // Validate userData has required fields
+        if (!userData.id || !userData.email) {
+          console.error('❌ UserData missing required fields:', userData);
+          throw new Error('Login response missing required user fields (id or email)');
         }
         
         console.log('✅ Login successful - User data:', userData);
         console.log('✅ Login successful - Session ID:', sessionId);
         console.log('✅ Login successful - Role:', role);
         
-        // Ensure userData has required fields
+        // Normalize role to lowercase for consistent storage and comparison
+        const normalizedRole = ((userData.role || role || '').toString().toLowerCase().trim());
+        
+        // Remove role from userData before spreading to avoid duplicate key warning
+        const { role: _, ...userDataWithoutRole } = userData;
+        
+        // Ensure userData has required fields with normalized role
         const userDataToStore = {
           id: userData.id,
           name: userData.name,
           email: userData.email,
-          role: userData.role || role,
+          role: normalizedRole, // Always use normalized role
           status: userData.status || 'active', // Default to active if not provided
           lastLogin: userData.lastLogin,
-          ...userData
+          ...userDataWithoutRole, // Spread remaining userData without role
         };
+        
+        console.log('✅ AuthContext - Normalized role for storage:', normalizedRole);
+        console.log('✅ AuthContext - Original role from userData:', userData.role);
+        console.log('✅ AuthContext - Role parameter:', role);
         
         // Store user data and session info (session is handled by cookies)
         localStorage.setItem('user', JSON.stringify(userDataToStore));
-        localStorage.setItem('role', userDataToStore.role || role);
+        localStorage.setItem('role', normalizedRole); // Always store normalized role
         localStorage.setItem('loginTime', Date.now().toString()); // Track login time for grace period
         if (sessionId) {
           localStorage.setItem('sessionId', sessionId);
@@ -168,14 +222,23 @@ export const AuthProvider = ({ children }) => {
         console.log('✅ Login time stored:', localStorage.getItem('loginTime'));
         
         // Mark login time for grace period (prevents immediate logout on 401 errors)
+        // This is important for all roles to prevent race conditions
         if (role === 'admin') {
+          const { markAdminLogin } = await import('../services/apiAdmin');
           markAdminLogin();
+          console.log('✅ Admin login marked for grace period');
         } else if (role === 'manager') {
+          const { markManagerLogin } = await import('../services/apiManager');
           markManagerLogin();
+          console.log('✅ Manager login marked for grace period');
+        } else if (role === 'superadmin') {
+          const { markSuperAdminLogin } = await import('../services/apiSuperAdmin');
+          markSuperAdminLogin();
+          console.log('✅ SuperAdmin login marked for grace period');
         }
         
-        // Wait a bit longer to ensure state is fully updated and React has re-rendered
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Minimal delay for state update (reduced from 200ms to 50ms)
+        await new Promise(resolve => setTimeout(resolve, 50));
         
         // Verify state was set correctly
         const verifyUser = localStorage.getItem('user');
@@ -200,7 +263,27 @@ export const AuthProvider = ({ children }) => {
         throw new Error(errorMessage);
       }
     } catch (error) {
-      console.error('Login error details:', {
+      // Enhanced error logging - don't let errors disappear
+      console.error('❌ AuthContext - Login Error Details:');
+      console.error('   Role:', role);
+      console.error('   Email:', email);
+      console.error('   Endpoint:', endpoint || 'not set');
+      console.error('   Error Type:', error.constructor.name);
+      console.error('   Error Message:', error.message);
+      console.error('   Error Stack:', error.stack);
+      
+      if (error.response) {
+        console.error('   Response Status:', error.response.status);
+        console.error('   Response Data:', error.response.data);
+        console.error('   Response Headers:', error.response.headers);
+      } else if (error.request) {
+        console.error('   Request made but no response received');
+        console.error('   Request:', error.request);
+      } else {
+        console.error('   Error setting up request:', error.message);
+      }
+      
+      console.error('   Full Error Object:', {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status,
@@ -240,13 +323,26 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  // Check authentication from both state and localStorage (for page reloads)
+  const storedUser = localStorage.getItem('user');
+  const parsedStoredUser = storedUser ? (() => {
+    try {
+      return JSON.parse(storedUser);
+    } catch {
+      return null;
+    }
+  })() : null;
+  
+  const isAuthenticated = !!user || (!!parsedStoredUser && !!parsedStoredUser.id && !!parsedStoredUser.email);
+  const currentRole = user?.role || parsedStoredUser?.role || localStorage.getItem('role');
+
   const value = {
-    user,
+    user: user || parsedStoredUser, // Return stored user if state user is null
     login,
     logout,
     loading,
-    isAuthenticated: !!user,
-    role: user?.role || localStorage.getItem('role')
+    isAuthenticated,
+    role: currentRole
   };
 
   return (

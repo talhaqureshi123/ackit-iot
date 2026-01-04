@@ -5,7 +5,14 @@ const superAdminAuth = require("../authentication/superAdminAuth");
 
 // AUTHENTICATION ROUTES
 // Super Admin login (no auth required)
-router.post("/login", superAdminController.loginSuperAdmin);
+router.post("/login", async (req, res, next) => {
+  try {
+    await superAdminController.loginSuperAdmin(req, res);
+  } catch (error) {
+    console.error("❌ Error in superadmin login route wrapper:", error);
+    next(error);
+  }
+});
 
 // Super Admin logout (no auth required)
 router.post("/logout", superAdminAuth.logout);
@@ -40,5 +47,15 @@ router.get("/logs", superAdminController.getActivityLogs);
 
 // Get activity logs with filters
 router.get("/logs/filter", superAdminController.getActivityLogs);
+
+// ==================== PLAN REQUEST MANAGEMENT ROUTES ====================
+// Get all plan requests
+router.get("/plan-requests", superAdminController.getPlanRequests);
+
+// Approve plan request
+router.post("/plan-requests/:requestId/approve", superAdminController.approvePlanRequest);
+
+// Reject plan request
+router.post("/plan-requests/:requestId/reject", superAdminController.rejectPlanRequest);
 
 module.exports = router;

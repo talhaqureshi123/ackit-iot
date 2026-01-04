@@ -507,29 +507,48 @@ class VenueService {
         { transaction }
       );
 
-      // Update all devices in this venue based on venue power state
-      // Venue ON → All devices ON, Venue OFF → All devices OFF
+      // Update all CONNECTED devices in this venue based on venue power state
+      // Venue ON → All connected devices ON, Venue OFF → All connected devices OFF
       let acsUpdated = 0;
-      const acUpdateData = {
-        isOn: newPowerState,
-        lastPowerChangeAt: new Date(),
-        lastPowerChangeBy: changedBy,
-      };
-
-      if (newPowerState) {
-        // When venue is turned ON, also initialize device states
-        acUpdateData.isWorking = true;
-        acUpdateData.alertAt = null;
-        acUpdateData.currentMode = "high";
-      }
-
-      // Update all ACs in this venue (not just the ones loaded in venue.acs)
-      const [updateCount] = await AC.update(acUpdateData, {
+      
+      // Get all ACs in this venue
+      const allACs = await AC.findAll({
         where: { venueId: venueId },
+        attributes: ["id", "serialNumber"],
         transaction,
       });
+      
+      // Filter to only connected devices
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      const connectedACs = allACs.filter((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      
+      if (connectedACs.length > 0) {
+        const acUpdateData = {
+          isOn: newPowerState,
+          lastPowerChangeAt: new Date(),
+          lastPowerChangeBy: changedBy,
+        };
 
-      acsUpdated = updateCount;
+        if (newPowerState) {
+          // When venue is turned ON, also initialize device states
+          acUpdateData.isWorking = true;
+          acUpdateData.alertAt = null;
+          acUpdateData.currentMode = "high";
+        }
+
+        // Update only CONNECTED ACs in this venue
+        const connectedACIds = connectedACs.map((ac) => ac.id);
+        const [updateCount] = await AC.update(acUpdateData, {
+          where: { id: { [Op.in]: connectedACIds } },
+          transaction,
+        });
+
+        acsUpdated = updateCount;
+      }
 
       await ActivityLog.create(
         {
@@ -556,8 +575,8 @@ class VenueService {
         const Services = require("../../../services");
         const ESPService = Services.getESPService();
 
-        // Get all ACs that were updated
-        const updatedACs = await AC.findAll({
+        // Get all CONNECTED ACs that were updated
+        const allACs = await AC.findAll({
           where: { venueId: venueId },
           attributes: [
             "id",
@@ -570,10 +589,16 @@ class VenueService {
           ],
         });
 
+        // Filter to only connected devices (Services already required above)
+        const updatedACs = allACs.filter((ac) => {
+          if (!ac.serialNumber) return false;
+          return ESPService.isDeviceConnected(ac.serialNumber);
+        });
+
         let wsCommandsSent = 0;
         let wsCommandsSkipped = 0;
 
-        // Send WebSocket POWER command to each ESP32 device
+        // Send WebSocket POWER command to each CONNECTED ESP32 device
         for (const ac of updatedACs) {
           if (ac.serialNumber) {
             try {
@@ -612,12 +637,12 @@ class VenueService {
             );
           }
 
-          // Broadcast to frontend for real-time UI update
+          // Broadcast to frontend for real-time UI update (device level)
           ESPService.broadcastToFrontend({
             device_id: ac.serialNumber,
             serialNumber: ac.serialNumber,
             temperature: ac.temperature,
-            isOn: ac.isOn,
+            isOn: newPowerState, // Use venue power state
             changedBy: changedBy,
             organizationId: ac.organizationId,
             venueId: ac.venueId,
@@ -625,11 +650,23 @@ class VenueService {
           });
         }
 
+        // Broadcast venue power update to frontend for real-time UI update
+        ESPService.broadcastToFrontend({
+          type: "VENUE_POWER_UPDATE",
+          venueId: venue.id,
+          venueName: venue.name,
+          isVenueOn: newPowerState,
+          organizationId: venue.organizationId,
+          changedBy: changedBy,
+          acsUpdated: acsUpdated,
+          timestamp: new Date().toISOString(),
+        });
+
         console.log(`📡 [VENUE-POWER] WebSocket commands completed:`);
         console.log(`   └─ Commands sent: ${wsCommandsSent}`);
         console.log(`   └─ Commands skipped: ${wsCommandsSkipped}`);
         console.log(
-          `📡 [VENUE-POWER] Broadcasted ${updatedACs.length} AC updates to all frontend clients`
+          `📡 [VENUE-POWER] Broadcasted venue update and ${updatedACs.length} AC updates to all frontend clients`
         );
       } catch (broadcastError) {
         console.error(

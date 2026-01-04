@@ -14,25 +14,31 @@ const configEnvPath = resolve(__dirname, "src/config");
 const configEnv = loadEnv("development", configEnvPath, "");
 
 // Get Railway backend URL from environment (check both locations)
+// In development, prefer local IP over Railway URL to avoid DNS issues
 const RAILWAY_BACKEND_URL =
-  rootEnv.VITE_RAILWAY_BACKEND_URL ||
-  configEnv.VITE_RAILWAY_BACKEND_URL ||
-  process.env.VITE_RAILWAY_BACKEND_URL ||
-  null;
+  process.env.NODE_ENV === "production"
+    ? (rootEnv.VITE_RAILWAY_BACKEND_URL ||
+       configEnv.VITE_RAILWAY_BACKEND_URL ||
+       process.env.VITE_RAILWAY_BACKEND_URL ||
+       null)
+    : null; // Force local IP in development
 const BACKEND_IP =
   rootEnv.VITE_BACKEND_IP ||
   configEnv.VITE_BACKEND_IP ||
   process.env.VITE_BACKEND_IP ||
-  "192.168.1.105";
+  "192.168.0.101";
 const BACKEND_PORT = "5050";
 
-// Backend base URL - prefer Railway URL, fallback to local IP
+// Backend base URL - prefer Railway URL in production, always use local IP in development
 const BACKEND_BASE_URL =
   RAILWAY_BACKEND_URL || `http://${BACKEND_IP}:${BACKEND_PORT}`;
 
 console.log("🔧 Vite Config - Environment Check:");
-console.log("   VITE_RAILWAY_BACKEND_URL:", RAILWAY_BACKEND_URL || "Not set");
-console.log("   Backend URL:", BACKEND_BASE_URL);
+console.log("   NODE_ENV:", process.env.NODE_ENV || "development");
+console.log("   VITE_RAILWAY_BACKEND_URL:", RAILWAY_BACKEND_URL || "Not set (using local IP)");
+console.log("   Backend IP:", BACKEND_IP);
+console.log("   Backend Port:", BACKEND_PORT);
+console.log("   ✅ Using Backend URL:", BACKEND_BASE_URL);
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -43,13 +49,21 @@ export default defineConfig({
     proxy: {
       // Proxy /api requests to backend server
       // This makes requests same-origin so cookies work properly
-      "/api": {
+        "/api": {
         target: BACKEND_BASE_URL,
         changeOrigin: true,
         secure: false,
         ws: true, // Enable WebSocket proxying for native WebSocket
         timeout: 30000, // Increase timeout to 30 seconds
         proxyTimeout: 30000, // Increase proxy timeout
+        onError: (err, req, res) => {
+          console.error("❌ Proxy error:", err.message);
+          console.error("   Target was:", BACKEND_BASE_URL);
+          if (err.code === "ENOTFOUND" || err.code === "EAI_AGAIN") {
+            console.error("   ⚠️ DNS resolution failed. Falling back to local IP...");
+            console.error("   💡 Make sure backend is running on:", `http://${BACKEND_IP}:${BACKEND_PORT}`);
+          }
+        },
         configure: (proxy, _options) => {
           // Log cookies being sent TO backend
           proxy.on("proxyReq", (proxyReq, req, res) => {

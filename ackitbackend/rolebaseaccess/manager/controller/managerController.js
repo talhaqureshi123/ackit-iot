@@ -1428,6 +1428,178 @@ class ManagerController {
     }
   }
 
+  async getEnergyReport(req, res) {
+    try {
+      // Session validated by authenticateManager middleware
+      const managerId = req.manager.id;
+      
+      // Get all organizations assigned to this manager
+      const organizations = await Organization.findAll({
+        where: { managerId: managerId },
+        attributes: ['id', 'name'],
+        order: [['name', 'ASC']]
+      });
+
+      if (organizations.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            generatedAt: new Date().toISOString(),
+            organizations: []
+          }
+        });
+      }
+
+      // Use shared energy consumption service
+      const EnergyConsumptionService = require("../../admin/services/energyConsumptionService");
+
+      // Generate report for all manager's organizations
+      const report = {
+        generatedAt: new Date().toISOString(),
+        organizations: []
+      };
+
+      // Generate last 12 months
+      const months = [];
+      const now = new Date();
+      for (let i = 11; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({
+          month: date.toLocaleString('default', { month: 'long' }),
+          year: date.getFullYear(),
+          monthNumber: date.getMonth() + 1,
+          yearMonth: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        });
+      }
+
+      const { Op } = require('sequelize');
+      const Venue = require('../../../models/Venue/venue');
+      const AC = require('../../../models/AC/ac');
+
+      // Process each organization
+      for (const org of organizations) {
+        // Get all venues for this organization
+        const venues = await Venue.findAll({
+          where: { organizationId: org.id },
+          attributes: ['id', 'name', 'organizationId'],
+          order: [['name', 'ASC']]
+        });
+
+        const venueIds = venues.map(v => v.id);
+        const allPossibleIds = venueIds.length > 0 ? [org.id, ...venueIds] : [org.id];
+        const uniqueIds = [...new Set(allPossibleIds)];
+
+        // Get all ACs for this organization
+        const acs = await AC.findAll({
+          where: {
+            venueId: { [Op.in]: uniqueIds },
+          },
+          attributes: [
+            'id',
+            'name',
+            'venueId',
+            'brand',
+            'model',
+            'ton',
+            'totalEnergyConsumed',
+            'createdAt'
+          ],
+          order: [['name', 'ASC']]
+        });
+
+        // Group ACs by venue
+        const venueData = [];
+        let orgTotalEnergy = 0;
+
+        for (const venue of venues) {
+          const venueACs = acs.filter(ac => ac.venueId === venue.id);
+          const venueEnergy = venueACs.reduce((sum, ac) => sum + (ac.totalEnergyConsumed || 0), 0);
+          orgTotalEnergy += venueEnergy;
+
+          venueData.push({
+            venueId: venue.id,
+            venueName: venue.name,
+            totalEnergy: venueEnergy,
+            devices: venueACs.map(ac => ({
+              deviceId: ac.id,
+              deviceName: ac.name,
+              deviceBrand: ac.brand,
+              deviceModel: ac.model,
+              deviceTon: ac.ton,
+              energy: ac.totalEnergyConsumed || 0
+            }))
+          });
+        }
+
+        // Also include ACs directly assigned to organization (venueId = orgId)
+        const orgDirectACs = acs.filter(ac => ac.venueId === org.id);
+        if (orgDirectACs.length > 0) {
+          const orgDirectEnergy = orgDirectACs.reduce((sum, ac) => sum + (ac.totalEnergyConsumed || 0), 0);
+          orgTotalEnergy += orgDirectEnergy;
+
+          venueData.push({
+            venueId: org.id,
+            venueName: `${org.name} (Direct)`,
+            totalEnergy: orgDirectEnergy,
+            devices: orgDirectACs.map(ac => ({
+              deviceId: ac.id,
+              deviceName: ac.name,
+              deviceBrand: ac.brand,
+              deviceModel: ac.model,
+              deviceTon: ac.ton,
+              energy: ac.totalEnergyConsumed || 0
+            }))
+          });
+        }
+
+        // Calculate monthly energy (distribute total energy across months based on device creation date)
+        const monthlyEnergy = months.map(month => {
+          let monthEnergy = 0;
+          
+          // For each device, calculate energy for this month
+          for (const ac of acs) {
+            const deviceCreatedAt = new Date(ac.createdAt);
+            const monthStart = new Date(month.year, month.monthNumber - 1, 1);
+            const monthEnd = new Date(month.year, month.monthNumber, 0, 23, 59, 59);
+            
+            // If device exists in this month, add its energy
+            if (deviceCreatedAt <= monthEnd) {
+              // Calculate how much of device's total energy belongs to this month
+              const monthsSinceCreation = Math.max(1, Math.floor((now - deviceCreatedAt) / (1000 * 60 * 60 * 24 * 30)));
+              const energyPerMonth = (ac.totalEnergyConsumed || 0) / monthsSinceCreation;
+              monthEnergy += energyPerMonth;
+            }
+          }
+          
+          return {
+            ...month,
+            energy: Math.round(monthEnergy * 100) / 100 // Round to 2 decimal places
+          };
+        });
+
+        report.organizations.push({
+          organizationId: org.id,
+          organizationName: org.name,
+          totalEnergy: Math.round(orgTotalEnergy * 100) / 100,
+          venues: venueData,
+          monthlyEnergy: monthlyEnergy
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: report
+      });
+    } catch (error) {
+      console.error('Get energy report error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error generating energy report',
+        error: error.message,
+      });
+    }
+  }
+
   // ==================== EVENT MANAGEMENT ====================
   // Create event
   async createEvent(req, res) {

@@ -33,6 +33,7 @@ const server = http.createServer(app);
 const Services = require("./services");
 
 // Initialize ESP service (native WebSocket server for ESP32 and frontend connections)
+// The WebSocket server will automatically handle upgrade requests for /esp32 and /frontend paths
 Services.initialize.esp(server);
 
 // NOTE: No Express route on "/" to avoid conflicts with WebSocket on root path

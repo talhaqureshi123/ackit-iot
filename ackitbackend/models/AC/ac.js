@@ -22,9 +22,9 @@ const AC = sequelize.define(
       allowNull: true,
     },
     ton: {
-      type: DataTypes.ENUM("0.5", "1", "1.5", "2"),
+      type: DataTypes.ENUM("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
       allowNull: false,
-      comment: "AC capacity in tons (0.5, 1, 1.5, or 2 ton) - Required field",
+      comment: "AC capacity in tons (1 to 10 ton) - Required field",
     },
     serialNumber: {
       type: DataTypes.STRING,

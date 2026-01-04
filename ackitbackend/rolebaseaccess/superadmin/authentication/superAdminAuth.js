@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { v4: uuidv4 } = require("uuid");
 const SuperAdmin = require("../../../models/Roleaccess/superadmin");
+const { Sequelize } = require("sequelize");
 
 // In-memory token store (you can replace this with database later)
 const tokenStore = new Map();
@@ -279,12 +280,33 @@ class SuperAdminAuth {
         });
       }
 
-      // Find super admin by email
-      console.log(`🔍 Searching for SuperAdmin with email: ${email}`);
-      const superAdmin = await SuperAdmin.findOne({ where: { email } });
+      // Trim email to remove any whitespace
+      const trimmedEmail = email ? email.trim() : email;
+      console.log(`🔍 Searching for SuperAdmin with email: ${trimmedEmail}`);
+      console.log(`🔍 Email type: ${typeof trimmedEmail}, Length: ${trimmedEmail ? trimmedEmail.length : 0}`);
+      console.log(`🔍 Original email had whitespace: ${email !== trimmedEmail}`);
+      
+      // Try exact match first
+      let superAdmin = await SuperAdmin.findOne({ where: { email: trimmedEmail } });
+      
+      // If not found, try case-insensitive search
+      if (!superAdmin) {
+        console.log(`🔍 Trying case-insensitive search...`);
+        superAdmin = await SuperAdmin.findOne({ 
+          where: Sequelize.where(
+            Sequelize.fn('LOWER', Sequelize.col('email')),
+            trimmedEmail.toLowerCase()
+          )
+        });
+      }
 
       if (!superAdmin) {
         console.log(`❌ SuperAdmin not found with email: ${email}`);
+        console.log(`❌ Available SuperAdmin emails in database:`);
+        const allSuperAdmins = await SuperAdmin.findAll({ attributes: ['id', 'email', 'name'] });
+        allSuperAdmins.forEach(sa => {
+          console.log(`   - ${sa.email} (${sa.name})`);
+        });
         return res.status(401).json({
           success: false,
           message: "Invalid email or password.",
@@ -304,15 +326,53 @@ class SuperAdminAuth {
 
       // Compare password using bcrypt
       console.log(`🔐 Verifying password...`);
-      const isPasswordValid = await bcrypt.compare(
-        password,
-        superAdmin.password
-      );
-
-      console.log(`🔐 Password valid: ${isPasswordValid}`);
+      console.log(`🔐 Input password length: ${password ? password.length : 0}`);
+      console.log(`🔐 Input password type: ${typeof password}`);
+      console.log(`🔐 Input password has whitespace: ${password ? (password !== password.trim()) : false}`);
+      console.log(`🔐 Input password trimmed length: ${password ? password.trim().length : 0}`);
+      console.log(`🔐 Stored password hash: ${superAdmin.password ? superAdmin.password.substring(0, 30) + '...' : 'null'}`);
+      console.log(`🔐 Stored password length: ${superAdmin.password ? superAdmin.password.length : 0}`);
+      console.log(`🔐 Is bcrypt hash?: ${superAdmin.password ? superAdmin.password.startsWith('$2') : false}`);
+      
+      let isPasswordValid = false;
+      try {
+        if (!superAdmin.password) {
+          console.error("❌ SuperAdmin password field is null or undefined");
+          return res.status(500).json({
+            success: false,
+            message: "SuperAdmin password is not properly configured. Please contact administrator.",
+          });
+        }
+        
+        // Trim password to remove any whitespace
+        const trimmedPassword = password ? password.trim() : password;
+        console.log(`🔐 Using trimmed password, length: ${trimmedPassword ? trimmedPassword.length : 0}`);
+        
+        isPasswordValid = await bcrypt.compare(trimmedPassword, superAdmin.password);
+        console.log(`🔐 Password valid: ${isPasswordValid}`);
+        
+        // If failed, try with original password (in case trimming was the issue)
+        if (!isPasswordValid && password !== trimmedPassword) {
+          console.log(`🔐 Retrying with original password (no trim)...`);
+          isPasswordValid = await bcrypt.compare(password, superAdmin.password);
+          console.log(`🔐 Password valid (retry): ${isPasswordValid}`);
+        }
+      } catch (bcryptError) {
+        console.error("❌ Bcrypt compare error:", bcryptError);
+        console.error("❌ Bcrypt error stack:", bcryptError.stack);
+        return res.status(500).json({
+          success: false,
+          message: "Error verifying password. Please try again.",
+          error: bcryptError.message,
+        });
+      }
 
       if (!isPasswordValid) {
         console.log(`❌ Password verification failed`);
+        console.log(`❌ Input password (first 5 chars): ${password ? password.substring(0, 5) + '...' : 'null'}`);
+        console.log(`❌ Input password (last 5 chars): ${password ? '...' + password.substring(password.length - 5) : 'null'}`);
+        console.log(`❌ Stored hash: ${superAdmin.password ? superAdmin.password.substring(0, 30) + '...' : 'null'}`);
+        console.log(`❌ Password bytes: ${password ? Buffer.from(password).toString('hex').substring(0, 20) + '...' : 'null'}`);
         return res.status(401).json({
           success: false,
           message: "Invalid email or password.",

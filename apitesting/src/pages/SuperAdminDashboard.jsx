@@ -1,92 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { superAdminAPI } from '../services/api';
+import { superAdminAPI } from '../services/apiSuperAdmin';
 import toast from 'react-hot-toast';
 import { 
   Shield, 
   Users, 
   Activity,
   LogOut,
-  Eye,
-  Ban,
-  CheckCircle,
   RefreshCw,
   UserPlus,
   Menu,
   User,
   X,
-  Save,
-  BarChart3
+  Bell,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
-
-// Admin Form Component
-const AdminForm = ({ onSubmit, onCancel }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: ''
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSubmit(formData);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-        <input
-          type="text"
-          value={formData.name}
-          onChange={(e) => setFormData({...formData, name: e.target.value})}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          required
-          placeholder="Enter admin name"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-        <input
-          type="email"
-          value={formData.email}
-          onChange={(e) => setFormData({...formData, email: e.target.value})}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          required
-          placeholder="Enter admin email"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-        <input
-          type="password"
-          value={formData.password}
-          onChange={(e) => setFormData({...formData, password: e.target.value})}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          required
-          placeholder="Enter password"
-          minLength={6}
-        />
-      </div>
-      <div className="flex justify-end space-x-3 pt-4">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors touch-manipulation"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="flex items-center px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors touch-manipulation"
-        >
-          <Save className="w-4 h-4 mr-2" />
-          Create Admin
-        </button>
-      </div>
-    </form>
-  );
-};
+import AdminForm from '../components/superadmin/AdminForm';
+import AdminCard from '../components/superadmin/AdminCard';
+import ActivityLogTable from '../components/superadmin/ActivityLogTable';
+import PlanManager from '../components/superadmin/PlanManager';
+import PlanRequestsList from '../components/planrequests/PlanRequestsList';
+import { AdminDetailsModal } from '../components/modals';
 
 const SuperAdminDashboard = () => {
   const { user, logout } = useAuth();
@@ -94,6 +29,9 @@ const SuperAdminDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true); // Track initial data load
   const [showModal, setShowModal] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 1024;
@@ -102,7 +40,8 @@ const SuperAdminDashboard = () => {
   });
   const [data, setData] = useState({
     admins: [],
-    logs: []
+    logs: [],
+    planRequests: []
   });
 
   // Handle window resize for responsive sidebar
@@ -187,9 +126,10 @@ const SuperAdminDashboard = () => {
     setLoading(true);
     try {
       console.log('🔄 Starting data load...');
-      const [adminsRes, logsRes] = await Promise.all([
+      const [adminsRes, logsRes, requestsRes] = await Promise.all([
         superAdminAPI.getAllAdmins(),
-        superAdminAPI.getSuperAdminActivityLogs()
+        superAdminAPI.getSuperAdminActivityLogs(),
+        superAdminAPI.getPlanRequests().catch(() => ({ data: { data: { requests: [] } } }))
       ]);
 
       console.log('📊 Full Admins response:', JSON.stringify(adminsRes.data, null, 2));
@@ -233,12 +173,35 @@ const SuperAdminDashboard = () => {
         }
       }
       
+      // Parse plan requests - backend returns { success: true, data: { requests: [...] } }
+      let planRequests = [];
+      if (requestsRes?.data) {
+        if (requestsRes.data.success === false) {
+          console.error('❌ Plan requests API returned error:', requestsRes.data.message);
+        } else if (Array.isArray(requestsRes.data.data?.requests)) {
+          planRequests = requestsRes.data.data.requests;
+        } else if (Array.isArray(requestsRes.data.requests)) {
+          planRequests = requestsRes.data.requests;
+        } else if (requestsRes.data.data && typeof requestsRes.data.data === 'object') {
+          const dataObj = requestsRes.data.data;
+          if (Array.isArray(dataObj.requests)) {
+            planRequests = dataObj.requests;
+          } else {
+            console.warn('⚠️ Unexpected plan requests response structure:', requestsRes.data);
+          }
+        } else {
+          console.warn('⚠️ Unexpected plan requests response structure:', requestsRes.data);
+        }
+      }
+      
       console.log('✅ Processed admins:', admins.length, admins);
       console.log('✅ Processed logs:', logs.length, logs);
+      console.log('✅ Processed plan requests:', planRequests.length, planRequests);
       
       setData({
         admins,
-        logs
+        logs,
+        planRequests
       });
       
       // Set initialLoading to false after first successful load
@@ -329,110 +292,60 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const handleManagePlan = (admin) => {
+    setSelectedAdmin(admin);
+    setShowPlanModal(true);
+  };
+
+  const handleUpdatePlan = async (adminId, plan) => {
+    try {
+      setLoading(true);
+      await superAdminAPI.updateAdminPlan(adminId, { plan });
+      toast.success('Plan updated successfully');
+      await loadData();
+      setShowPlanModal(false);
+      setSelectedAdmin(null);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update plan');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveRequest = async (requestId) => {
+    try {
+      setLoading(true);
+      const response = await superAdminAPI.approvePlanRequest(requestId);
+      toast.success('Plan request approved successfully');
+      await loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to approve request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectRequest = async (requestId) => {
+    try {
+      setLoading(true);
+      const reason = prompt('Enter rejection reason (optional):') || 'Rejected by Super Admin';
+      await superAdminAPI.rejectPlanRequest(requestId, reason);
+      toast.success('Plan request rejected');
+      await loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reject request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const tabs = [
     { id: 'admins', label: 'Admins', icon: Users, count: data.admins.length },
+    { id: 'requests', label: 'Plan Requests', icon: Bell, count: data.planRequests?.length || 0, badge: data.planRequests?.length > 0 ? 'red' : null },
     { id: 'logs', label: 'Activity Logs', icon: Activity, count: data.logs.length }
   ];
 
-  const AdminCard = ({ admin }) => (
-    <div className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-4 sm:p-6 border border-gray-200">
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">{admin.name}</h3>
-          <p className="text-xs sm:text-sm text-gray-600 mb-2">{admin.email}</p>
-          <div className="flex items-center">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-              admin.status === 'active' 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-red-100 text-red-800'
-            }`}>
-              {admin.status}
-            </span>
-            {admin.createdAt && (
-              <span className="ml-2 text-xs text-gray-500">
-                Created: {new Date(admin.createdAt).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex space-x-2 ml-4">
-          <button
-            onClick={() => {/* View details */}}
-            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-            title="View Details"
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-          {admin.status === 'active' ? (
-            <button
-              onClick={() => handleSuspendAdmin(admin.id, 'Suspended by Super Admin')}
-              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Suspend Admin"
-            >
-              <Ban className="w-4 h-4" />
-            </button>
-          ) : (
-            <button
-              onClick={() => handleResumeAdmin(admin.id)}
-              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-              title="Resume Admin"
-            >
-              <CheckCircle className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  const LogCard = ({ log }) => (
-    <div className="bg-white rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-shadow p-4 sm:p-6 border border-gray-200">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 break-words">{log.action}</h3>
-          <p className="text-xs sm:text-sm text-gray-600 mb-2 break-words">
-            {typeof log.details === 'object' 
-              ? (log.details?.message || JSON.stringify(log.details)) 
-              : (log.details || 'No details available')}
-          </p>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-            <p className="text-xs text-gray-500">
-              {log.createdAt 
-                ? new Date(log.createdAt).toLocaleString('en-PK', { 
-                    timeZone: 'Asia/Karachi',
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })
-                : 'N/A'}
-          </p>
-          {log.admin && (
-            <p className="text-xs text-blue-600">
-              Admin: {log.admin.name} ({log.admin.email})
-            </p>
-          )}
-        </div>
-        </div>
-        <div className="flex items-center justify-end sm:ml-4 sm:justify-start">
-          <span className={`inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${
-            log.targetType === 'admin' 
-              ? 'bg-red-100 text-red-800' 
-              : log.targetType === 'manager'
-              ? 'bg-blue-100 text-blue-800'
-              : log.targetType === 'organization'
-              ? 'bg-purple-100 text-purple-800'
-              : log.targetType === 'ac'
-              ? 'bg-green-100 text-green-800'
-              : 'bg-gray-100 text-gray-800'
-          }`}>
-            {log.targetType}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
 
   const renderContent = () => {
     // Show loading spinner during initial load
@@ -482,33 +395,43 @@ const SuperAdminDashboard = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {data.admins.map(admin => (
-                  <AdminCard key={admin.id} admin={admin} />
+                  <AdminCard 
+                    key={admin.id} 
+                    admin={admin}
+                    onViewDetails={() => {
+                      setSelectedAdmin(admin);
+                      setShowDetailsModal(true);
+                    }}
+                    onSuspend={handleSuspendAdmin}
+                    onResume={handleResumeAdmin}
+                    onManagePlan={handleManagePlan}
+                  />
                 ))}
               </div>
             )}
           </div>
         );
-      case 'logs':
+      case 'requests':
         return (
-          <div className="space-y-4 sm:space-y-6">
+          <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Activity Logs</h2>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Plan Upgrade Requests</h2>
               <span className="text-sm text-gray-500">
-                {data.logs.length} log{data.logs.length !== 1 ? 's' : ''}
+                {data.planRequests?.length || 0} request{data.planRequests?.length !== 1 ? 's' : ''}
               </span>
             </div>
-            {data.logs.length === 0 ? (
-              <div className="text-center py-8 sm:py-12 bg-white rounded-lg sm:rounded-xl border border-gray-200">
-                <Activity className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-sm sm:text-base text-gray-500">No activity logs found</p>
-              </div>
-            ) : (
-              <div className="space-y-3 sm:space-y-4">
-                {data.logs.map((log, index) => (
-                  <LogCard key={log.id || index} log={log} />
-                ))}
-              </div>
-            )}
+            <PlanRequestsList
+              requests={data.planRequests || []}
+              onApprove={handleApproveRequest}
+              onReject={handleRejectRequest}
+              loading={loading}
+            />
+          </div>
+        );
+      case 'logs':
+        return (
+          <div className="w-full max-w-full overflow-hidden">
+            <ActivityLogTable logs={data.logs} loading={loading} />
           </div>
         );
       default:
@@ -527,21 +450,21 @@ const SuperAdminDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64 sm:w-72 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-20 xl:w-64'} bg-gradient-to-b from-red-900 to-red-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-56 sm:w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-red-900 to-red-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
-        <div className={`p-6 border-b border-red-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
+        <div className={`p-3 sm:p-4 border-b border-red-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
             <div className="flex items-center space-x-3">
-              <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+              <div className="bg-white rounded-lg p-2 flex items-center justify-center shadow-sm">
                 <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
               </div>
               <div>
-                <h2 className="text-lg font-bold">Super Admin</h2>
-                <p className="text-xs text-red-200">Control Center</p>
+                <h2 className="text-base font-bold text-white tracking-tight">Super Admin</h2>
+                <p className="text-xs text-red-200 font-medium mt-0.5">Control Center</p>
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg p-2 flex items-center justify-center">
+            <div className="bg-white rounded-lg p-2 flex items-center justify-center shadow-sm">
               <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
@@ -555,8 +478,8 @@ const SuperAdminDashboard = () => {
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 overflow-y-auto py-4">
-          <div className="px-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto py-1.5">
+          <div className="px-2 space-y-0.5">
             {tabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -565,24 +488,27 @@ const SuperAdminDashboard = () => {
                   key={tab.id}
                   onClick={() => {
                     setActiveTab(tab.id);
+                    // Close sidebar on mobile after selection
                     if (window.innerWidth < 1024) {
                       setSidebarOpen(false);
                     }
                   }}
-                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-3 sm:px-4' : 'justify-center px-2'} py-2.5 sm:py-3 rounded-lg transition-all duration-200 touch-manipulation ${
+                  className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-2' : 'justify-center px-2'} py-1.5 rounded-lg transition-all duration-200 touch-manipulation ${
                     isActive
-                      ? 'bg-white text-red-600 shadow-lg'
+                      ? 'bg-white text-red-600 shadow-lg font-semibold'
                       : 'text-red-100 hover:bg-red-700 hover:text-white'
                   }`}
                   title={!sidebarOpen ? tab.label : ''}
                 >
-                  <Icon className={`${sidebarOpen ? 'w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3' : 'w-5 h-5 sm:w-6 sm:h-6'}`} />
+                  <Icon className={`${sidebarOpen ? 'w-4 h-4 mr-2' : 'w-4 h-4'} flex-shrink-0`} />
                   {sidebarOpen && (
                     <>
-                      <span className="font-medium flex-1 text-left">{tab.label}</span>
+                      <span className="text-xs font-medium flex-1 text-left tracking-tight">{tab.label}</span>
                       {tab.count !== undefined && (
-                        <span className={`ml-2 py-0.5 px-2 rounded-full text-xs font-semibold ${
-                          isActive
+                        <span className={`ml-1.5 py-0.5 px-1.5 rounded-full text-[10px] font-bold min-w-[18px] text-center ${
+                          tab.badge === 'red' && tab.count > 0
+                            ? 'bg-red-500 text-white'
+                            : isActive
                             ? 'bg-red-100 text-red-600'
                             : 'bg-red-700 text-red-100'
                         }`}>
@@ -598,16 +524,27 @@ const SuperAdminDashboard = () => {
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-red-700">
-          <div className={`${sidebarOpen ? 'px-4' : 'px-2'} py-3 bg-red-700 rounded-lg`}>
-            <div className={`flex items-center ${sidebarOpen ? 'space-x-3' : 'justify-center'}`}>
-              <div className="bg-red-600 rounded-full p-2">
-                <User className="w-5 h-5" />
+        <div className="p-2 border-t border-red-700">
+          <div className={`${sidebarOpen ? 'px-2.5' : 'px-2'} py-2 bg-red-700 rounded-lg`}>
+            <div className={`flex items-center ${sidebarOpen ? 'space-x-2' : 'justify-center'}`}>
+              <div className="bg-red-600 rounded-full p-1.5 flex-shrink-0">
+                <User className="w-4 h-4" />
               </div>
               {sidebarOpen && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{user?.name || 'Super Admin'}</p>
-                  <p className="text-xs text-red-200 truncate">{user?.email || 'superadmin@example.com'}</p>
+                  <p className="text-xs font-medium text-white truncate">{user?.name || 'Super Admin'}</p>
+                  <p className="text-[10px] text-red-200 truncate mt-0.5 leading-tight">{user?.email || 'superadmin@example.com'}</p>
+                {user?.status && (
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium mt-1.5 capitalize ${
+                    user.status === 'unlocked' 
+                        ? 'bg-green-500 text-white' 
+                      : user.status === 'locked'
+                        ? 'bg-red-500 text-white'
+                        : 'bg-yellow-500 text-white'
+                  }`}>
+                    {user.status}
+                  </span>
+                )}
                 </div>
               )}
             </div>
@@ -616,7 +553,7 @@ const SuperAdminDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-64 xl:ml-72' : 'lg:ml-20 xl:ml-64'} transition-all duration-300 bg-gray-50 min-h-screen`}>
+      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-56 xl:ml-64' : 'lg:ml-14 xl:ml-16'} transition-all duration-300 bg-gray-50 min-h-screen`}>
         {/* Top Header */}
         <header className="bg-white shadow-md border-b sticky top-0 z-10 w-full">
           <div className="px-4 sm:px-6 py-4 w-full">
@@ -658,8 +595,10 @@ const SuperAdminDashboard = () => {
         </header>
 
         {/* Content */}
-        <main className="p-4 sm:p-6 w-full overflow-x-hidden">
-          {renderContent()}
+        <main className="p-4 sm:p-6 w-full max-w-full overflow-x-hidden">
+          <div className="max-w-full overflow-hidden">
+            {renderContent()}
+          </div>
         </main>
       </div>
 
@@ -686,6 +625,29 @@ const SuperAdminDashboard = () => {
             />
           </div>
         </div>
+      )}
+
+      {/* Plan Manager Modal */}
+      {showPlanModal && selectedAdmin && (
+        <PlanManager
+          admin={selectedAdmin}
+          onClose={() => {
+            setShowPlanModal(false);
+            setSelectedAdmin(null);
+          }}
+          onUpdatePlan={handleUpdatePlan}
+        />
+      )}
+
+      {/* Admin Details Modal */}
+      {showDetailsModal && selectedAdmin && (
+        <AdminDetailsModal
+          admin={selectedAdmin}
+          onClose={() => {
+            setShowDetailsModal(false);
+            setSelectedAdmin(null);
+          }}
+        />
       )}
     </div>
   );

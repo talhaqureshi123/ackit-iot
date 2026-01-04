@@ -19,3 +19,4 @@ const KPICard = ({ title, value, icon: Icon, iconColor, bgColor }) => {
 
 export default KPICard;
 
+

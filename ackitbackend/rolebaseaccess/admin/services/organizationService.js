@@ -291,6 +291,8 @@ class OrganizationService {
               id: org.id, // Keep organization's ID
               batchNumber: org.batchNumber, // Keep batchNumber from Organization
               venues: orgVenues, // Attach child venues
+              // Map isVenueOn to isOrganizationOn for organization power state
+              isOrganizationOn: venueJson.isVenueOn !== undefined ? venueJson.isVenueOn : false,
             };
 
             // IMPORTANT: Preserve temperature from main venue (even if it's 16, 17, etc.)
@@ -318,6 +320,7 @@ class OrganizationService {
               ...org.toJSON(),
               venues: orgVenues, // Attach child venues
               temperature: null, // Explicitly set to null if no main venue found
+              isOrganizationOn: false, // Default to OFF if no venue entry found
             };
           }
 
@@ -1149,22 +1152,41 @@ class OrganizationService {
           venuesUpdated = venueUpdateCount;
         }
 
-        // Turn off all ACs in organization and all venues when organization is OFF
+        // Turn off all CONNECTED ACs in organization and all venues when organization is OFF
         const allVenueIds = [orgVenueId, ...allVenues.map((v) => v.id)];
-        const [acUpdateCount] = await AC.update(
-          {
-            isOn: false,
-            lastPowerChangeAt: new Date(),
-            lastPowerChangeBy: changedBy,
+        const allACs = await AC.findAll({
+          where: {
+            venueId: { [Op.in]: allVenueIds },
           },
-          {
-            where: {
-              venueId: { [Op.in]: allVenueIds },
+          attributes: ["id", "serialNumber"],
+          transaction,
+        });
+        
+        // Filter to only connected devices
+        const Services = require("../../../services");
+        const ESPService = Services.getESPService();
+        const connectedACs = allACs.filter((ac) => {
+          if (!ac.serialNumber) return false;
+          return ESPService.isDeviceConnected(ac.serialNumber);
+        });
+        
+        if (connectedACs.length > 0) {
+          const connectedACIds = connectedACs.map((ac) => ac.id);
+          const [acUpdateCount] = await AC.update(
+            {
+              isOn: false,
+              lastPowerChangeAt: new Date(),
+              lastPowerChangeBy: changedBy,
             },
-            transaction,
-          }
-        );
-        acsUpdated = acUpdateCount;
+            {
+              where: {
+                id: { [Op.in]: connectedACIds },
+              },
+              transaction,
+            }
+          );
+          acsUpdated = acUpdateCount;
+        }
       } else {
         // Organization ON: Turn on all venues and their devices
         if (allVenues.length > 0) {
@@ -1184,22 +1206,41 @@ class OrganizationService {
           );
           venuesUpdated = venueUpdateCount;
 
-          // Turn on all ACs in all venues when organization is ON
+          // Turn on all CONNECTED ACs in all venues when organization is ON
           const allVenueIds = [orgVenueId, ...allVenues.map((v) => v.id)];
-          const [acUpdateCount] = await AC.update(
-            {
-              isOn: true,
-              lastPowerChangeAt: new Date(),
-              lastPowerChangeBy: changedBy,
+          const allACs = await AC.findAll({
+            where: {
+              venueId: { [Op.in]: allVenueIds },
             },
-            {
-              where: {
-                venueId: { [Op.in]: allVenueIds },
+            attributes: ["id", "serialNumber"],
+            transaction,
+          });
+          
+          // Filter to only connected devices
+          const Services = require("../../../services");
+          const ESPService = Services.getESPService();
+          const connectedACs = allACs.filter((ac) => {
+            if (!ac.serialNumber) return false;
+            return ESPService.isDeviceConnected(ac.serialNumber);
+          });
+          
+          if (connectedACs.length > 0) {
+            const connectedACIds = connectedACs.map((ac) => ac.id);
+            const [acUpdateCount] = await AC.update(
+              {
+                isOn: true,
+                lastPowerChangeAt: new Date(),
+                lastPowerChangeBy: changedBy,
               },
-              transaction,
-            }
-          );
-          acsUpdated = acUpdateCount;
+              {
+                where: {
+                  id: { [Op.in]: connectedACIds },
+                },
+                transaction,
+              }
+            );
+            acsUpdated = acUpdateCount;
+          }
         }
       }
 
@@ -1231,9 +1272,9 @@ class OrganizationService {
         const Services = require("../../../services");
         const ESPService = Services.getESPService();
 
-        // Get all ACs that were updated
+        // Get all CONNECTED ACs that were updated
         const allVenueIds = [orgVenueId, ...allVenues.map((v) => v.id)];
-        const updatedACs = await AC.findAll({
+        const allACs = await AC.findAll({
           where: {
             venueId: { [Op.in]: allVenueIds },
           },
@@ -1248,10 +1289,16 @@ class OrganizationService {
           ],
         });
 
+        // Filter to only connected devices (Services already required above)
+        const updatedACs = allACs.filter((ac) => {
+          if (!ac.serialNumber) return false;
+          return ESPService.isDeviceConnected(ac.serialNumber);
+        });
+
         let wsCommandsSent = 0;
         let wsCommandsSkipped = 0;
 
-        // Send WebSocket POWER command to each ESP32 device
+        // Send WebSocket POWER command to each CONNECTED ESP32 device
         for (const ac of updatedACs) {
           if (ac.serialNumber) {
             try {

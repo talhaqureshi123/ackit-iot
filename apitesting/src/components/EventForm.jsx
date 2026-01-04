@@ -2,10 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { Save } from 'lucide-react';
 
-const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) => {
+const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [], eventType = null, disableDeviceSelection = false }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   // Initialize form data - only set from event prop on mount if event exists
   // Only device events are supported now
   const [formData, setFormData] = useState(() => {
+    // Debug: Log when form initializes
+    if (event?.deviceId) {
+      console.log('🔧 [EventForm] Initializing with deviceId:', event.deviceId, 'Type:', typeof event.deviceId);
+    }
     if (event?.id) {
       return {
         name: event.name || '',
@@ -52,13 +57,19 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
       };
     }
     // For new events, check if deviceId is pre-selected (for creating event from device card)
+    // Set isRecurring based on eventType prop if provided
+    // For device-power type, default to non-recurring (single day), user can toggle to recurring for multiple days
+    const isRecurring = eventType === 'recurring' || (event?.isRecurring === true);
     return {
       name: '',
       deviceId: event?.deviceId ? String(event.deviceId) : '',
       startTime: '',
       endTime: '',
-      temperature: '',
-      isRecurring: false,
+      temperature: eventType === 'device-power' ? '' : '', // Temperature not required for device-power
+      controlDevicePower: eventType === 'device-power' ? true : (event?.controlDevicePower || false),
+      deviceOnTime: event?.deviceOnTime || '',
+      deviceOffTime: event?.deviceOffTime || '',
+      isRecurring: isRecurring,
       recurringStartDate: '',
       recurringEndDate: '',
       timeStart: '',
@@ -154,7 +165,7 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
           startTime: '',
           endTime: '',
           temperature: '',
-          isRecurring: false,
+          isRecurring: eventType === 'recurring' || false,
           recurringStartDate: '',
           recurringEndDate: '',
           timeStart: '',
@@ -166,19 +177,36 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
         // Update only deviceId, preserve other form fields
         setFormData(prev => ({
           ...prev,
-          deviceId: event?.deviceId ? String(event.deviceId) : ''
+          deviceId: event?.deviceId ? String(event.deviceId) : '',
+          isRecurring: eventType === 'recurring' || prev.isRecurring
+        }));
+      } else if (!currentEventId && currentDeviceId && !prevDeviceId) {
+        // First time setting deviceId for new event
+        setFormData(prev => ({
+          ...prev,
+          deviceId: event?.deviceId ? String(event.deviceId) : prev.deviceId,
+          isRecurring: eventType === 'recurring' || prev.isRecurring
         }));
       }
       // If both are null (creating new event), don't reset - let user keep typing
     }
-  }, [event?.id, event?.deviceId, event]);
+  }, [event?.id, event?.deviceId, event, eventType]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     
+    // Prevent duplicate submissions
+    if (isSubmitting) {
+      console.log('⚠️ [EventForm] Form submission already in progress, ignoring duplicate submit');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
     // Validation
     if (!formData.name || formData.name.trim() === '') {
       toast.error('Event name is required');
+      setIsSubmitting(false);
       return;
     }
     
@@ -187,26 +215,31 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
       // Recurring event validation
       if (!formData.recurringStartDate) {
         toast.error('Recurring start date is required');
+        setIsSubmitting(false);
         return;
       }
       
       if (!formData.recurringEndDate) {
         toast.error('Recurring end date is required');
+        setIsSubmitting(false);
         return;
       }
       
       if (!formData.timeStart) {
         toast.error('Start time is required for recurring events');
+        setIsSubmitting(false);
         return;
       }
       
       if (!formData.timeEnd) {
         toast.error('End time is required for recurring events');
+        setIsSubmitting(false);
         return;
       }
       
       if (formData.daysOfWeek.length === 0) {
         toast.error('Please select at least one day of the week');
+        setIsSubmitting(false);
         return;
       }
       
@@ -215,6 +248,7 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
       const endDate = new Date(formData.recurringEndDate);
       if (endDate < startDate) {
         toast.error('Recurring end date must be after start date');
+        setIsSubmitting(false);
         return;
       }
       
@@ -223,18 +257,36 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
       const [endHour, endMin] = formData.timeEnd.split(':').map(Number);
       if (endHour < startHour || (endHour === startHour && endMin <= startMin)) {
         toast.error('End time must be after start time');
+        setIsSubmitting(false);
         return;
       }
     } else {
       // Non-recurring event validation
-      if (!formData.startTime) {
-        toast.error('Start time is required');
-        return;
-      }
-      
-      if (!formData.endTime) {
-        toast.error('End time is required');
-        return;
+      // For device-power events, check deviceOnTime/deviceOffTime instead of startTime/endTime
+      if (eventType === 'device-power' || formData.controlDevicePower) {
+        if (!formData.deviceOnTime) {
+          toast.error('Device On Time is required');
+          setIsSubmitting(false);
+          return;
+        }
+        if (!formData.deviceOffTime) {
+          toast.error('Device Off Time is required');
+          setIsSubmitting(false);
+          return;
+        }
+      } else {
+        // For regular events, check startTime/endTime
+        if (!formData.startTime) {
+          toast.error('Start time is required');
+          setIsSubmitting(false);
+          return;
+        }
+        
+        if (!formData.endTime) {
+          toast.error('End time is required');
+          setIsSubmitting(false);
+          return;
+        }
       }
     }
     
@@ -245,6 +297,13 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
     
     try {
     if (!formData.isRecurring) {
+      // For device-power events, skip startTime/endTime parsing (we'll use deviceOnTime/deviceOffTime)
+      if (eventType === 'device-power' || formData.controlDevicePower) {
+        // Device-power events use deviceOnTime/deviceOffTime, not startTime/endTime
+        // These will be set later in the submitData preparation
+        startTimeUTC = ''; // Will be set from deviceOnTime
+        endTimeUTC = ''; // Will be set from deviceOffTime
+      } else {
       // datetime-local input provides time in format "YYYY-MM-DDTHH:mm" 
       // IMPORTANT: We need to treat this input as Pakistan/Karachi time (PKT, UTC+5)
       // Parse the datetime-local value and explicitly convert from PKT to UTC
@@ -320,22 +379,26 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
       
       if (isNaN(startTimeUTC_Date.getTime())) {
         toast.error('Invalid start time');
+        setIsSubmitting(false);
         return;
       }
       
       if (isNaN(endTimeUTC_Date.getTime())) {
         toast.error('Invalid end time');
+        setIsSubmitting(false);
         return;
       }
       
       if (endTimeUTC_Date <= startTimeUTC_Date) {
         toast.error('End time must be after start time');
+        setIsSubmitting(false);
         return;
       }
       
-      // Convert to ISO string for backend (already in UTC)
-      startTimeUTC = startTimeUTC_Date.toISOString();
-      endTimeUTC = endTimeUTC_Date.toISOString();
+        // Convert to ISO string for backend (already in UTC)
+        startTimeUTC = startTimeUTC_Date.toISOString();
+        endTimeUTC = endTimeUTC_Date.toISOString();
+      }
       
       // CRITICAL VERIFICATION: Convert back to PKT to ensure it matches input
       const verifyStartPKT = new Date(startTimeUTC).toLocaleString('en-US', { 
@@ -403,37 +466,131 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
     } catch (error) {
       console.error('Error processing event times:', error);
       toast.error(error.message || 'Failed to process event times');
+      setIsSubmitting(false);
       return; // Exit early if time processing fails
     }
     
     if (!formData.deviceId) {
       toast.error('Please select a device');
+      setIsSubmitting(false);
       return;
     }
     
-    // Validate temperature is provided (required)
-    if (!formData.temperature || formData.temperature === '') {
-      toast.error('Temperature is required');
-      return;
+    // Validate temperature is provided (required for simple and recurring events, not for device-power)
+    let temperature = null;
+    if (eventType !== 'device-power') {
+      if (!formData.temperature || formData.temperature === '') {
+        toast.error('Temperature is required');
+        setIsSubmitting(false);
+        return;
+      }
+
+      temperature = parseInt(formData.temperature);
+      if (isNaN(temperature) || temperature < 16 || temperature > 30) {
+        toast.error('Temperature must be between 16 and 30 degrees (integer only)');
+        setIsSubmitting(false);
+        return;
+      }
     }
 
-    const temperature = parseInt(formData.temperature);
-    if (isNaN(temperature) || temperature < 16 || temperature > 30) {
-      toast.error('Temperature must be between 16 and 30 degrees (integer only)');
-      return;
+    // Validate device power control times if enabled (for device-power event type)
+    if (eventType === 'device-power' || formData.controlDevicePower) {
+      if (!formData.isRecurring) {
+        if (!formData.deviceOnTime) {
+          toast.error('Device On Time is required when power control is enabled');
+          setIsSubmitting(false);
+          return;
+        }
+        if (!formData.deviceOffTime) {
+          toast.error('Device Off Time is required when power control is enabled');
+          setIsSubmitting(false);
+          return;
+        }
+        // Parse device on/off times
+        const parsePakistanDateTimeToUTC = (dateTimeString) => {
+          const [datePart, timePart] = dateTimeString.split('T');
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hours, minutes] = timePart.split(':').map(Number);
+          const pktDateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00+05:00`;
+          return new Date(pktDateString);
+        };
+        const deviceOnTimeUTC = parsePakistanDateTimeToUTC(formData.deviceOnTime);
+        const deviceOffTimeUTC = parsePakistanDateTimeToUTC(formData.deviceOffTime);
+        if (deviceOffTimeUTC <= deviceOnTimeUTC) {
+          toast.error('Device Off Time must be after Device On Time');
+          setIsSubmitting(false);
+          return;
+        }
+      } else {
+        if (!formData.deviceOnTime) {
+          toast.error('Device On Time is required when power control is enabled');
+          setIsSubmitting(false);
+          return;
+        }
+        if (!formData.deviceOffTime) {
+          toast.error('Device Off Time is required when power control is enabled');
+          setIsSubmitting(false);
+          return;
+        }
+        // Validate time range for recurring events
+        const [onHour, onMin] = formData.deviceOnTime.split(':').map(Number);
+        const [offHour, offMin] = formData.deviceOffTime.split(':').map(Number);
+        if (offHour < onHour || (offHour === onHour && offMin <= onMin)) {
+          toast.error('Device Off Time must be after Device On Time');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    }
+
+    // For device-power events, use deviceOnTime/deviceOffTime as startTime/endTime
+    let finalStartTime = startTimeUTC;
+    let finalEndTime = endTimeUTC;
+    let finalDeviceOnTime = null;
+    let finalDeviceOffTime = null;
+    
+    if (eventType === 'device-power' || formData.controlDevicePower) {
+      if (!formData.isRecurring) {
+        // Non-recurring: deviceOnTime and deviceOffTime are datetime-local
+        // Parse them and use as startTime/endTime
+        const parsePakistanDateTimeToUTC = (dateTimeString) => {
+          const [datePart, timePart] = dateTimeString.split('T');
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hours, minutes] = timePart.split(':').map(Number);
+          const pktDateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00+05:00`;
+          return new Date(pktDateString);
+        };
+        
+        const deviceOnTimeUTC = parsePakistanDateTimeToUTC(formData.deviceOnTime);
+        const deviceOffTimeUTC = parsePakistanDateTimeToUTC(formData.deviceOffTime);
+        
+        finalStartTime = deviceOnTimeUTC.toISOString();
+        finalEndTime = deviceOffTimeUTC.toISOString();
+        finalDeviceOnTime = deviceOnTimeUTC.toISOString();
+        finalDeviceOffTime = deviceOffTimeUTC.toISOString();
+      } else {
+        // Recurring: deviceOnTime and deviceOffTime are time strings (HH:MM)
+        // startTime/endTime will be calculated from recurringStartDate + time
+        finalDeviceOnTime = formData.deviceOnTime;
+        finalDeviceOffTime = formData.deviceOffTime;
+        // For recurring events, startTime/endTime are still needed for the first occurrence
+        // They will be calculated from recurringStartDate + timeStart/timeEnd
+      }
     }
 
     // Prepare submit data - only device events are supported
-    // powerOn is always true (events turn device ON when event starts)
     const submitData = {
       name: formData.name.trim(),
       eventType: 'device', // Always device
-      startTime: startTimeUTC, // Required by backend, will be recalculated for recurring events
-      endTime: endTimeUTC, // Required by backend, will be recalculated for recurring events
+      startTime: finalStartTime, // For device-power, this is deviceOnTime; for others, it's the form startTime
+      endTime: finalEndTime, // For device-power, this is deviceOffTime; for others, it's the form endTime
       deviceId: parseInt(formData.deviceId),
       organizationId: null, // No organization events
-      temperature: temperature, // Temperature is required
-      powerOn: true, // Event will turn device ON when it starts
+      temperature: eventType === 'device-power' ? null : temperature, // Temperature not required for device-power
+      powerOn: (eventType === 'device-power' || formData.controlDevicePower) ? true : false, // Turn device on only if power control is enabled
+      controlDevicePower: (eventType === 'device-power' || formData.controlDevicePower) || false,
+      deviceOnTime: finalDeviceOnTime,
+      deviceOffTime: finalDeviceOffTime,
       isRecurring: formData.isRecurring
     };
     
@@ -452,225 +609,351 @@ const EventForm = React.memo(({ onSubmit, onCancel, event = null, acs = [] }) =>
     }
     
     console.log('Submitting event data:', submitData);
-    onSubmit(submitData);
+    
+    // Call onSubmit - it may be async or sync
+    const onSubmitResult = onSubmit(submitData);
+    
+    // If onSubmit returns a promise, wait for it
+    if (onSubmitResult && typeof onSubmitResult.then === 'function') {
+      onSubmitResult
+        .then(() => {
+          // Reset submitting state after a delay to allow modal to close
+          setTimeout(() => {
+            setIsSubmitting(false);
+          }, 1000);
+        })
+        .catch((error) => {
+          console.error('Error in onSubmit callback:', error);
+          setIsSubmitting(false);
+        });
+    } else {
+      // If onSubmit is sync, reset after delay
+      setTimeout(() => {
+        setIsSubmitting(false);
+      }, 1000);
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Event Name</label>
-        <input
-          type="text"
-          value={formData.name}
-          onChange={(e) => setFormData({...formData, name: e.target.value})}
-          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          required
-        />
-      </div>
+    <form onSubmit={handleSubmit} className="overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+        {/* Left Section - Event Form (Blue) */}
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-8 md:p-10">
+          <h3 className="text-2xl font-bold text-blue-700 mb-8">Event Form</h3>
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-semibold text-blue-900 mb-3">Event Name</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                placeholder="Enter event name"
+                required
+              />
+            </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Select Device *</label>
-        <select
-          value={formData.deviceId}
-          onChange={(e) => setFormData({...formData, deviceId: e.target.value})}
-          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          required
-          >
-            <option value="">Select a device</option>
-            {Array.isArray(acs) && acs.length > 0 ? acs.map(ac => (
-              <option key={ac.id} value={ac.id}>{ac.name || `Device #${ac.id}`}</option>
-            )) : (
-              <option value="" disabled>No devices available</option>
+            <div>
+              <label className="block text-sm font-semibold text-blue-900 mb-3">
+                Select Device *
+                {disableDeviceSelection && formData.deviceId && (
+                  <span className="ml-2 text-xs font-normal text-blue-600">(Pre-selected)</span>
+                )}
+              </label>
+              <div className="relative">
+                <select
+                  value={formData.deviceId || ''}
+                  onChange={(e) => setFormData({...formData, deviceId: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500 appearance-none pr-10 transition-all"
+                  required
+                  disabled={disableDeviceSelection}
+                >
+                  <option value="">Select a device</option>
+                  {Array.isArray(acs) && acs.length > 0 ? acs.map(ac => (
+                    <option key={ac.id} value={ac.id}>{ac.name || `Device #${ac.id}`}</option>
+                  )) : (
+                    <option value="" disabled>No devices available</option>
+                  )}
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+              {Array.isArray(acs) && acs.length === 0 && (
+                <p className="mt-2 text-sm text-red-600">No devices available. Please create a device first.</p>
+              )}
+            </div>
+
+            {/* Temperature field - Only for simple and recurring events, not for device-power */}
+            {eventType !== 'device-power' && (
+              <div>
+                <label className="block text-sm font-semibold text-blue-900 mb-3">Temperature (°C) *</label>
+                <input
+                  type="number"
+                  min="16"
+                  max="30"
+                  step="1"
+                  value={formData.temperature}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '') {
+                      setFormData({...formData, temperature: ''});
+                    } else {
+                      const temp = parseInt(value);
+                      if (!isNaN(temp)) {
+                        setFormData({...formData, temperature: temp});
+                      }
+                    }
+                  }}
+                  className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                  placeholder="16-30"
+                  required
+                />
+                <p className="mt-2 text-xs text-gray-500">Temperature must be between 16 and 30 degrees</p>
+              </div>
             )}
-          </select>
-          {Array.isArray(acs) && acs.length === 0 && (
-            <p className="mt-1 text-sm text-red-600">No devices available. Please create a device first.</p>
-          )}
-        <p className="mt-1 text-xs text-gray-500">Event will automatically turn device ON when it starts and OFF when it completes</p>
+          </div>
         </div>
 
-      {/* Show datetime inputs only for non-recurring events */}
-      {!formData.isRecurring && (
-        <>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Start Time *</label>
-            <input
-              type="datetime-local"
-              value={formData.startTime}
-              onChange={(e) => setFormData({...formData, startTime: e.target.value})}
-              className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              required={!formData.isRecurring}
-              min={new Date().toISOString().slice(0, 16)}
-            />
-            <p className="mt-1 text-xs text-gray-500">Event start date and time</p>
-          </div>
+        {/* Right Section - Event Details (White) */}
+        <div className="bg-white p-8 md:p-10 border-l border-gray-200">
+          <h3 className="text-2xl font-bold text-gray-900 mb-8">Event Details</h3>
+          <div className="space-y-6">
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">End Time *</label>
-            <input
-              type="datetime-local"
-              value={formData.endTime}
-              onChange={(e) => setFormData({...formData, endTime: e.target.value})}
-              className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              required={!formData.isRecurring}
-              min={formData.startTime || new Date().toISOString().slice(0, 16)}
-            />
-            <p className="mt-1 text-xs text-gray-500">Event end date and time (must be after start time)</p>
-          </div>
-        </>
-      )}
+            {/* Show datetime inputs only for simple events (not recurring, not device-power) */}
+            {eventType === 'simple' && !formData.isRecurring && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-3">Start Time *</label>
+                  <input
+                    type="datetime-local"
+                    value={formData.startTime}
+                    onChange={(e) => setFormData({...formData, startTime: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                    required
+                    min={new Date().toISOString().slice(0, 16)}
+                  />
+                  <p className="mt-2 text-xs text-gray-500">Event start date and time</p>
+                </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Temperature (°C) *</label>
-        <input
-          type="number"
-          min="16"
-          max="30"
-          step="1"
-          value={formData.temperature}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value === '') {
-              setFormData({...formData, temperature: ''});
-            } else {
-              const temp = parseInt(value);
-              if (!isNaN(temp)) {
-                setFormData({...formData, temperature: temp});
-              }
-            }
-          }}
-          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          placeholder="Required (16-30°C)"
-          required
-        />
-        <p className="mt-1 text-xs text-gray-500">Required: Temperature will be set when event is created and device will be turned OFF. (Integer only, no decimals)</p>
-      </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-3">End Time *</label>
+                  <input
+                    type="datetime-local"
+                    value={formData.endTime}
+                    onChange={(e) => setFormData({...formData, endTime: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                    required
+                    min={formData.startTime || new Date().toISOString().slice(0, 16)}
+                  />
+                  <p className="mt-2 text-xs text-gray-500">Event end date and time (must be after start time)</p>
+                </div>
+              </>
+            )}
 
-      {/* Recurring Event Toggle */}
-      <div className="border-t pt-4">
-        <div className="flex items-center">
-          <input
-            type="checkbox"
-            id="isRecurring"
-            checked={formData.isRecurring}
-            onChange={(e) => setFormData({...formData, isRecurring: e.target.checked, daysOfWeek: []})}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-          />
-          <label htmlFor="isRecurring" className="ml-2 block text-sm font-medium text-gray-700">
-            Make this a recurring event (weekly schedule)
-          </label>
-        </div>
-        <p className="mt-1 text-xs text-gray-500">Enable to create a weekly recurring schedule</p>
-      </div>
+            {/* Device Power Control Section - Only for device-power event type */}
+            {eventType === 'device-power' && (
+              <>
+                {!formData.isRecurring ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-3">Device On Time *</label>
+                      <input
+                        type="datetime-local"
+                        value={formData.deviceOnTime}
+                        onChange={(e) => setFormData({...formData, deviceOnTime: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                        required
+                        min={new Date().toISOString().slice(0, 16)}
+                      />
+                      <p className="mt-2 text-xs text-gray-500">When to turn the device ON</p>
+                    </div>
 
-      {/* Recurring Event Fields */}
-      {formData.isRecurring && (
-        <>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Recurring Start Date *</label>
-              <input
-                type="date"
-                value={formData.recurringStartDate}
-                onChange={(e) => setFormData({...formData, recurringStartDate: e.target.value})}
-                className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                required={formData.isRecurring}
-                min={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Recurring End Date *</label>
-              <input
-                type="date"
-                value={formData.recurringEndDate}
-                onChange={(e) => setFormData({...formData, recurringEndDate: e.target.value})}
-                className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                required={formData.isRecurring}
-                min={formData.recurringStartDate || new Date().toISOString().split('T')[0]}
-              />
-            </div>
-          </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-3">Device Off Time *</label>
+                      <input
+                        type="datetime-local"
+                        value={formData.deviceOffTime}
+                        onChange={(e) => setFormData({...formData, deviceOffTime: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                        required
+                        min={formData.deviceOnTime || new Date().toISOString().slice(0, 16)}
+                      />
+                      <p className="mt-2 text-xs text-gray-500">When to turn the device OFF (must be after On Time)</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-3">Device On Time (Daily) *</label>
+                      <input
+                        type="time"
+                        value={formData.deviceOnTime}
+                        onChange={(e) => setFormData({...formData, deviceOnTime: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                        required
+                      />
+                      <p className="mt-2 text-xs text-gray-500">Daily time to turn the device ON</p>
+                    </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Daily Start Time *</label>
-              <input
-                type="time"
-                value={formData.timeStart}
-                onChange={(e) => setFormData({...formData, timeStart: e.target.value})}
-                className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                required={formData.isRecurring}
-              />
-              <p className="mt-1 text-xs text-gray-500">Time when event starts each day</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Daily End Time *</label>
-              <input
-                type="time"
-                value={formData.timeEnd}
-                onChange={(e) => setFormData({...formData, timeEnd: e.target.value})}
-                className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                required={formData.isRecurring}
-                min={formData.timeStart}
-              />
-              <p className="mt-1 text-xs text-gray-500">Time when event ends each day</p>
-            </div>
-          </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-3">Device Off Time (Daily) *</label>
+                      <input
+                        type="time"
+                        value={formData.deviceOffTime}
+                        onChange={(e) => setFormData({...formData, deviceOffTime: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 transition-all"
+                        required
+                        min={formData.deviceOnTime || '00:00'}
+                      />
+                      <p className="mt-2 text-xs text-gray-500">Daily time to turn the device OFF (must be after On Time)</p>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Days of Week *</label>
-            <div className="grid grid-cols-7 gap-2">
-              {[
-                { value: 0, label: 'Sun' },
-                { value: 1, label: 'Mon' },
-                { value: 2, label: 'Tue' },
-                { value: 3, label: 'Wed' },
-                { value: 4, label: 'Thu' },
-                { value: 5, label: 'Fri' },
-                { value: 6, label: 'Sat' }
-              ].map(day => (
-                <label key={day.value} className="flex flex-col items-center cursor-pointer">
+            {/* Recurring Event Toggle - Only for recurring and device-power event types */}
+            {(eventType === 'recurring' || eventType === 'device-power') && (
+              <div>
+                <div className="flex items-center p-4 bg-gray-50 rounded-lg border border-gray-300">
                   <input
                     type="checkbox"
-                    checked={formData.daysOfWeek.includes(day.value)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setFormData({
-                          ...formData,
-                          daysOfWeek: [...formData.daysOfWeek, day.value].sort()
-                        });
-                      } else {
-                        setFormData({
-                          ...formData,
-                          daysOfWeek: formData.daysOfWeek.filter(d => d !== day.value)
-                        });
-                      }
-                    }}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    id="isRecurring"
+                    checked={formData.isRecurring}
+                    onChange={(e) => setFormData({...formData, isRecurring: e.target.checked, daysOfWeek: []})}
+                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
                   />
-                  <span className="mt-1 text-xs text-gray-700">{day.label}</span>
-                </label>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-500">Select the days when this event should occur</p>
-          </div>
-        </>
-      )}
+                  <label htmlFor="isRecurring" className="ml-3 block text-sm font-semibold text-gray-900 cursor-pointer">
+                    Make this a recurring event (weekly schedule)
+                  </label>
+                </div>
+                <p className="mt-2 text-xs text-gray-500">Enable to create a weekly recurring schedule</p>
+              </div>
+            )}
 
-      <div className="flex justify-end space-x-3">
+            {/* Recurring Event Fields */}
+            {formData.isRecurring && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-3">Recurring Start Date *</label>
+                    <input
+                      type="date"
+                      value={formData.recurringStartDate}
+                      onChange={(e) => setFormData({...formData, recurringStartDate: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 transition-all"
+                      required={formData.isRecurring}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-3">Recurring End Date *</label>
+                    <input
+                      type="date"
+                      value={formData.recurringEndDate}
+                      onChange={(e) => setFormData({...formData, recurringEndDate: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 transition-all"
+                      required={formData.isRecurring}
+                      min={formData.recurringStartDate || new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-3">Daily Start Time *</label>
+                    <input
+                      type="time"
+                      value={formData.timeStart}
+                      onChange={(e) => setFormData({...formData, timeStart: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 transition-all"
+                      required={formData.isRecurring}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-3">Daily End Time *</label>
+                    <input
+                      type="time"
+                      value={formData.timeEnd}
+                      onChange={(e) => setFormData({...formData, timeEnd: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 transition-all"
+                      required={formData.isRecurring}
+                      min={formData.timeStart}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-3">Days of Week *</label>
+                  <div className="grid grid-cols-7 gap-3">
+                    {[
+                      { value: 0, label: 'Sun' },
+                      { value: 1, label: 'Mon' },
+                      { value: 2, label: 'Tue' },
+                      { value: 3, label: 'Wed' },
+                      { value: 4, label: 'Thu' },
+                      { value: 5, label: 'Fri' },
+                      { value: 6, label: 'Sat' }
+                    ].map(day => (
+                      <label key={day.value} className="flex flex-col items-center cursor-pointer p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={formData.daysOfWeek.includes(day.value)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                daysOfWeek: [...formData.daysOfWeek, day.value].sort()
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                daysOfWeek: formData.daysOfWeek.filter(d => d !== day.value)
+                              });
+                            }
+                          }}
+                          className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                        />
+                        <span className="mt-2 text-xs font-medium text-gray-700">{day.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500">Select the days when this event should occur</p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Buttons */}
+      <div className="bg-white border-t border-gray-200 px-6 py-4 flex justify-end space-x-3">
         <button
           type="button"
           onClick={onCancel || (() => {})}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+          className="px-6 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          disabled={isSubmitting}
+          className="flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Save className="w-4 h-4 mr-2" />
-          {event?.id ? 'Update Event' : 'Create Event'}
+          {isSubmitting ? (
+            <>
+              <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              {event?.id ? 'Updating...' : 'Creating...'}
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4 mr-2" />
+              {event?.id ? 'Update Event' : 'Create Event'}
+            </>
+          )}
         </button>
       </div>
     </form>

@@ -36,20 +36,43 @@ class ManagerEventService {
         throw new Error("deviceId is required for device events");
       }
 
-      // Validate temperature - temperature is REQUIRED for events
-      if (
-        eventData.temperature === null ||
-        eventData.temperature === undefined ||
-        eventData.temperature === ""
-      ) {
-        throw new Error("Temperature is required for events");
-      }
+      // Check if this is a device-power (on/off) event
+      const isDevicePowerEvent = eventData.eventType === "device-power" || 
+                                 eventData.controlDevicePower === true ||
+                                 eventData.controlDevicePower === "true";
 
-      const temperature = parseFloat(eventData.temperature);
-      if (isNaN(temperature) || temperature < 16 || temperature > 30) {
-        throw new Error(
-          "Temperature must be a number between 16 and 30 degrees"
-        );
+      // Validate temperature - temperature is REQUIRED for regular events, NOT for device-power events
+      let temperature = null;
+      if (!isDevicePowerEvent) {
+        // Temperature is required for regular events (simple/recurring)
+        if (
+          eventData.temperature === null ||
+          eventData.temperature === undefined ||
+          eventData.temperature === ""
+        ) {
+          throw new Error("Temperature is required for events");
+        }
+
+        temperature = parseFloat(eventData.temperature);
+        if (isNaN(temperature) || temperature < 16 || temperature > 30) {
+          throw new Error(
+            "Temperature must be a number between 16 and 30 degrees"
+          );
+        }
+      } else {
+        // For device-power events, temperature is optional (can be null)
+        if (eventData.temperature !== null && 
+            eventData.temperature !== undefined && 
+            eventData.temperature !== "") {
+          // If temperature is provided, validate it
+          temperature = parseFloat(eventData.temperature);
+          if (isNaN(temperature) || temperature < 16 || temperature > 30) {
+            throw new Error(
+              "Temperature must be a number between 16 and 30 degrees"
+            );
+          }
+        }
+        // If not provided, temperature will remain null (which is fine for on/off events)
       }
 
       // Check if this is a recurring event
@@ -523,11 +546,14 @@ class ManagerEventService {
         }
       }
 
-      // Set temperature when event is created
+      // Set temperature when event is created (only if temperature is provided)
+      // For device-power events, temperature can be null, so don't update device temperature
       if (device) {
-        device.temperature = temperature; // Set temperature when event is created
-        device.lastTemperatureChange = new Date();
-        device.changedBy = "manager"; // Manager created the event
+        if (temperature !== null && temperature !== undefined) {
+          device.temperature = temperature; // Set temperature when event is created
+          device.lastTemperatureChange = new Date();
+          device.changedBy = "manager"; // Manager created the event
+        }
         await device.save({ transaction });
       }
 
@@ -574,8 +600,11 @@ class ManagerEventService {
         startTime: startTime, // Date object - Sequelize will store as UTC TIMESTAMPTZ
         endTime: endTime, // Date object - Sequelize will store as UTC TIMESTAMPTZ
         originalEndTime: endTime, // Store original end time
-        temperature: temperature, // Temperature is required
-        powerOn: true, // Event will turn device ON when it starts
+        temperature: temperature, // Temperature is required for regular events, optional (null) for device-power events
+        powerOn: eventData.controlDevicePower ? true : false, // Turn device on only if power control is enabled
+        controlDevicePower: eventData.controlDevicePower || false,
+        deviceOnTime: eventData.controlDevicePower && eventData.deviceOnTime ? (isRecurring ? eventData.deviceOnTime : new Date(eventData.deviceOnTime)) : null,
+        deviceOffTime: eventData.controlDevicePower && eventData.deviceOffTime ? (isRecurring ? eventData.deviceOffTime : new Date(eventData.deviceOffTime)) : null,
         status: initialStatus, // "active" for immediate start, "scheduled" for recurring
         parentAdminEventId: null, // No parent required - independent event
         isDisabled: false,
@@ -685,6 +714,14 @@ class ManagerEventService {
               `✅ [EVENT-CREATE] Starting temperature sync to ${temperature}°C for device ${device.serialNumber}`
             );
 
+            // Determine event type for ESP32
+            let eventTypeStr = "simple";
+            if (event.isRecurring) {
+              eventTypeStr = "recurring";
+            } else if (event.controlDevicePower) {
+              eventTypeStr = "device-power";
+            }
+
             // Send event status message with temperature to show on device
             await ESPService.sendEventStatusMessage(
               device.serialNumber,
@@ -693,6 +730,9 @@ class ManagerEventService {
                 eventId: event.id,
                 eventName: event.name,
                 temperature: temperature,
+                eventType: eventTypeStr,
+                controlDevicePower: event.controlDevicePower || false,
+                powerOn: event.controlDevicePower ? (event.powerOn || false) : undefined,
               }
             );
             await ESPService.sendEventStatusMessage(
@@ -701,6 +741,8 @@ class ManagerEventService {
               {
                 eventId: event.id,
                 temperature: temperature,
+                eventType: eventTypeStr,
+                controlDevicePower: event.controlDevicePower || false,
               }
             );
             console.log(
@@ -1020,6 +1062,14 @@ class ManagerEventService {
         if (event.deviceId) {
           const device = await AC.findByPk(event.deviceId);
           if (device && device.serialNumber) {
+            // Determine event type for ESP32
+            let eventTypeStr = "simple";
+            if (event.isRecurring) {
+              eventTypeStr = "recurring";
+            } else if (event.controlDevicePower) {
+              eventTypeStr = "device-power";
+            }
+
             // Start temperature sync when event starts
             if (event.temperature !== null && event.temperature !== undefined) {
               await ESPService.startTemperatureSync(
@@ -1032,6 +1082,8 @@ class ManagerEventService {
                 {
                   eventId: event.id,
                   temperature: event.temperature,
+                  eventType: eventTypeStr,
+                  controlDevicePower: event.controlDevicePower || false,
                 }
               );
             }
@@ -1129,7 +1181,7 @@ class ManagerEventService {
 
       // DISABLED: Auto-delete is now disabled - stopped events will remain in database for history
       // Events will stay in database even after being stopped for records and history
-      console.log(
+            console.log(
         `✅ Stopped manager event: ${event.name} (ID: ${eventId}) - Will remain in database (auto-delete disabled)`
       );
 

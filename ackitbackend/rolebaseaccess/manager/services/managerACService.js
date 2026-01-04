@@ -212,10 +212,16 @@ class ManagerACService {
           const ESPService = servicesGateway.getESPService();
 
           // Always sync temperature to database value (database already updated above)
-          await ESPService.startTemperatureSync(ac.serialNumber, temperature);
-          console.log(
-            `✅ [MANAGER-AC] Temperature sync started: ${oldTemp}°C → ${temperature}°C`
-          );
+          const syncResult = await ESPService.startTemperatureSync(ac.serialNumber, temperature);
+          if (syncResult.success) {
+            console.log(
+              `✅ [MANAGER-AC] Temperature sync started: ${oldTemp}°C → ${temperature}°C`
+            );
+          } else {
+            console.error(
+              `❌ [MANAGER-AC] Temperature sync failed: ${syncResult.message}`
+            );
+          }
         } else {
           console.log(
             `⚠️ [MANAGER-AC] Device ${ac.id} has no serial number, skipping WebSocket command`
@@ -380,21 +386,27 @@ class ManagerACService {
 
       // Send temperature command to ESP via WebSocket
       try {
-        if (ac.key) {
+        if (ac.serialNumber) {
           console.log(
-            `🔌 [ADMIN-AC] Initiating WebSocket command for device ${ac.serialNumber} (Key: ${ac.key})`
+            `🔌 [ADMIN-AC] Initiating WebSocket command for device ${ac.serialNumber}`
           );
           const servicesGateway = require("../../../services");
           const ESPService = servicesGateway.getESPService();
 
           // Always sync temperature to database value (database already updated above)
-          await ESPService.startTemperatureSync(ac.serialNumber, temperature);
-          console.log(
-            `✅ [ADMIN-AC] Temperature sync started: ${oldTemp}°C → ${temperature}°C`
-          );
+          const syncResult = await ESPService.startTemperatureSync(ac.serialNumber, temperature);
+          if (syncResult.success) {
+            console.log(
+              `✅ [ADMIN-AC] Temperature sync started: ${oldTemp}°C → ${temperature}°C`
+            );
+          } else {
+            console.error(
+              `❌ [ADMIN-AC] Temperature sync failed: ${syncResult.message}`
+            );
+          }
         } else {
           console.log(
-            `⚠️ [ADMIN-AC] Device ${ac.id} has no key, skipping WebSocket command`
+            `⚠️ [ADMIN-AC] Device ${ac.id} has no serial number, skipping WebSocket command`
           );
         }
       } catch (wsError) {
@@ -780,6 +792,8 @@ class ManagerACService {
       try {
         const servicesGateway = require("../../../services");
         const ESPService = servicesGateway.getESPService();
+        
+        // Broadcast device power update
         ESPService.broadcastToFrontend({
           device_id: ac.serialNumber,
           serialNumber: ac.serialNumber,
@@ -790,6 +804,56 @@ class ManagerACService {
           venueId: ac.venueId,
           timestamp: new Date().toISOString(),
         });
+        
+        // Check and update venue power status based on all devices
+        if (ac.venueId) {
+          const { Op } = require("sequelize");
+          const allDevicesInVenue = await AC.findAll({
+            where: { venueId: ac.venueId },
+            attributes: ["id", "isOn"],
+          });
+          
+          const allDevicesOn = allDevicesInVenue.length > 0 && allDevicesInVenue.every(d => d.isOn === true);
+          const allDevicesOff = allDevicesInVenue.length > 0 && allDevicesInVenue.every(d => d.isOn === false);
+          
+          // Get venue to check current state
+          const Venue = require("../../../models/Venue/venue");
+          const venue = await Venue.findByPk(ac.venueId, {
+            attributes: ["id", "name", "isVenueOn", "organizationId"],
+          });
+          
+          if (venue) {
+            let venueShouldBeOn = venue.isVenueOn;
+            
+            // If all devices are ON, venue should be ON
+            if (allDevicesOn && !venue.isVenueOn) {
+              await venue.update({ isVenueOn: true });
+              venueShouldBeOn = true;
+            }
+            // If all devices are OFF, venue should be OFF
+            else if (allDevicesOff && venue.isVenueOn) {
+              await venue.update({ isVenueOn: false });
+              venueShouldBeOn = false;
+            }
+            
+            // Broadcast venue power update if it changed
+            if (venueShouldBeOn !== venue.isVenueOn || allDevicesOn || allDevicesOff) {
+              ESPService.broadcastToFrontend({
+                type: "VENUE_POWER_UPDATE",
+                venueId: venue.id,
+                venueName: venue.name,
+                isVenueOn: venueShouldBeOn,
+                organizationId: venue.organizationId,
+                changedBy: "device_power_change",
+                timestamp: new Date().toISOString(),
+              });
+              console.log(
+                `📡 [MANAGER-POWER] Broadcasted venue power update: ${venue.name} → ${venueShouldBeOn ? "ON" : "OFF"}`
+              );
+            }
+          }
+        }
+        
         console.log(
           `📡 [MANAGER-POWER] Broadcasted power change to all frontend clients`
         );
@@ -1103,6 +1167,19 @@ class ManagerACService {
               `⚠️ [LOCK] Failed to send lock command to ESP32: ${ac.serialNumber} - ${result.message}`
             );
           }
+          
+          // Broadcast lock update to frontend
+          ESPService.broadcastToFrontend({
+            type: "LOCK_UPDATE",
+            serial: ac.serialNumber,
+            serialNumber: ac.serialNumber,
+            locked: 1,
+            venueId: ac.venueId,
+            timestamp: new Date().toISOString(),
+          });
+          console.log(
+            `📡 [LOCK] Broadcasted LOCK update to frontend`
+          );
         } else {
           console.log(
             `⚠️ [LOCK] AC ${ac.id} has no serial number, cannot send lock command`
@@ -1197,6 +1274,19 @@ class ManagerACService {
               `⚠️ [LOCK] Failed to send unlock command to ESP32: ${ac.serialNumber} - ${result.message}`
             );
           }
+          
+          // Broadcast unlock update to frontend
+          ESPService.broadcastToFrontend({
+            type: "LOCK_UPDATE",
+            serial: ac.serialNumber,
+            serialNumber: ac.serialNumber,
+            locked: 0,
+            venueId: ac.venueId,
+            timestamp: new Date().toISOString(),
+          });
+          console.log(
+            `📡 [LOCK] Broadcasted UNLOCK update to frontend`
+          );
         } else {
           console.log(
             `⚠️ [LOCK] AC ${ac.id} has no serial number, cannot send unlock command`

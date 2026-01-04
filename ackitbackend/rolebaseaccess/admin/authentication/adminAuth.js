@@ -633,11 +633,26 @@ class AdminAuth {
 
       // Find admin by email
       console.log(`🔍 Searching for admin with email: ${email}`);
+      const { Sequelize } = require("sequelize");
+      const trimmedEmail = email ? email.trim() : email;
       let admin;
       try {
-        admin = await Admin.findOne({ where: { email } });
+        // Try exact match first
+        admin = await Admin.findOne({ where: { email: trimmedEmail } });
+        
+        // If not found, try case-insensitive search
+        if (!admin) {
+          console.log(`🔍 Trying case-insensitive search...`);
+          admin = await Admin.findOne({ 
+            where: Sequelize.where(
+              Sequelize.fn('LOWER', Sequelize.col('email')),
+              trimmedEmail.toLowerCase()
+            )
+          });
+        }
       } catch (dbError) {
         console.error("❌ Database error finding admin:", dbError);
+        console.error("❌ Database error stack:", dbError.stack);
         throw new Error(`Database error: ${dbError.message}`);
       }
 
@@ -670,7 +685,16 @@ class AdminAuth {
           console.error("❌ Admin password field is null or undefined");
           throw new Error("Admin password not set in database");
         }
-        isPasswordValid = await bcrypt.compare(password, admin.password);
+        
+        // Trim password to remove any whitespace
+        const trimmedPassword = password ? password.trim() : password;
+        isPasswordValid = await bcrypt.compare(trimmedPassword, admin.password);
+        
+        // If failed, try with original password (in case trimming was the issue)
+        if (!isPasswordValid && password !== trimmedPassword) {
+          console.log(`🔐 Retrying with original password (no trim)...`);
+          isPasswordValid = await bcrypt.compare(password, admin.password);
+        }
       } catch (bcryptError) {
         console.error("❌ Bcrypt error:", bcryptError);
         throw new Error(`Password verification error: ${bcryptError.message}`);

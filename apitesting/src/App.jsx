@@ -8,7 +8,8 @@ import LoginPage from './pages/LoginPage';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
-import VenueDetailsPage from './pages/VenueDetailsPage';
+import PlanRequestsPage from './pages/PlanRequestsPage';
+import SuperAdminPlanRequestsPage from './pages/SuperAdminPlanRequestsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Styles
@@ -32,12 +33,28 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            <Route 
+              path="/superadmin/plan-requests" 
+              element={
+                <ProtectedRoute role="superadmin">
+                  <SuperAdminPlanRequestsPage />
+                </ProtectedRoute>
+              } 
+            />
             {/* Venue details now integrated into AdminDashboard - route removed */}
             <Route 
               path="/admin/*" 
               element={
                 <ProtectedRoute role="admin">
                   <AdminDashboard />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/admin/plan-requests" 
+              element={
+                <ProtectedRoute role="admin">
+                  <PlanRequestsPage />
                 </ProtectedRoute>
               } 
             />

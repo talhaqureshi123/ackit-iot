@@ -166,6 +166,123 @@ class SuperAdminNotificationService {
       throw error;
     }
   }
+
+  // Send plan request approval notification to admin
+  async sendPlanApprovalNotification(adminEmail, adminName, requestedPlan, reviewedBy) {
+    try {
+      if (!adminEmail || !adminName || !requestedPlan) {
+        throw new Error("All parameters are required for plan approval notification");
+      }
+      
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(adminEmail)) {
+        throw new Error("Invalid email format");
+      }
+
+      const mailOptions = {
+        from: process.env.EMAIL_FROM || "noreply@ackit.com",
+        to: adminEmail,
+        subject: "Plan Upgrade Approved - ACKit System",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">Plan Upgrade Approved</h2>
+            
+            <p>Dear ${adminName},</p>
+            
+            <p>Great news! Your plan upgrade request has been approved by the Super Admin.</p>
+            
+            <div style="background-color: #d4edda; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #28a745;">Plan Details:</h3>
+              <ul>
+                <li><strong>New Plan:</strong> ${requestedPlan.charAt(0).toUpperCase() + requestedPlan.slice(1)}</li>
+                <li><strong>Approved By:</strong> Super Admin (${reviewedBy || 'System'})</li>
+                <li><strong>Date:</strong> ${new Date().toLocaleString()}</li>
+              </ul>
+            </div>
+            
+            <p><strong>What's next:</strong></p>
+            <ul>
+              <li>Your account has been upgraded to ${requestedPlan.charAt(0).toUpperCase() + requestedPlan.slice(1)} plan</li>
+              <li>You can now access all features available in your new plan</li>
+              <li>If you have any questions, please contact the IOTFIY team</li>
+            </ul>
+            
+            <p>Thank you for using ACKit!</p>
+            
+            <hr style="margin: 30px 0;">
+            <p style="color: #6c757d; font-size: 12px;">
+              This is an automated message from the ACKit IoT Management System.
+            </p>
+          </div>
+        `,
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      console.log(`Plan approval notification sent to ${adminEmail}`);
+    } catch (error) {
+      console.error("Error sending plan approval notification:", error);
+      throw error;
+    }
+  }
+
+  // Send plan request rejection notification to admin
+  async sendPlanRejectionNotification(adminEmail, adminName, requestedPlan, rejectionReason, reviewedBy) {
+    try {
+      if (!adminEmail || !adminName || !requestedPlan) {
+        throw new Error("All parameters are required for plan rejection notification");
+      }
+      
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(adminEmail)) {
+        throw new Error("Invalid email format");
+      }
+
+      const mailOptions = {
+        from: process.env.EMAIL_FROM || "noreply@ackit.com",
+        to: adminEmail,
+        subject: "Plan Upgrade Request - ACKit System",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #dc3545;">Plan Upgrade Request</h2>
+            
+            <p>Dear ${adminName},</p>
+            
+            <p>We regret to inform you that your plan upgrade request has been reviewed and could not be approved at this time.</p>
+            
+            <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #dc3545;">Request Details:</h3>
+              <ul>
+                <li><strong>Requested Plan:</strong> ${requestedPlan.charAt(0).toUpperCase() + requestedPlan.slice(1)}</li>
+                <li><strong>Reviewed By:</strong> Super Admin (${reviewedBy || 'System'})</li>
+                <li><strong>Date:</strong> ${new Date().toLocaleString()}</li>
+                ${rejectionReason ? `<li><strong>Reason:</strong> ${rejectionReason}</li>` : ''}
+              </ul>
+            </div>
+            
+            <p><strong>What you can do:</strong></p>
+            <ul>
+              <li>You can submit a new plan upgrade request if needed</li>
+              <li>If you have questions about this decision, please contact the IOTFIY team</li>
+              <li>We're here to help you find the best plan for your needs</li>
+            </ul>
+            
+            <p>Thank you for your understanding.</p>
+            
+            <hr style="margin: 30px 0;">
+            <p style="color: #6c757d; font-size: 12px;">
+              This is an automated message from the ACKit IoT Management System.
+            </p>
+          </div>
+        `,
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      console.log(`Plan rejection notification sent to ${adminEmail}`);
+    } catch (error) {
+      console.error("Error sending plan rejection notification:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new SuperAdminNotificationService();

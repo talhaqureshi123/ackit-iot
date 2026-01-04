@@ -8,7 +8,6 @@ const LoginPage = () => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    role: 'admin', // Default to admin
     rememberMe: true
   });
   const [loading, setLoading] = useState(false);
@@ -28,91 +27,309 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      // Try all roles to auto-detect the correct one
-      const roles = ['superadmin', 'admin', 'manager'];
+      // Trim email and password to remove any whitespace
+      const trimmedEmail = formData.email.trim();
+      const trimmedPassword = formData.password.trim();
+      
+      console.log('🔐 LoginPage - Input validation:');
+      console.log('   Original email:', formData.email);
+      console.log('   Trimmed email:', trimmedEmail);
+      console.log('   Email length:', formData.email.length, '->', trimmedEmail.length);
+      console.log('   Original password length:', formData.password.length);
+      console.log('   Trimmed password length:', trimmedPassword.length);
+      console.log('   Password has whitespace:', formData.password !== trimmedPassword);
+      
+      // Auto-detect role from backend - try roles sequentially (optimized order)
+      // Most common roles first for faster detection
+      const allRoles = ['admin', 'superadmin', 'manager'];
       let result = null;
       let detectedRole = null;
       let lastError = null;
 
-      for (const role of roles) {
+      console.log('🔐 LoginPage - Starting auto-detection login');
+      console.log('   Email:', trimmedEmail);
+      console.log('   Will try roles in order:', allRoles);
+
+      // Try all roles sequentially - stop on first success
+      for (const role of allRoles) {
         try {
-          console.log(`🔄 Trying login with role: ${role}`);
-          result = await login(formData.email, formData.password, role);
+          result = await login(trimmedEmail, trimmedPassword, role);
+          
           if (result && result.success) {
+            // Backend has confirmed this role is correct
             detectedRole = role;
-            console.log(`✅ Login successful with role: ${role}`);
-            break;
+            console.log(`✅ [${role.toUpperCase()}] Login successful! Role: ${role}`);
+            break; // Stop immediately on success
           }
         } catch (error) {
-          console.log(`❌ Login failed for role ${role}:`, error.message);
+          // 401 is expected for wrong role - continue to next
+          if (error.response?.status === 401) {
+            // Silent continue - this is expected during auto-detection
+            continue;
+          } else {
+            // Other errors - log but continue
+            console.error(`❌ [${role.toUpperCase()}] Error:`, error.message);
+          }
           lastError = error;
-          // Continue to next role
         }
       }
 
       if (result && result.success && detectedRole) {
-        toast.success(`Welcome back, ${result.user.name}!`);
+        // CRITICAL: Use role from backend response (result.user.role) as PRIMARY source
+        // Backend returns the correct role in the response
+        const backendRole = result.user?.role || '';
+        const roleFromBackend = backendRole.toString().toLowerCase().trim();
         
-        // Verify user is stored before navigating
-        const storedUser = localStorage.getItem('user');
-        const storedRole = localStorage.getItem('role');
+        console.log('✅ LoginPage - Login successful!');
+        console.log('   Detected role (from login attempt):', detectedRole);
+        console.log('   Result user object:', result.user);
+        console.log('   Result user role (from backend):', backendRole);
+        console.log('   Result user role (normalized):', roleFromBackend);
+        console.log('   Result user role type:', typeof backendRole);
+        console.log('   Result user keys:', result.user ? Object.keys(result.user) : 'null');
         
-        console.log('LoginPage - Before navigation:');
-        console.log('  Stored user:', storedUser ? 'Present' : 'Missing');
-        console.log('  Stored role:', storedRole || 'Missing');
-        console.log('  Result user:', result.user);
-        console.log('  Detected role:', detectedRole);
+        // Use backend role as primary, fallback to detectedRole only if backend role is missing
+        const normalizedRole = roleFromBackend || detectedRole.toString().toLowerCase().trim();
+        console.log('   Final normalized role for storage:', normalizedRole);
         
-        if (!storedUser || !storedRole) {
-          console.error('❌ User data not stored properly, cannot navigate');
-          toast.error('Login successful but session not saved. Please try again.');
+        if (!roleFromBackend) {
+          console.warn('⚠️ LoginPage - Backend did not return role! Using detected role:', detectedRole);
+        }
+        
+        // CRITICAL: Store data immediately and verify it persists
+        try {
+          const userWithNormalizedRole = {
+            ...result.user,
+            role: normalizedRole
+          };
+          
+          // Store in localStorage
+          localStorage.setItem('user', JSON.stringify(userWithNormalizedRole));
+          localStorage.setItem('role', normalizedRole);
+          localStorage.setItem('loginTime', Date.now().toString());
+          
+          // Immediately verify storage
+          const verifyUser = localStorage.getItem('user');
+          const verifyRole = localStorage.getItem('role');
+          const verifyLoginTime = localStorage.getItem('loginTime');
+          
+          console.log('✅ LoginPage - Data stored immediately:');
+          console.log('   User stored:', verifyUser ? 'YES' : 'NO');
+          console.log('   Role stored:', verifyRole);
+          console.log('   Login time stored:', verifyLoginTime);
+          
+          if (!verifyUser || !verifyRole) {
+            console.error('❌ LoginPage - CRITICAL: Data not stored! Retrying...');
+            // Retry storage
+            localStorage.setItem('user', JSON.stringify(userWithNormalizedRole));
+            localStorage.setItem('role', normalizedRole);
+            localStorage.setItem('loginTime', Date.now().toString());
+            
+            // Verify again
+            const retryUser = localStorage.getItem('user');
+            const retryRole = localStorage.getItem('role');
+            if (!retryUser || !retryRole) {
+              console.error('❌ LoginPage - CRITICAL: Storage failed even after retry!');
+              toast.error('Failed to save session. Please try again.');
+              setLoading(false);
+              return;
+            }
+          }
+          
+          console.log('✅ LoginPage - Data storage verified successfully');
+        } catch (storageError) {
+          console.error('❌ LoginPage - Failed to store data:', storageError);
+          toast.error('Failed to save session. Please try again.');
+          setLoading(false);
           return;
         }
         
-        // Longer delay to ensure state propagation and AuthContext update
-        console.log('⏳ LoginPage - Waiting for state to propagate...');
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Minimal delay for localStorage write (reduced from 200ms to 50ms)
+        await new Promise(resolve => setTimeout(resolve, 50));
         
-        // Double-check before navigating
-        const finalCheck = {
-          user: localStorage.getItem('user'),
+        // Final verification before navigation - get fresh data
+        const verifiedUser = localStorage.getItem('user');
+        const verifiedRole = localStorage.getItem('role');
+        const verifiedLoginTime = localStorage.getItem('loginTime');
+        
+        console.log('✅ LoginPage - Final verification before navigation:');
+        console.log('  User:', verifiedUser ? 'Present' : 'Missing');
+        console.log('  Role:', verifiedRole);
+        console.log('  Login time:', verifiedLoginTime);
+        console.log('  All localStorage keys:', Object.keys(localStorage));
+        
+        if (!verifiedUser || !verifiedRole) {
+          console.error('❌ LoginPage - CRITICAL: Data missing before navigation!');
+          console.error('   This should not happen. Checking localStorage...');
+          console.error('   All keys:', Object.keys(localStorage));
+          toast.error('Session not saved properly. Please try again.');
+          setLoading(false);
+          return;
+        }
+        
+        // Navigate based on normalizedRole which comes from backend (result.user.role)
+        // This is the most reliable source as it's directly from backend response
+        const roleForNavigation = normalizedRole || verifiedRole || detectedRole || '';
+        const finalRoleForNav = roleForNavigation.toString().toLowerCase().trim();
+        
+        console.log('🚀 LoginPage - Role navigation decision:');
+        console.log('   Normalized role (from backend):', normalizedRole);
+        console.log('   Role from localStorage:', verifiedRole);
+        console.log('   Detected role (from login attempt):', detectedRole);
+        console.log('   Role to navigate (final):', finalRoleForNav);
+        console.log('   Result user object:', JSON.stringify(result.user, null, 2));
+        
+        // Determine dashboard path based on role - MUST match exactly
+        let dashboardPath = '/login'; // Default fallback
+        
+        // CRITICAL: Role comparison must be exact match (case-insensitive)
+        const normalizedFinalRole = finalRoleForNav.toString().toLowerCase().trim();
+        
+        console.log('🚀 LoginPage - Role navigation - Final check:');
+        console.log('   finalRoleForNav (raw):', finalRoleForNav);
+        console.log('   normalizedFinalRole:', normalizedFinalRole);
+        console.log('   normalizedRole:', normalizedRole);
+        console.log('   verifiedRole:', verifiedRole);
+        console.log('   detectedRole:', detectedRole);
+        
+        if (normalizedFinalRole === 'superadmin') {
+          dashboardPath = '/superadmin';
+          console.log('✅ LoginPage - SuperAdmin detected, navigating to /superadmin');
+          console.log('   Role match: superadmin ===', normalizedFinalRole);
+        } else if (normalizedFinalRole === 'admin') {
+          dashboardPath = '/admin';
+          console.log('✅ LoginPage - Admin detected, navigating to /admin');
+          console.log('   Role match: admin ===', normalizedFinalRole);
+        } else if (normalizedFinalRole === 'manager') {
+          dashboardPath = '/manager';
+          console.log('✅ LoginPage - Manager detected, navigating to /manager');
+          console.log('   Role match: manager ===', normalizedFinalRole);
+        } else {
+          console.error('❌ LoginPage - CRITICAL: Unknown role for navigation!');
+          console.error('   Final role:', finalRoleForNav);
+          console.error('   Available roles: superadmin, admin, manager');
+          console.error('   Normalized role:', normalizedRole);
+          console.error('   Verified role:', verifiedRole);
+          console.error('   Detected role:', detectedRole);
+          console.error('   Result user:', result.user);
+          console.error('   Full result:', result);
+          toast.error(`Unknown role: ${finalRoleForNav || 'undefined'}. Please contact support.`);
+          setLoading(false);
+          return;
+        }
+        
+        console.log('🚀 LoginPage - Final dashboard path:', dashboardPath);
+        console.log('🚀 LoginPage - localStorage before navigation:', {
+          user: localStorage.getItem('user') ? 'Present' : 'Missing',
           role: localStorage.getItem('role'),
           loginTime: localStorage.getItem('loginTime')
-        };
-        console.log('✅ LoginPage - Final check before navigation:', finalCheck);
+        });
         
-        if (!finalCheck.user || !finalCheck.role) {
-          console.error('❌ LoginPage - Data lost before navigation!');
-          toast.error('Session not saved properly. Please try again.');
-          return;
-        }
+        // Use setTimeout to ensure localStorage write completes before navigation
+        // Store dashboardPath in a way that's accessible in setTimeout
+        const navigationPath = dashboardPath;
+        const navigationRole = finalRoleForNav;
         
-        // Navigate based on detected role
-        const roleToNavigate = storedRole || detectedRole;
-        console.log('🚀 LoginPage - Navigating to dashboard for role:', roleToNavigate);
-        switch (roleToNavigate) {
-          case 'superadmin':
-            navigate('/superadmin');
-            break;
-          case 'admin':
-            navigate('/admin');
-            break;
-          case 'manager':
-            navigate('/manager');
-            break;
-          default:
-            console.error('❌ Unknown role:', roleToNavigate);
-            toast.error('Unknown user role. Please contact support.');
-        }
+        console.log('🚀 LoginPage - About to navigate in 300ms to:', navigationPath);
+        setTimeout(() => {
+          // Final verification before navigation - get fresh data from localStorage
+          const finalUser = localStorage.getItem('user');
+          const finalRole = localStorage.getItem('role');
+          const finalRoleNormalized = (finalRole || '').toString().toLowerCase().trim();
+          
+          // Also parse user to check role in user object
+          let parsedFinalUser = null;
+          let roleFromUserObject = null;
+          try {
+            if (finalUser) {
+              parsedFinalUser = JSON.parse(finalUser);
+              roleFromUserObject = (parsedFinalUser?.role || '').toString().toLowerCase().trim();
+            }
+          } catch (e) {
+            console.error('❌ LoginPage - Failed to parse user from localStorage:', e);
+          }
+          
+          console.log('🚀 LoginPage - Final check before navigation:');
+          console.log('   User (raw):', finalUser ? 'Present' : 'Missing');
+          console.log('   User (parsed):', parsedFinalUser);
+          console.log('   Role (from localStorage key):', finalRole);
+          console.log('   Role (from user object):', roleFromUserObject);
+          console.log('   Role (normalized from localStorage):', finalRoleNormalized);
+          console.log('   Navigation role (from closure):', navigationRole);
+          console.log('   Dashboard path (from closure):', navigationPath);
+          console.log('   All localStorage keys:', Object.keys(localStorage));
+          
+          // Use role from user object if available, otherwise use localStorage role
+          const effectiveRole = roleFromUserObject || finalRoleNormalized || navigationRole || '';
+          const effectiveRoleNormalized = effectiveRole.toString().toLowerCase().trim();
+          
+          console.log('🚀 LoginPage - Effective role for navigation:', effectiveRoleNormalized);
+          
+          // Re-determine path based on effective role
+          let finalDashboardPath = navigationPath;
+          if (effectiveRoleNormalized === 'superadmin') {
+            finalDashboardPath = '/superadmin';
+            console.log('✅ LoginPage - Effective role is superadmin, path: /superadmin');
+          } else if (effectiveRoleNormalized === 'admin') {
+            finalDashboardPath = '/admin';
+            console.log('✅ LoginPage - Effective role is admin, path: /admin');
+          } else if (effectiveRoleNormalized === 'manager') {
+            finalDashboardPath = '/manager';
+            console.log('✅ LoginPage - Effective role is manager, path: /manager');
+          } else {
+            // If role doesn't match, use the path from closure
+            finalDashboardPath = navigationPath;
+            console.warn('⚠️ LoginPage - Role not recognized, using path from closure:', navigationPath);
+            console.warn('   Effective role:', effectiveRoleNormalized);
+          }
+          
+          console.log('🚀 LoginPage - Final dashboard path determined:', finalDashboardPath);
+          
+          if (finalUser && effectiveRoleNormalized) {
+            console.log('✅ LoginPage - All checks passed, navigating to:', finalDashboardPath);
+            console.log('✅ LoginPage - User role (effective):', effectiveRoleNormalized);
+            console.log('✅ LoginPage - Navigation path:', finalDashboardPath);
+            console.log('✅ LoginPage - localStorage data verified:');
+            console.log('   - user key:', finalUser ? 'Present' : 'Missing');
+            console.log('   - role key:', finalRole || 'Missing');
+            console.log('   - loginTime key:', localStorage.getItem('loginTime') || 'Missing');
+            // Force navigation - use window.location.href for full page reload
+            window.location.href = finalDashboardPath;
+          } else {
+            console.error('❌ LoginPage - Data missing, cannot navigate!');
+            console.error('   User:', finalUser);
+            console.error('   Role (localStorage):', finalRole);
+            console.error('   Role (user object):', roleFromUserObject);
+            console.error('   Effective role:', effectiveRoleNormalized);
+            console.error('   All localStorage:', Object.keys(localStorage).map(key => ({ key, value: localStorage.getItem(key) })));
+            toast.error('Session data lost. Please try logging in again.');
+            setLoading(false);
+          }
+        }, 100); // Reduced delay from 300ms to 100ms for faster navigation
+        
+        // Don't set loading to false here - let navigation happen
+        // Loading will be reset when page reloads after navigation
+        return;
       } else {
         // All roles failed
+        setLoading(false);
         const errorMessage = lastError?.response?.data?.message || lastError?.message || 'Invalid email or password';
-        console.error('LoginPage - All login attempts failed');
-        toast.error(errorMessage);
+        console.error('❌ LoginPage - All login attempts failed');
+        console.error('   Last error:', lastError);
+        console.error('   Error message:', errorMessage);
+        console.error('   Error response:', lastError?.response?.data);
+        console.error('   Error status:', lastError?.response?.status);
+        toast.error(errorMessage, { duration: 5000 }); // Show for 5 seconds
       }
     } catch (error) {
-      console.error('LoginPage - Login error:', error);
-      toast.error(error.response?.data?.message || error.message || 'Login failed');
+      setLoading(false);
+      console.error('❌ LoginPage - Unexpected login error:', error);
+      console.error('   Error type:', error.constructor.name);
+      console.error('   Error message:', error.message);
+      console.error('   Error stack:', error.stack);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      toast.error(error.response?.data?.message || error.message || 'Login failed', { duration: 5000 });
     } finally {
       setLoading(false);
     }
@@ -199,6 +416,7 @@ const LoginPage = () => {
                 </button>
               </div>
             </div>
+
 
             {/* Remember Me & Forgot Password */}
             <div className="flex items-center justify-between">

@@ -41,7 +41,11 @@ const DeviceDetailsModal = ({ isOpen, onClose, device }) => {
                 <MapPin className="w-5 h-5 text-blue-600" />
                 <div>
                   <p className="text-xs text-gray-500">Venue</p>
-                  <p className="text-sm font-medium text-gray-900">{device.venue || 'Gulshan, block 14 Branch'}</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {typeof device.venue === 'string' 
+                      ? device.venue 
+                      : device.venue?.name || device.venueName || 'Gulshan, block 14 Branch'}
+                  </p>
                 </div>
               </div>
 
@@ -126,4 +130,5 @@ const DeviceDetailsModal = ({ isOpen, onClose, device }) => {
 };
 
 export default DeviceDetailsModal;
+
 

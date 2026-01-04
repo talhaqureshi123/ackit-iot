@@ -45,6 +45,9 @@ module.exports = {
             sendTemperatureCommand: ESPService.sendTemperatureCommand,
             sendPowerCommand: ESPService.sendPowerCommand,
             getConnections: () => ESPService.esp32Connections,
+      getConnectedDeviceSerialNumbers: () => ESPService.getConnectedDeviceSerialNumbers(),
+      getConnectedDevicesInfo: () => ESPService.getConnectedDevicesInfo(),
+      isDeviceConnected: (serialNumber) => ESPService.isDeviceConnected(serialNumber),
             initialize: ESPService.initialize
         },
 

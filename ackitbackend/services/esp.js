@@ -1,11 +1,23 @@
 const WebSocket = require("ws");
 const AC = require("../models/AC/ac");
+const Venue = require("../models/Venue/venue");
+const Organization = require("../models/Organization/organization");
 
 class ESPService {
   constructor() {
     this.esp32Connections = new Map(); // { serialNumber: WebSocket }
     this.deviceStates = new Map(); // { serialNumber: { power, temp, locked } }
     this.recentIRPowerChanges = new Map(); // Track recent IR power changes
+    
+    // Room/Channel system for notifications
+    // Rooms: device:{deviceId}, venue:{venueId}, organization:{organizationId}
+    this.rooms = new Map(); // { roomName: Set<WebSocket> }
+    
+    // Device metadata: track device -> venue -> organization mapping
+    this.deviceMetadata = new Map(); // { serialNumber: { deviceId, venueId, organizationId, deviceName, venueName, organizationName } }
+    
+    // Frontend connections with room subscriptions
+    this.frontendSubscriptions = new Map(); // { WebSocket: Set<roomName> }
   }
 
   // Initialize WebSocket servers
@@ -16,9 +28,11 @@ class ESPService {
     //   - ESP32: ws://SERVER_IP:5050/esp32
     //   - Frontend: ws://SERVER_IP:5050/frontend
     // IMPORTANT: Attach to existing HTTP server, don't create standalone server
+    // Don't specify 'path' option - handle all paths in verifyClient
+    // This allows us to accept both /esp32 and /frontend paths
     this.esp32WSS = new WebSocket.Server({
       server: server, // Attach to Express HTTP server
-      path: "/esp32", // Default path (we'll handle /frontend in verifyClient)
+      // No 'path' option - we'll filter paths in verifyClient
       clientTracking: true,
       perMessageDeflate: false, // Disable compression for simplicity
       verifyClient: (info) => {
@@ -45,10 +59,14 @@ class ESPService {
 
     // Frontend connections map (for broadcasting)
     this.frontendConnections = new Set();
+    
+    // Initialize room system
+    this.initializeRooms();
 
     // Add error handling for WebSocket server
     this.esp32WSS.on("error", (error) => {
       console.error(`❌ [WS] WebSocket server error:`, error.message);
+      console.error(`❌ [WS] Error stack:`, error.stack);
     });
 
     // Log when server is ready
@@ -85,6 +103,122 @@ class ESPService {
     );
   }
 
+  // Initialize room system
+  initializeRooms() {
+    console.log("✅ [ROOMS] Room system initialized");
+  }
+
+  // Room management methods
+  joinRoom(ws, roomName) {
+    if (!this.rooms.has(roomName)) {
+      this.rooms.set(roomName, new Set());
+    }
+    this.rooms.get(roomName).add(ws);
+    console.log(`📥 [ROOMS] Client joined room: ${roomName}`);
+  }
+
+  leaveRoom(ws, roomName) {
+    if (this.rooms.has(roomName)) {
+      this.rooms.get(roomName).delete(ws);
+      if (this.rooms.get(roomName).size === 0) {
+        this.rooms.delete(roomName);
+      }
+      console.log(`📤 [ROOMS] Client left room: ${roomName}`);
+    }
+  }
+
+  // Broadcast to specific room
+  broadcastToRoom(roomName, data) {
+    if (!this.rooms.has(roomName)) {
+      console.log(`⚠️ [ROOMS] Room ${roomName} does not exist - no clients to broadcast to`);
+      return;
+    }
+    const json = JSON.stringify(data);
+    const room = this.rooms.get(roomName);
+    let sentCount = 0;
+    room.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(json);
+        sentCount++;
+      }
+    });
+    if (sentCount > 0) {
+      console.log(`📢 [ROOMS] Broadcast to ${roomName}: ${sentCount} clients | Event: ${data.type || 'unknown'}`);
+    } else {
+      console.log(`⚠️ [ROOMS] Room ${roomName} has ${room.size} clients but none are OPEN | Event: ${data.type || 'unknown'}`);
+    }
+  }
+
+  // Get device metadata (device -> venue -> organization)
+  async getDeviceMetadata(serialNumber) {
+    try {
+      const ac = await AC.findOne({
+        where: { serialNumber },
+        include: [
+          {
+            model: Venue,
+            as: "venue",
+            include: [
+              {
+                model: Organization,
+                as: "organization",
+              },
+            ],
+          },
+        ],
+      });
+
+      if (!ac) {
+        return null;
+      }
+
+      const venue = ac.venue;
+      const organization = venue?.organization;
+
+      return {
+        deviceId: ac.id,
+        venueId: venue?.id,
+        organizationId: organization?.id,
+        deviceName: ac.name,
+        venueName: venue?.name,
+        organizationName: organization?.name,
+        serialNumber: ac.serialNumber,
+      };
+    } catch (error) {
+      console.error(`❌ [ROOMS] Error getting device metadata:`, error.message);
+      return null;
+    }
+  }
+
+  // Emit event to relevant rooms
+  async emitEvent(eventType, data) {
+    const { deviceId, venueId, organizationId, serialNumber } = data;
+
+    const eventData = {
+      type: eventType,
+      timestamp: new Date().toISOString(),
+      ...data,
+    };
+
+    // Emit to device room
+    if (deviceId) {
+      this.broadcastToRoom(`device:${deviceId}`, eventData);
+    }
+
+    // Emit to venue room
+    if (venueId) {
+      this.broadcastToRoom(`venue:${venueId}`, eventData);
+    }
+
+    // Emit to organization room
+    if (organizationId) {
+      this.broadcastToRoom(`organization:${organizationId}`, eventData);
+    }
+
+    // Also broadcast to all frontend clients (for backward compatibility)
+    this.broadcastToFrontend(eventData);
+  }
+
   // Handle ESP32 WebSocket connection
   handleESP32Connection(ws, req) {
     console.log("📡 [ESP] ESP32 connected");
@@ -97,11 +231,14 @@ class ESPService {
     ws.on("message", async (msg) => {
       try {
         const data = JSON.parse(msg);
+        console.log(`📥 [ESP] Received message from device:`, data);
         // Get serialNumber from either 'serial' or 'device_id' field (simulator uses device_id)
         const serialNumber = data.serial || data.device_id;
+        console.log(`📥 [ESP] Extracted serialNumber: ${serialNumber} from data:`, { serial: data.serial, device_id: data.device_id });
 
         // Device first connection
         if (data.type === "DEVICE_CONNECTED") {
+          console.log(`🔌 [ESP] Processing DEVICE_CONNECTED for ${serialNumber}`);
           this.esp32Connections.set(serialNumber, ws);
           this.deviceStates.set(serialNumber, {
             power: false,
@@ -110,10 +247,51 @@ class ESPService {
           });
           console.log(`✅ [ESP] Registered: ${serialNumber}`);
 
+          // Get device metadata (venue, organization)
+          const metadata = await this.getDeviceMetadata(serialNumber);
+          if (metadata) {
+            // Store metadata
+            this.deviceMetadata.set(serialNumber, metadata);
+
+            // Join device to its rooms
+            if (metadata.deviceId) {
+              this.joinRoom(ws, `device:${metadata.deviceId}`);
+            }
+            if (metadata.venueId) {
+              this.joinRoom(ws, `venue:${metadata.venueId}`);
+            }
+            if (metadata.organizationId) {
+              this.joinRoom(ws, `organization:${metadata.organizationId}`);
+            }
+
+            // Emit DEVICE_CONNECTED event
+            console.log(`📤 [ESP] Emitting DEVICE_CONNECTED event for ${serialNumber} | Device: ${metadata.deviceId}, Venue: ${metadata.venueId}, Org: ${metadata.organizationId}`);
+            await this.emitEvent("DEVICE_CONNECTED", {
+              deviceId: metadata.deviceId,
+              venueId: metadata.venueId,
+              organizationId: metadata.organizationId,
+              serialNumber: serialNumber,
+              deviceName: metadata.deviceName,
+              venueName: metadata.venueName,
+              organizationName: metadata.organizationName,
+              message: `Device ${metadata.deviceName || serialNumber} is CONNECTED`,
+            });
+            console.log(`✅ [ESP] DEVICE_CONNECTED event emitted for ${serialNumber}`);
+
+            // Check for pending events that should have started while device was offline
+            await this.checkPendingEventsForDevice(metadata.deviceId);
+          } else {
+            console.warn(`⚠️ [ESP] Could not find device metadata for ${serialNumber}`);
+            // Still broadcast for backward compatibility
+            this.broadcastToFrontend({
+              type: "CONNECTED",
+              serial: serialNumber,
+              serialNumber: serialNumber,
+            });
+          }
+
           // Restore device state from database
           await this.restoreDeviceState(serialNumber);
-
-          this.broadcastToFrontend(serialNumber, { type: "CONNECTED" });
           return;
         }
 
@@ -143,6 +321,22 @@ class ESPService {
             console.error(`⚠️ [ESP] DB update error:`, err.message);
           }
 
+          // Get metadata for event emission
+          const metadata = this.deviceMetadata.get(serialNumber);
+          
+          // Emit DEVICE_UPDATED event
+          if (metadata) {
+            await this.emitEvent("DEVICE_UPDATED", {
+              deviceId: metadata.deviceId,
+              venueId: metadata.venueId,
+              organizationId: metadata.organizationId,
+              serialNumber: serialNumber,
+              updateType: "temperature",
+              temperature: temp,
+            });
+          }
+
+          // Legacy broadcast
           this.broadcastToFrontend({
             type: "TEMP_UPDATE",
             serial: serialNumber,
@@ -170,8 +364,26 @@ class ESPService {
             }
           }
 
-          this.broadcastToFrontend(serialNumber, {
+          // Get metadata for event emission
+          const metadata = this.deviceMetadata.get(serialNumber);
+          
+          // Emit DEVICE_UPDATED event
+          if (metadata) {
+            await this.emitEvent("DEVICE_UPDATED", {
+              deviceId: metadata.deviceId,
+              venueId: metadata.venueId,
+              organizationId: metadata.organizationId,
+              serialNumber: serialNumber,
+              updateType: "power",
+              isOn: power,
+            });
+          }
+
+          // Legacy broadcast
+          this.broadcastToFrontend({
             type: "POWER_UPDATE",
+            serial: serialNumber,
+            serialNumber: serialNumber,
             power: power ? 1 : 0,
           });
         }
@@ -182,8 +394,10 @@ class ESPService {
           state.locked = locked;
           this.deviceStates.set(serialNumber, state);
 
-          this.broadcastToFrontend(serialNumber, {
+          this.broadcastToFrontend({
             type: "LOCK_UPDATE",
+            serial: serialNumber,
+            serialNumber: serialNumber,
             locked: locked ? 1 : 0,
           });
         }
@@ -192,7 +406,11 @@ class ESPService {
         if (data.type === "IR_VIOLATION") {
           console.log(`🔒 [ESP] IR VIOLATION: ${serialNumber}`);
           await this.handleIRViolation(serialNumber);
-          this.broadcastToFrontend(serialNumber, { type: "IR_VIOLATION" });
+          this.broadcastToFrontend({
+            type: "IR_VIOLATION",
+            serial: serialNumber,
+            serialNumber: serialNumber,
+          });
         }
 
         // ROOM_TEMPERATURE - Update room temperature from ESP32/simulator
@@ -240,13 +458,52 @@ class ESPService {
       }
     });
 
-    ws.on("close", (code, reason) => {
+    ws.on("close", async (code, reason) => {
       console.log(`📡 [ESP] ESP32 disconnected (code: ${code})`);
-      // Remove from connections
+      // Remove from connections and emit disconnect event
       for (const [serial, conn] of this.esp32Connections.entries()) {
         if (conn === ws) {
           this.esp32Connections.delete(serial);
           this.deviceStates.delete(serial);
+
+          // Get metadata before removing
+          const metadata = this.deviceMetadata.get(serial);
+
+          // Leave rooms
+          if (metadata) {
+            if (metadata.deviceId) {
+              this.leaveRoom(ws, `device:${metadata.deviceId}`);
+            }
+            if (metadata.venueId) {
+              this.leaveRoom(ws, `venue:${metadata.venueId}`);
+            }
+            if (metadata.organizationId) {
+              this.leaveRoom(ws, `organization:${metadata.organizationId}`);
+            }
+
+            // Emit DEVICE_DISCONNECTED event
+            await this.emitEvent("DEVICE_DISCONNECTED", {
+              deviceId: metadata.deviceId,
+              venueId: metadata.venueId,
+              organizationId: metadata.organizationId,
+              serialNumber: serial,
+              deviceName: metadata.deviceName,
+              venueName: metadata.venueName,
+              organizationName: metadata.organizationName,
+              message: `Device ${metadata.deviceName || serial} is DISCONNECTED`,
+            });
+
+            // Remove metadata
+            this.deviceMetadata.delete(serial);
+          } else {
+            // Fallback: broadcast disconnect for backward compatibility
+            this.broadcastToFrontend({
+              type: "DISCONNECTED",
+              serial: serial,
+              serialNumber: serial,
+            });
+          }
+
           console.log(`🗑️ [ESP] Removed ${serial} from connections`);
           break;
         }
@@ -258,12 +515,51 @@ class ESPService {
   handleFrontendConnection(ws, req) {
     console.log("🌐 [FRONTEND] Frontend connected");
     this.frontendConnections.add(ws);
+    this.frontendSubscriptions.set(ws, new Set());
 
-    ws.on("message", (msg) => {
+    ws.on("message", async (msg) => {
       try {
         const data = JSON.parse(msg);
         const serialNumber = data.serial;
 
+        // Handle room subscriptions
+        if (data.type === "SUBSCRIBE_ROOM") {
+          const roomName = data.room;
+          if (roomName) {
+            this.joinRoom(ws, roomName);
+            const subscriptions = this.frontendSubscriptions.get(ws);
+            if (subscriptions) {
+              subscriptions.add(roomName);
+            }
+            console.log(`📥 [FRONTEND] Subscribed to room: ${roomName}`);
+            // Send confirmation
+            ws.send(JSON.stringify({
+              type: "SUBSCRIBE_SUCCESS",
+              room: roomName,
+            }));
+          }
+          return;
+        }
+
+        if (data.type === "UNSUBSCRIBE_ROOM") {
+          const roomName = data.room;
+          if (roomName) {
+            this.leaveRoom(ws, roomName);
+            const subscriptions = this.frontendSubscriptions.get(ws);
+            if (subscriptions) {
+              subscriptions.delete(roomName);
+            }
+            console.log(`📤 [FRONTEND] Unsubscribed from room: ${roomName}`);
+            // Send confirmation
+            ws.send(JSON.stringify({
+              type: "UNSUBSCRIBE_SUCCESS",
+              room: roomName,
+            }));
+          }
+          return;
+        }
+
+        // Legacy command handling
         if (!this.esp32Connections.has(serialNumber)) return;
 
         // POWER_ON
@@ -303,6 +599,15 @@ class ESPService {
     ws.on("close", () => {
       console.log("🌐 [FRONTEND] Frontend disconnected");
       this.frontendConnections.delete(ws);
+      
+      // Leave all subscribed rooms
+      const subscriptions = this.frontendSubscriptions.get(ws);
+      if (subscriptions) {
+        subscriptions.forEach((roomName) => {
+          this.leaveRoom(ws, roomName);
+        });
+      }
+      this.frontendSubscriptions.delete(ws);
     });
   }
 
@@ -344,12 +649,14 @@ class ESPService {
   sendSetTempCommand(serialNumber, temp) {
     const ws = this.esp32Connections.get(serialNumber);
     if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error(`❌ [ESP] ${serialNumber}: Cannot send SET_TEMP - WebSocket not connected (readyState: ${ws ? ws.readyState : 'null'})`);
       return { success: false, message: "ESP32 not connected" };
     }
 
     const command = { type: "SET_TEMP", temp };
-    ws.send(JSON.stringify(command));
-    console.log(`📤 [ESP] ${serialNumber}: SET_TEMP ${temp}°C`);
+    const commandJson = JSON.stringify(command);
+    ws.send(commandJson);
+    console.log(`📤 [ESP] ${serialNumber}: SET_TEMP ${temp}°C | Command: ${commandJson}`);
     return { success: true };
   }
 
@@ -358,8 +665,15 @@ class ESPService {
   // So we always send database value to ESP32 and trust it's set correctly
   async startTemperatureSync(serialNumber, targetTemp) {
     try {
+      // Check if device is connected
+      if (!this.esp32Connections.has(serialNumber)) {
+        console.error(`❌ [ESP] ${serialNumber}: Device not in connections map`);
+        return { success: false, message: "ESP32 not connected" };
+      }
+
       const ws = this.esp32Connections.get(serialNumber);
       if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error(`❌ [ESP] ${serialNumber}: WebSocket not open (readyState: ${ws ? ws.readyState : 'null'})`);
         return { success: false, message: "ESP32 not connected" };
       }
 
@@ -373,12 +687,19 @@ class ESPService {
       // Always send SET_TEMP command with database value
       // ESP32 will set this temperature, even if hardware has different value
       // We trust ESP32 will set it correctly (no feedback needed)
-      return this.sendSetTempCommand(serialNumber, targetTemp);
+      const result = this.sendSetTempCommand(serialNumber, targetTemp);
+      if (result.success) {
+        console.log(`✅ [ESP] ${serialNumber}: SET_TEMP command sent successfully`);
+      } else {
+        console.error(`❌ [ESP] ${serialNumber}: SET_TEMP command failed - ${result.message}`);
+      }
+      return result;
     } catch (error) {
       console.error(
         `❌ [ESP] Temperature sync error for ${serialNumber}:`,
         error.message
       );
+      console.error(`   └─ Stack:`, error.stack);
       return { success: false, message: error.message };
     }
   }
@@ -501,6 +822,207 @@ class ESPService {
         client.send(json);
       }
     });
+  }
+
+  // Emit VENUE_UPDATED event (call this when venue settings change)
+  async emitVenueUpdated(venueId, updateData = {}) {
+    try {
+      const venue = await Venue.findByPk(venueId, {
+        include: [
+          {
+            model: Organization,
+            as: "organization",
+          },
+        ],
+      });
+
+      if (!venue) {
+        console.warn(`⚠️ [ROOMS] Venue ${venueId} not found`);
+        return;
+      }
+
+      const organization = venue.organization;
+
+      await this.emitEvent("VENUE_UPDATED", {
+        venueId: venue.id,
+        organizationId: organization?.id,
+        venueName: venue.name,
+        organizationName: organization?.name,
+        ...updateData,
+      });
+
+      console.log(`📢 [ROOMS] VENUE_UPDATED event emitted for venue ${venueId}`);
+    } catch (error) {
+      console.error(`❌ [ROOMS] Error emitting VENUE_UPDATED:`, error.message);
+    }
+  }
+
+  // Emit ORGANIZATION_UPDATED event (call this when organization settings change)
+  async emitOrganizationUpdated(organizationId, updateData = {}) {
+    try {
+      const organization = await Organization.findByPk(organizationId);
+
+      if (!organization) {
+        console.warn(`⚠️ [ROOMS] Organization ${organizationId} not found`);
+        return;
+      }
+
+      await this.emitEvent("ORGANIZATION_UPDATED", {
+        organizationId: organization.id,
+        organizationName: organization.name,
+        ...updateData,
+      });
+
+      console.log(`📢 [ROOMS] ORGANIZATION_UPDATED event emitted for organization ${organizationId}`);
+    } catch (error) {
+      console.error(`❌ [ROOMS] Error emitting ORGANIZATION_UPDATED:`, error.message);
+    }
+  }
+
+  // Emit DEVICE_UPDATED event (call this when device config changes from API)
+  async emitDeviceUpdated(deviceId, updateData = {}) {
+    try {
+      const ac = await AC.findByPk(deviceId, {
+        include: [
+          {
+            model: Venue,
+            as: "venue",
+            include: [
+              {
+                model: Organization,
+                as: "organization",
+              },
+            ],
+          },
+        ],
+      });
+
+      if (!ac) {
+        console.warn(`⚠️ [ROOMS] Device ${deviceId} not found`);
+        return;
+      }
+
+      const venue = ac.venue;
+      const organization = venue?.organization;
+
+      await this.emitEvent("DEVICE_UPDATED", {
+        deviceId: ac.id,
+        venueId: venue?.id,
+        organizationId: organization?.id,
+        serialNumber: ac.serialNumber,
+        deviceName: ac.name,
+        venueName: venue?.name,
+        organizationName: organization?.name,
+        ...updateData,
+      });
+
+      console.log(`📢 [ROOMS] DEVICE_UPDATED event emitted for device ${deviceId}`);
+    } catch (error) {
+      console.error(`❌ [ROOMS] Error emitting DEVICE_UPDATED:`, error.message);
+    }
+  }
+
+  // Get list of currently connected device serial numbers
+  getConnectedDeviceSerialNumbers() {
+    return Array.from(this.esp32Connections.keys());
+  }
+
+  // Check if a device is connected by serial number
+  isDeviceConnected(serialNumber) {
+    return this.esp32Connections.has(serialNumber);
+  }
+
+  // Get connected devices info (for API endpoint)
+  getConnectedDevicesInfo() {
+    const connectedDevices = [];
+    this.esp32Connections.forEach((ws, serialNumber) => {
+      const metadata = this.deviceMetadata.get(serialNumber);
+      if (metadata) {
+        connectedDevices.push({
+          serialNumber: serialNumber,
+          deviceId: metadata.deviceId,
+          venueId: metadata.venueId,
+          organizationId: metadata.organizationId,
+          deviceName: metadata.deviceName,
+          venueName: metadata.venueName,
+          organizationName: metadata.organizationName,
+        });
+      } else {
+        // Device connected but metadata not loaded yet
+        connectedDevices.push({
+          serialNumber: serialNumber,
+          deviceId: null,
+          venueId: null,
+          organizationId: null,
+        });
+      }
+    });
+    return connectedDevices;
+  }
+
+  // Check for pending events that should have started while device was offline
+  async checkPendingEventsForDevice(deviceId) {
+    if (!deviceId) return;
+
+    try {
+      const Event = require("../models/Event/event");
+      const EventService = require("../rolebaseaccess/admin/services/eventService");
+      const ManagerEventService = require("../rolebaseaccess/manager/services/managerEventService");
+      const timezoneUtils = require("../utils/timezone");
+      const { Op, Sequelize } = require("sequelize");
+
+      const now = timezoneUtils.getCurrentUTCTime();
+      const nowUTCString = now.toISOString();
+
+      // Find scheduled events for this device that should have started (startTime passed but endTime not passed)
+      const pendingEvents = await Event.findAll({
+        where: {
+          deviceId: deviceId,
+          status: "scheduled",
+          isDisabled: false,
+          [Op.and]: [
+            Sequelize.literal(
+              `"startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+            ),
+            Sequelize.literal(
+              `"endTime" AT TIME ZONE 'UTC' > '${nowUTCString}'::timestamptz`
+            ),
+          ],
+        },
+      });
+
+      if (pendingEvents.length > 0) {
+        console.log(
+          `📅 [ESP] Found ${pendingEvents.length} pending event(s) for device ${deviceId} that should start now`
+        );
+
+        for (const event of pendingEvents) {
+          try {
+            if (event.createdBy === "admin") {
+              await EventService.startEvent(event.adminId, event.id);
+              console.log(
+                `✅ [ESP] Started pending admin event: ${event.name} (ID: ${event.id})`
+              );
+            } else if (event.createdBy === "manager") {
+              await ManagerEventService.startEvent(event.managerId, event.id);
+              console.log(
+                `✅ [ESP] Started pending manager event: ${event.name} (ID: ${event.id})`
+              );
+            }
+          } catch (error) {
+            console.error(
+              `❌ [ESP] Error starting pending event ${event.id}:`,
+              error.message
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error(
+        `❌ [ESP] Error checking pending events for device ${deviceId}:`,
+        error.message
+      );
+    }
   }
 }
 
