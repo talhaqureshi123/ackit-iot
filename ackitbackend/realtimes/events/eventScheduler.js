@@ -208,16 +208,17 @@ class EventScheduler {
 
       // Use raw SQL with UTC comparison to bypass Sequelize timezone conversion
       // Only start events that are within the last 5 seconds (not 1 minute)
+      // Use Sequelize.col to get proper table-qualified column name
       const eventsToStart = await Event.findAll({
         where: {
           status: "scheduled",
           isDisabled: false,
           [Op.and]: [
             Sequelize.literal(
-              `"startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+              `"Event"."startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
             ),
             Sequelize.literal(
-              `"startTime" AT TIME ZONE 'UTC' >= '${fiveSecondsAgoUTCString}'::timestamptz`
+              `"Event"."startTime" AT TIME ZONE 'UTC' >= '${fiveSecondsAgoUTCString}'::timestamptz`
             ),
           ],
         },
@@ -230,7 +231,7 @@ class EventScheduler {
           isDisabled: false,
           [Op.and]: [
             Sequelize.literal(
-              `"startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+              `"Event"."startTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
             ),
           ],
         },
@@ -330,7 +331,7 @@ class EventScheduler {
           isDisabled: false, // Skip disabled events
           [Op.and]: [
             Sequelize.literal(
-              `"endTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
+              `"Event"."endTime" AT TIME ZONE 'UTC' <= '${nowUTCString}'::timestamptz`
             ),
           ],
         },
@@ -625,7 +626,7 @@ class EventScheduler {
           isDisabled: false,
           [Op.and]: [
             Sequelize.literal(
-              `"endTime" AT TIME ZONE 'UTC' <= '${fiveSecondsAgoUTCString}'::timestamptz`
+              `"Event"."endTime" AT TIME ZONE 'UTC' <= '${fiveSecondsAgoUTCString}'::timestamptz`
             ),
           ],
         },
