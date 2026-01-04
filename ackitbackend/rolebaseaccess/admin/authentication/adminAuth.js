@@ -752,17 +752,36 @@ class AdminAuth {
 
       // Ensure session is saved one more time before response
       // This ensures cookie is set properly
-      await new Promise((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) {
-            console.error("❌ Final session save error:", err);
-            reject(err);
-          } else {
-            console.log("✅ Final session save completed before response");
-            resolve();
+      try {
+        await new Promise((resolve, reject) => {
+          if (!req.session || typeof req.session.save !== 'function') {
+            console.error("❌ Session or session.save not available");
+            reject(new Error("Session not available for saving"));
+            return;
           }
+          
+          req.session.save((err) => {
+            if (err) {
+              console.error("❌ Final session save error:", err);
+              console.error("❌ Session save error details:", {
+                message: err.message,
+                stack: err.stack,
+                code: err.code,
+                name: err.name,
+              });
+              reject(err);
+            } else {
+              console.log("✅ Final session save completed before response");
+              resolve();
+            }
+          });
         });
-      });
+      } catch (saveError) {
+        console.error("❌ Critical: Session save failed in login:", saveError);
+        // Don't fail the login if session save fails - user is already authenticated
+        // Just log the error for debugging
+        console.error("⚠️ Warning: Login succeeded but session save failed");
+      }
 
       // Touch session to refresh expiration
       if (req.session.touch) {
@@ -840,12 +859,34 @@ class AdminAuth {
         name: error.name,
         message: error.message,
         code: error.code,
+        stack: error.stack,
       });
+      
+      // Log more details for debugging
+      console.error("❌ Request details:", {
+        email: req.body?.email,
+        hasSession: !!req.session,
+        sessionID: req.sessionID,
+        origin: req.headers.origin,
+        referer: req.headers.referer,
+      });
+      
+      // Return more detailed error in development, generic in production
+      const errorMessage = process.env.NODE_ENV === "development" || process.env.NODE_ENV !== "production"
+        ? error.message
+        : "Internal server error during login.";
+      
       res.status(500).json({
         success: false,
         message: "Internal server error during login.",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
+        error: errorMessage,
+        ...(process.env.NODE_ENV !== "production" && {
+          stack: error.stack,
+          details: {
+            name: error.name,
+            code: error.code,
+          }
+        }),
       });
     }
   }
