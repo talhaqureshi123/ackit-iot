@@ -1,3 +1,4 @@
+// Server entry point - ACKit Backend
 const app = require("./app");
 const path = require("path");
 const http = require("http");
