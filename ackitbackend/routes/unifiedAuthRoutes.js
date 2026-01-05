@@ -313,59 +313,73 @@ router.post("/login", async (req, res) => {
     }
 
     console.log(`✅ Unified login successful for ${userRole}: ${user.email}`);
-    
+
     // Explicitly set session cookie (same logic as individual login routes)
-    const cookieName = req.session.cookie.name || 'ackit.sid';
-    const requestOrigin = req.headers.origin || req.headers.referer || '';
-    const isLocalhost = requestOrigin.includes("localhost") || requestOrigin.includes("127.0.0.1");
-    const isRailway = requestOrigin.includes('.railway.app') || requestOrigin.includes('.up.railway.app');
+    const cookieName = req.session.cookie.name || "ackit.sid";
+    const requestOrigin = req.headers.origin || req.headers.referer || "";
+    const isLocalhost =
+      requestOrigin.includes("localhost") ||
+      requestOrigin.includes("127.0.0.1");
+    const isRailway =
+      requestOrigin.includes(".railway.app") ||
+      requestOrigin.includes(".up.railway.app");
     const isProduction = process.env.NODE_ENV === "production";
-    
+
     console.log("🔐 Unified Login - Cookie settings:");
     console.log("   Request origin:", requestOrigin);
     console.log("   Is localhost:", isLocalhost);
     console.log("   Is Railway:", isRailway);
     console.log("   Is production:", isProduction);
-    
+
     // Determine cookie settings based on origin
     let cookieSecure = false;
-    let cookieSameSite = 'lax';
-    
+    let cookieSameSite = "lax";
+
     if (isLocalhost) {
       cookieSecure = false;
-      cookieSameSite = 'lax';
-      console.log("🔐 Unified Login - Setting cookie for localhost (no Secure, SameSite=Lax)");
+      cookieSameSite = "lax";
+      console.log(
+        "🔐 Unified Login - Setting cookie for localhost (no Secure, SameSite=Lax)"
+      );
     } else if (isRailway && !isLocalhost) {
       cookieSecure = true;
       cookieSameSite = "none";
-      console.log("🔐 Unified Login - Setting cookie for Railway frontend (Secure, SameSite=None)");
+      console.log(
+        "🔐 Unified Login - Setting cookie for Railway frontend (Secure, SameSite=None)"
+      );
     } else if (isProduction && !isLocalhost) {
       cookieSecure = true;
       cookieSameSite = "none";
-      console.log("🔐 Unified Login - Setting cookie for production (Secure, SameSite=None)");
+      console.log(
+        "🔐 Unified Login - Setting cookie for production (Secure, SameSite=None)"
+      );
     } else {
       // Development: Backend on Railway, Frontend on localhost
       cookieSecure = false;
-      cookieSameSite = 'lax';
-      console.log("🔐 Unified Login - Setting cookie for development (local frontend, Railway backend)");
+      cookieSameSite = "lax";
+      console.log(
+        "🔐 Unified Login - Setting cookie for development (local frontend, Railway backend)"
+      );
     }
-    
+
     // Explicitly set the session cookie
     res.cookie(cookieName, req.sessionID, {
-      path: '/',
+      path: "/",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
       secure: cookieSecure,
       sameSite: cookieSameSite,
       domain: undefined, // Don't set domain for cross-origin
     });
-    
-    console.log(`🔐 Unified Login - Cookie set: ${cookieName}=${req.sessionID}`);
+
+    console.log(
+      `🔐 Unified Login - Cookie set: ${cookieName}=${req.sessionID}`
+    );
     console.log("🔐 Unified Login - Cookie settings:", {
       secure: cookieSecure,
       sameSite: cookieSameSite,
       httpOnly: true,
-      path: '/',
+      path: "/",
     });
 
     return res.status(200).json({

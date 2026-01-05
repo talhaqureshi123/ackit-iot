@@ -56,7 +56,47 @@ const ManagerDashboard = () => {
   const [alerts, setAlerts] = useState([]);
   const [allAlerts, setAllAlerts] = useState([]); // Store all alerts (including device-level) for device highlighting
   const [alertsLoading, setAlertsLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    // Close sidebar by default if on dashboard tab
+    return false;
+  });
+  
+  // Calculate content width and margin based on sidebar state and window size
+  const [contentMarginLeft, setContentMarginLeft] = useState('0px');
+  const [contentWidth, setContentWidth] = useState('100%');
+  
+  useEffect(() => {
+    const calculateContentLayout = () => {
+      if (typeof window === 'undefined') return;
+      
+      const width = window.innerWidth;
+      let marginLeft = '0px';
+      let contentWidth = '100%';
+      
+      if (width >= 1280) {
+        // xl breakpoint
+        marginLeft = sidebarOpen ? '240px' : '64px';
+        contentWidth = sidebarOpen ? 'calc(100% - 240px)' : 'calc(100% - 64px)';
+      } else if (width >= 1024) {
+        // lg breakpoint
+        marginLeft = sidebarOpen ? '208px' : '56px';
+        contentWidth = sidebarOpen ? 'calc(100% - 208px)' : 'calc(100% - 56px)';
+      } else {
+        // Mobile - no sidebar margin
+        marginLeft = '0px';
+        contentWidth = '100%';
+      }
+      
+      setContentMarginLeft(marginLeft);
+      setContentWidth(contentWidth);
+    };
+    
+    calculateContentLayout();
+    
+    // Recalculate on window resize
+    window.addEventListener('resize', calculateContentLayout);
+    return () => window.removeEventListener('resize', calculateContentLayout);
+  }, [sidebarOpen]);
 
   // Helper functions to check if device/org is actually locked
   // Note: Manager dashboard only has remote lock, restricted, and unlocked status
@@ -3156,8 +3196,8 @@ const ManagerDashboard = () => {
         };
         
         return (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
+          <div className="space-y-6 w-full max-w-full overflow-x-hidden">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 flex items-center">
                   <Zap className="w-6 h-6 mr-2 text-blue-600" />
@@ -3353,7 +3393,7 @@ const ManagerDashboard = () => {
 
             {/* Venues Energy Consumption */}
             {energyViewMode === 'venue' && (
-              <div>
+              <div className="w-full max-w-full overflow-x-hidden">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                   <MapPin className="w-5 h-5 mr-2 text-blue-600" />
                   Energy by Venue
@@ -3413,13 +3453,13 @@ const ManagerDashboard = () => {
 
             {/* AC Devices Energy Consumption */}
             {energyViewMode === 'device' && (
-            <div>
+            <div className="w-full max-w-full overflow-x-hidden">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Thermometer className="w-5 h-5 mr-2 text-blue-600" />
                 Energy by AC Device
               </h3>
-              <div className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-300">
-                <div className="overflow-x-auto" style={{ maxWidth: '100%', overflowX: 'auto', overflowY: 'visible' }}>
+              <div className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-300 w-full max-w-full">
+                <div className="overflow-x-auto w-full" style={{ maxWidth: '100%' }}>
                   <table className="min-w-full divide-y divide-gray-200 border-collapse" style={{ minWidth: '1200px', width: '100%', tableLayout: 'auto' }}>
                     <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-300">
                       <tr>
@@ -3838,13 +3878,25 @@ const ManagerDashboard = () => {
               <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+          {/* Collapse button - only show when sidebar is open */}
+          {sidebarOpen ? (
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
+              title="Collapse sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          ) : (
+            // Show expand button when sidebar is collapsed
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
+              title="Expand sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Navigation Menu */}
@@ -3923,7 +3975,13 @@ const ManagerDashboard = () => {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full ${sidebarOpen ? 'lg:ml-56 xl:ml-64' : 'lg:ml-14 xl:ml-16'} transition-all duration-300 bg-gray-50 min-h-screen`}>
+      <div 
+        className="flex-1 w-full transition-all duration-300 bg-gray-50 min-h-screen"
+        style={{
+          marginLeft: contentMarginLeft,
+          width: contentWidth,
+        }}
+      >
         {/* Top Header */}
         <header className="bg-white shadow-md border-b sticky top-0 z-10 w-full">
           <div className="pl-2 sm:pl-3 pr-4 sm:pr-6 py-4 w-full">

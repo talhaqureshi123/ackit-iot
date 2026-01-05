@@ -5457,7 +5457,17 @@ const AdminDashboard = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
-                              <span className={`px-2 py-1 text-xs font-medium rounded border ${
+                              <div className="flex flex-col gap-1">
+                                {/* Connection Status */}
+                                <span className={`px-2 py-1 text-xs font-medium rounded border ${
+                                  ac.isConnected !== false
+                                    ? 'bg-blue-100 text-blue-800 border-blue-300' 
+                                    : 'bg-red-100 text-red-800 border-red-300'
+                                }`}>
+                                  {ac.isConnected !== false ? 'Connected' : 'Disconnected'}
+                                </span>
+                                {/* Power Status */}
+                                <span className={`px-2 py-1 text-xs font-medium rounded border ${
                                   ac.isOn 
                                     ? 'bg-green-100 text-green-800 border-green-300' 
                                     : 'bg-gray-100 text-gray-800 border-gray-300'
@@ -5465,10 +5475,11 @@ const AdminDashboard = () => {
                                   {ac.isOn ? 'ON' : 'OFF'}
                                 </span>
                                 {acEnergy?.isOnStartup && (
-                                <span className="ml-2 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded border border-yellow-300">
+                                  <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded border border-yellow-300">
                                     Startup
                                   </span>
                                 )}
+                              </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap border-r border-gray-200">
                               <div className="text-sm font-semibold text-blue-600">
