@@ -837,29 +837,38 @@ const ManagerDashboard = () => {
         })
       ]);
 
-      // Only update data if we got successful responses
-      // This preserves last known good data for restricted/locked managers during errors
-      if (orgsRes && acsRes) {
+      // Update data even if only some calls succeed (like AdminDashboard)
+      // This ensures partial data loads even if some APIs fail
+      console.log('📊 Data loading results:');
+      console.log('   Organizations:', orgsRes ? '✅' : '❌');
+      console.log('   ACs:', acsRes ? '✅' : '❌');
+      
+      if (orgsRes || acsRes) {
         console.log('Organizations response:', orgsRes?.data);
         console.log('ACs response:', acsRes?.data);
 
         // Handle different response structures
-        const allOrgs = orgsRes?.data?.organizations || 
-                        orgsRes?.data?.data?.organizations || 
-                        (Array.isArray(orgsRes?.data?.data) ? orgsRes.data.data : []) ||
-                        [];
+        // Use empty array if response is null (API call failed)
+        const allOrgs = orgsRes ? (
+          orgsRes?.data?.organizations || 
+          orgsRes?.data?.data?.organizations || 
+          (Array.isArray(orgsRes?.data?.data) ? orgsRes.data.data : []) ||
+          []
+        ) : [];
         
         // Only show active organizations
         let organizations = allOrgs.filter(org => org.status === 'active');
         
-        const acs = (acsRes?.data?.acs || 
-                    acsRes?.data?.data?.acs || 
-                    (Array.isArray(acsRes?.data?.data) ? acsRes.data.data : []) ||
-                    []).map(ac => ({
+        const acs = acsRes ? (
+          (acsRes?.data?.acs || 
+          acsRes?.data?.data?.acs || 
+          (Array.isArray(acsRes?.data?.data) ? acsRes.data.data : []) ||
+          []).map(ac => ({
           ...ac,
           // Map currentState to isLocked for compatibility
           isLocked: ac.currentState === 'locked' || ac.isLocked || false
-        }));
+        }))
+        ) : [];
 
         // Calculate hasMixedTemperatures for organizations and venues
         organizations = organizations.map(org => {
@@ -941,20 +950,26 @@ const ManagerDashboard = () => {
         if (organizations.length === 0 && acs.length === 0 && orgsRes?.data?.success !== false && acsRes?.data?.success !== false) {
           console.warn('No organizations or ACs found for this manager');
         }
-      } else {
-        // If we got errors, log them but don't update data (preserves last known good state)
-        // This allows restricted/locked managers to continue seeing data even if polling fails
-        if (!orgsRes) {
-          console.warn('Organizations fetch failed, preserving last known data');
-        }
-        // Even on error, mark initial loading as complete to show error state
+        
+        // Mark initial loading as complete after first successful load
         setInitialLoading(false);
-        if (!acsRes) {
-          console.warn('ACs fetch failed, preserving last known data');
+      } else {
+        // If ALL API calls failed, log errors but still mark loading as complete
+        // This ensures the UI doesn't stay in loading state forever
+        console.error('❌ All API calls failed - no data loaded');
+        if (!orgsRes) {
+          console.warn('Organizations fetch failed');
         }
+        if (!acsRes) {
+          console.warn('ACs fetch failed');
+        }
+        
+        // Mark initial loading as complete to show error state (not infinite loading)
+        setInitialLoading(false);
+        
         // Only show error toast on manual refresh, not during polling
         if (showLoading) {
-          toast.error('Failed to refresh data. Showing last known values.');
+          toast.error('Failed to load data. Please check your connection and try again.');
         }
       }
     } catch (error) {
@@ -963,9 +978,14 @@ const ManagerDashboard = () => {
         const errorMessage = error.response?.data?.message || error.message || 'Failed to load data';
         toast.error(errorMessage);
       }
-      console.error('Load data error:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
+      console.error('❌ Load data error:', error);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error message:', error.message);
+      console.error('   Error stack:', error.stack);
+      
+      // Mark initial loading as complete even on error to prevent infinite loading
+      setInitialLoading(false);
       
       // Don't clear data on error - preserve last known good state
       // This ensures restricted/locked managers can still see their data
@@ -1614,12 +1634,8 @@ const ManagerDashboard = () => {
         // Check manager status only (no device lock check for managers)
         const ac = data.acs.find(a => a.id === id);
         
-        // Check if device is actually connected via websocket - prevent false data
-        if (ac && ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
-          toast.error('Cannot change temperature: AC device is not connected. Please ensure the device is online and connected.');
-          setTemperatureLoading(prev => ({ ...prev, [key]: false }));
-          return;
-        }
+        // Note: Allow temperature change even if device is not connected
+        // Backend will queue the command and apply it when device connects
         
         // Check if device is OFF - prevent temperature change
         if (ac && !(ac.isOn === true || ac.isOn === 'true')) {
@@ -1870,13 +1886,8 @@ const ManagerDashboard = () => {
         return;
       }
       
-      // Check if device is actually connected via websocket - prevent false data
-      if (ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
-        toast.error('Cannot change power: AC device is not connected. Please ensure the device is online and connected.');
-        setAcPowerLoading(prev => ({ ...prev, [acId]: false }));
-        return;
-      }
-      
+      // Note: Allow power toggle even if device is not connected
+      // Backend will queue the command and apply it when device connects
       const currentState = ac.isOn || false;
       const newState = targetState !== undefined ? targetState : !currentState;
       
@@ -3939,7 +3950,7 @@ const ManagerDashboard = () => {
           )}
           {/* Collapse button - only show when sidebar is open, hide expand button on dashboard/venue-dashboard */}
           {sidebarOpen ? (
-            <button
+          <button
               onClick={() => {
                 // Allow collapse on all tabs except dashboard/venue-dashboard (sidebar always collapsed on these tabs)
                 if (activeTab !== 'dashboard' && activeTab !== 'venue-dashboard') {
@@ -3962,11 +3973,11 @@ const ManagerDashboard = () => {
                     setSidebarOpen(true);
                   }
                 }}
-                className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
                 title="Expand sidebar"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+          >
+            <Menu className="w-5 h-5" />
+          </button>
             )
           )}
         </div>
@@ -3987,8 +3998,8 @@ const ManagerDashboard = () => {
                       setSidebarOpen(false);
                     } else {
                       // Close sidebar on mobile after selection (for non-dashboard tabs)
-                      if (window.innerWidth < 1024) {
-                        setSidebarOpen(false);
+                    if (window.innerWidth < 1024) {
+                      setSidebarOpen(false);
                       }
                       // For desktop, preserve sidebar state on other tabs (user can expand/collapse freely)
                     }

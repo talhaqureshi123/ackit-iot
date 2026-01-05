@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Thermometer, MapPin, Building, Plus } from 'lucide-react';
+import { Users, Thermometer, MapPin, Building, Plus, Calendar } from 'lucide-react';
 
 /**
  * Reusable Dashboard View Component
@@ -36,18 +36,32 @@ const DashboardView = ({
     <div className="space-y-6 w-full px-2 sm:px-0 bg-gray-50 min-h-screen py-6">
       {/* Top Row - Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full">
-        {/* Total Managers */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-4xl font-bold text-gray-900 mb-2">{totalManagers}</p>
-              <p className="text-gray-600 font-medium">Total Managers</p>
-            </div>
-            <div className="bg-blue-100 rounded-xl p-4">
-              <Users className="w-10 h-10 text-blue-500" />
+        {/* Total Organizations (Manager) / Total Managers (Admin) */}
+        {role === 'manager' ? (
+          <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-4xl font-bold text-gray-900 mb-2">{data.organizations.length}</p>
+                <p className="text-gray-600 font-medium">Total Organizations</p>
+              </div>
+              <div className="bg-blue-100 rounded-xl p-4">
+                <Building className="w-10 h-10 text-blue-500" />
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-4xl font-bold text-gray-900 mb-2">{totalManagers}</p>
+                <p className="text-gray-600 font-medium">Total Managers</p>
+              </div>
+              <div className="bg-blue-100 rounded-xl p-4">
+                <Users className="w-10 h-10 text-blue-500" />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Total Appliances */}
         <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
@@ -105,17 +119,40 @@ const DashboardView = ({
           </div>
         )}
 
-        {/* Staff Management Card */}
-        <div className="bg-white rounded-2xl shadow-lg p-8 hover:shadow-xl transition-shadow">
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Staff Management</h3>
-          <p className="text-gray-600 text-sm mb-6">See how many managers in your management list</p>
-          <div className="flex justify-center">
-            <div className="text-center p-6 bg-blue-50 rounded-lg border border-blue-200 w-full max-w-xs">
-              <p className="text-4xl font-bold text-blue-600 mb-2">{totalManagers}</p>
-              <p className="text-lg font-semibold text-gray-700">Managers</p>
+        {/* Events Card (Manager) / Staff Management Card (Admin) */}
+        {role === 'manager' ? (
+          <div className="bg-white rounded-2xl shadow-lg p-8 hover:shadow-xl transition-shadow">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">Events</h3>
+            <p className="text-gray-600 text-sm mb-6">View your scheduled and active events</p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-3">
+                  <Calendar className="w-6 h-6 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-700">Total Events</span>
+                </div>
+                <span className="text-3xl font-bold text-blue-600">{totalEvents}</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex items-center gap-3">
+                  <Calendar className="w-6 h-6 text-green-600" />
+                  <span className="text-sm font-medium text-gray-700">Active Events</span>
+                </div>
+                <span className="text-3xl font-bold text-green-600">{activeEvents}</span>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-lg p-8 hover:shadow-xl transition-shadow">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">Staff Management</h3>
+            <p className="text-gray-600 text-sm mb-6">See how many managers in your management list</p>
+            <div className="flex justify-center">
+              <div className="text-center p-6 bg-blue-50 rounded-lg border border-blue-200 w-full max-w-xs">
+                <p className="text-4xl font-bold text-blue-600 mb-2">{totalManagers}</p>
+                <p className="text-lg font-semibold text-gray-700">Managers</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* System Info Card */}
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl shadow-lg p-8 hover:shadow-xl transition-shadow text-white">

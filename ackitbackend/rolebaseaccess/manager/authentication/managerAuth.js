@@ -95,7 +95,7 @@ class ManagerAuth {
               });
             } else {
               console.warn("⚠️ Session store not available for verification");
-              resolve();
+            resolve();
             }
           }
         });
@@ -224,16 +224,16 @@ class ManagerAuth {
               if (sessionFound) break;
               
               await new Promise((resolve) => {
-                sessionStore.get(sessionIdToLoad, (err, sessionData) => {
-                  if (err) {
+              sessionStore.get(sessionIdToLoad, (err, sessionData) => {
+                if (err) {
                     console.error(`❌ Error loading session with ID ${sessionIdToLoad}:`, err.message);
                     resolve();
-                  } else if (sessionData) {
+                } else if (sessionData) {
                     console.log(`✅ Session found in store with ID: ${sessionIdToLoad}`);
-                    console.log("📦 Session data loaded from store:", {
-                      hasSessionId: !!sessionData.sessionId,
-                      hasUser: !!sessionData.user,
-                      sessionId: sessionData.sessionId,
+                  console.log("📦 Session data loaded from store:", {
+                    hasSessionId: !!sessionData.sessionId,
+                    hasUser: !!sessionData.user,
+                    sessionId: sessionData.sessionId,
                       user: sessionData.user,
                       allKeys: Object.keys(sessionData || {}),
                     });
@@ -244,33 +244,33 @@ class ManagerAuth {
                       console.log(`   ⚠️ Session ID mismatch: cookie has ${sessionIdToLoad}, but req.sessionID is ${req.sessionID}`);
                       console.log(`   → Restoring data to current session (${req.sessionID})`);
                     }
-                    
-                    // Restore custom properties
-                    if (sessionData.sessionId) {
-                      req.session.sessionId = sessionData.sessionId;
-                    }
-                    if (sessionData.user) {
-                      req.session.user = sessionData.user;
-                    }
-                    
+                  
+                  // Restore custom properties
+                  if (sessionData.sessionId) {
+                    req.session.sessionId = sessionData.sessionId;
+                  }
+                  if (sessionData.user) {
+                    req.session.user = sessionData.user;
+                  }
+                  
                     // Mark as modified and save to ensure it persists
-                    if (req.session.touch) {
-                      req.session.touch();
-                    }
-                    
+                  if (req.session.touch) {
+                    req.session.touch();
+                  }
+                  
                     // Save the session again to ensure it's persisted
                     req.session.save((saveErr) => {
                       if (saveErr) {
                         console.error("❌ Error saving reloaded session:", saveErr);
                       } else {
                         console.log("✅ Session reloaded and re-saved successfully");
-                        console.log("   - sessionId:", req.session.sessionId);
-                        console.log("   - user:", req.session.user);
+                  console.log("   - sessionId:", req.session.sessionId);
+                  console.log("   - user:", req.session.user);
                       }
                       sessionFound = true;
                       resolve();
                     });
-                  } else {
+                } else {
                     console.log(`❌ No session found in store for ID: ${sessionIdToLoad}`);
                     resolve();
                   }
@@ -280,12 +280,12 @@ class ManagerAuth {
             
             if (!sessionFound) {
               console.log("❌ No session data found in store for any of the tried IDs");
-              console.log("   This means:");
-              console.log("   1. Session was never saved during login");
-              console.log("   2. Session expired or was deleted");
-              console.log("   3. Session ID mismatch");
+                  console.log("   This means:");
+                  console.log("   1. Session was never saved during login");
+                  console.log("   2. Session expired or was deleted");
+                  console.log("   3. Session ID mismatch");
               console.log("   → User needs to login again");
-            }
+                }
           } else {
             console.log("⚠️ Session store not available for reload");
             console.log("   req.app exists:", !!req.app);

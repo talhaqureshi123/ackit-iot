@@ -1259,9 +1259,14 @@ const AdminDashboard = () => {
         const errorMessage = error.response?.data?.message || error.message || 'Failed to load data';
         toast.error(errorMessage);
       }
-      console.error('Load data error:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
+      console.error('❌ Load data error:', error);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error message:', error.message);
+      console.error('   Error stack:', error.stack);
+      
+      // Mark initial loading as complete even on error to prevent infinite loading
+      setInitialLoading(false);
       
       // Don't clear data on error - preserve last known good state
       // This ensures restricted/locked admins can still see their data
@@ -2065,12 +2070,8 @@ const AdminDashboard = () => {
         // Check admin status only (no device lock check for admins)
         const ac = data.acs.find(a => a.id === id);
         
-        // Revert action if device is offline
-        if (ac && ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
-          toast.error('⚠️ Device is offline. Action reverted.');
-          setTemperatureLoading(prev => ({ ...prev, [key]: false }));
-          return;
-        }
+        // Note: Allow temperature change even if device is not connected
+        // Backend will queue the command and apply it when device connects
         
         // Check if device is OFF - prevent temperature change
         if (ac && !(ac.isOn === true || ac.isOn === 'true')) {
@@ -2310,12 +2311,8 @@ const AdminDashboard = () => {
         return;
       }
       
-      // Revert action if device is offline
-      if (ac.serialNumber && !connectedDevices.has(ac.serialNumber)) {
-        toast.error('⚠️ Device is offline. Action reverted.');
-        return;
-      }
-      
+      // Note: Allow power toggle even if device is not connected
+      // Backend will queue the command and apply it when device connects
       const currentState = ac.isOn || false;
       const newState = targetState !== undefined ? targetState : !currentState;
       
