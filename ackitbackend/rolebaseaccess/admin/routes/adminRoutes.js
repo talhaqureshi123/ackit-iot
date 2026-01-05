@@ -11,7 +11,13 @@ router.post("/login", async (req, res, next) => {
     await AdminAuth.login(req, res);
   } catch (error) {
     console.error("❌ Error in admin login route wrapper:", error);
-    next(error); // Pass to global error handler
+    // Only pass to error handler if response hasn't been sent
+    if (!res.headersSent) {
+      next(error); // Pass to global error handler
+    } else {
+      // Response already sent, just log the error
+      console.error("❌ Error occurred after response was sent:", error.message);
+    }
   }
 });
 

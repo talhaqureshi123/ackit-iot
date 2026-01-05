@@ -115,7 +115,7 @@ class AdminAuth {
           );
         }
 
-        // Verify session was saved by checking the store
+        // Verify session was saved by checking the store (non-blocking)
         try {
           const sessionStore = req.app.get("sessionStore");
           if (sessionStore && sessionStore.get) {
@@ -142,7 +142,14 @@ class AdminAuth {
         }
       } catch (saveError) {
         console.error("❌ Session save error:", saveError);
-        throw saveError;
+        // In development, don't fail login if session save fails - session might still work
+        // This allows login to work even if there are temporary session store issues
+        if (process.env.NODE_ENV === "production") {
+          throw saveError;
+        } else {
+          console.warn("⚠️ Development mode: Continuing despite session save error");
+          console.warn("   Session may not persist, but login will proceed");
+        }
       }
 
       return sessionId;
@@ -633,50 +640,110 @@ class AdminAuth {
 
       // Find admin by email
       console.log(`🔍 Searching for admin with email: ${email}`);
+      console.log(`🔍 Environment: ${process.env.NODE_ENV || 'development'}`);
       const { Sequelize } = require("sequelize");
       const trimmedEmail = email ? email.trim() : email;
       let admin;
       try {
         // Try exact match first
+        console.log(`🔍 Attempting exact match for: "${trimmedEmail}"`);
         admin = await Admin.findOne({ where: { email: trimmedEmail } });
         
-        // If not found, try case-insensitive search
-        if (!admin) {
-          console.log(`🔍 Trying case-insensitive search...`);
+        if (admin) {
+          console.log(`✅ Admin found with exact match: ${admin.email} (ID: ${admin.id})`);
+        } else {
+          console.log(`⚠️ Exact match not found, trying case-insensitive search...`);
+          // If not found, try case-insensitive search
           admin = await Admin.findOne({ 
             where: Sequelize.where(
               Sequelize.fn('LOWER', Sequelize.col('email')),
               trimmedEmail.toLowerCase()
             )
           });
+          
+          if (admin) {
+            console.log(`✅ Admin found with case-insensitive match: ${admin.email} (ID: ${admin.id})`);
+          }
         }
       } catch (dbError) {
         console.error("❌ Database error finding admin:", dbError);
         console.error("❌ Database error stack:", dbError.stack);
+        console.error("❌ Database error name:", dbError.name);
+        console.error("❌ Database error code:", dbError.code);
+        
+        // In development, provide more detailed error
+        if (process.env.NODE_ENV !== "production") {
+          return res.status(500).json({
+            success: false,
+            message: "Database error while searching for admin.",
+            error: dbError.message,
+            hint: "Check database connection and ensure Admin table exists"
+          });
+        }
+        
         throw new Error(`Database error: ${dbError.message}`);
       }
 
       if (!admin) {
         console.log(`❌ Admin not found with email: ${email}`);
-        // Log available admins for debugging (only in development or if explicitly enabled)
+        console.log(`❌ Searched for (trimmed): "${trimmedEmail}"`);
+        console.log(`❌ Searched for (lowercase): "${trimmedEmail.toLowerCase()}"`);
+        
+        // Always log available admins in development for debugging
+        let availableAdminsList = [];
         if (process.env.NODE_ENV !== "production" || process.env.DEBUG_LOG_USERS === "true") {
           try {
             const allAdmins = await Admin.findAll({ 
               attributes: ['id', 'email', 'name', 'status'],
-              limit: 10 
+              limit: 10,
+              order: [['createdAt', 'DESC']]
             });
             console.log(`❌ Available Admin emails in database (${allAdmins.length} found):`);
             allAdmins.forEach(a => {
-              console.log(`   - ${a.email} (${a.name}, Status: ${a.status})`);
+              console.log(`   - ${a.email} (${a.name}, Status: ${a.status}, ID: ${a.id})`);
+              availableAdminsList.push({
+                email: a.email,
+                name: a.name,
+                status: a.status,
+                id: a.id
+              });
             });
+            
+            if (allAdmins.length === 0) {
+              console.log(`⚠️ No admins found in database!`);
+              console.log(`💡 Hint: Run setup script to create admin user`);
+            }
           } catch (logError) {
             console.error("⚠️ Could not log available admins:", logError.message);
+            console.error("⚠️ Error details:", logError);
           }
         }
-        return res.status(401).json({
+        
+        // In development, provide more helpful error message
+        const errorResponse = {
           success: false,
           message: "Invalid email or password.",
-        });
+        };
+        
+        if (process.env.NODE_ENV !== "production" && availableAdminsList.length > 0) {
+          errorResponse.debug = {
+            message: "Admin not found. Available admin emails in database:",
+            availableAdmins: availableAdminsList.map(a => ({
+              email: a.email,
+              name: a.name,
+              status: a.status
+            })),
+            searchedEmail: email,
+            hint: "Check if email matches exactly (case-sensitive) or create admin using setup script"
+          };
+        } else if (process.env.NODE_ENV !== "production" && availableAdminsList.length === 0) {
+          errorResponse.debug = {
+            message: "No admins found in database.",
+            hint: "Run setup script: node ackitbackend/making/setup-railway-users.js or node ackitbackend/making/create-admin.js"
+          };
+        }
+        
+        return res.status(401).json(errorResponse);
       }
 
       console.log(
@@ -694,33 +761,75 @@ class AdminAuth {
 
       // Verify password
       console.log(`🔐 Verifying password...`);
+      console.log(`🔐 Admin ID: ${admin.id}, Email: ${admin.email}`);
+      console.log(`🔐 Password hash exists: ${!!admin.password}`);
+      console.log(`🔐 Password hash length: ${admin.password ? admin.password.length : 0}`);
+      console.log(`🔐 Password hash starts with $2: ${admin.password ? admin.password.startsWith('$2') : false}`);
+      
       let isPasswordValid;
       try {
         if (!admin.password) {
           console.error("❌ Admin password field is null or undefined");
+          if (process.env.NODE_ENV !== "production") {
+            return res.status(500).json({
+              success: false,
+              message: "Admin password not set in database.",
+              hint: "Run setup script to set admin password"
+            });
+          }
           throw new Error("Admin password not set in database");
         }
         
         // Trim password to remove any whitespace
         const trimmedPassword = password ? password.trim() : password;
+        console.log(`🔐 Input password length: ${password ? password.length : 0}`);
+        console.log(`🔐 Trimmed password length: ${trimmedPassword ? trimmedPassword.length : 0}`);
+        
         isPasswordValid = await bcrypt.compare(trimmedPassword, admin.password);
+        console.log(`🔐 Password comparison result (trimmed): ${isPasswordValid}`);
         
         // If failed, try with original password (in case trimming was the issue)
         if (!isPasswordValid && password !== trimmedPassword) {
           console.log(`🔐 Retrying with original password (no trim)...`);
           isPasswordValid = await bcrypt.compare(password, admin.password);
+          console.log(`🔐 Password comparison result (original): ${isPasswordValid}`);
         }
       } catch (bcryptError) {
         console.error("❌ Bcrypt error:", bcryptError);
+        console.error("❌ Bcrypt error stack:", bcryptError.stack);
+        
+        if (process.env.NODE_ENV !== "production") {
+          return res.status(500).json({
+            success: false,
+            message: "Password verification error.",
+            error: bcryptError.message,
+            hint: "Check if password hash is valid bcrypt hash"
+          });
+        }
+        
         throw new Error(`Password verification error: ${bcryptError.message}`);
       }
 
       if (!isPasswordValid) {
         console.log(`❌ Password verification failed for email: ${email}`);
-        return res.status(401).json({
+        console.log(`❌ Admin found but password doesn't match`);
+        console.log(`❌ Admin ID: ${admin.id}, Name: ${admin.name}, Status: ${admin.status}`);
+        
+        const errorResponse = {
           success: false,
           message: "Invalid email or password.",
-        });
+        };
+        
+        if (process.env.NODE_ENV !== "production") {
+          errorResponse.debug = {
+            message: "Email found but password is incorrect.",
+            adminEmail: admin.email,
+            adminStatus: admin.status,
+            hint: "Check if you're using the correct password. Default password might be 'admin123' or check your .env file for SEED_ADMIN_PASSWORD"
+          };
+        }
+        
+        return res.status(401).json(errorResponse);
       }
 
       console.log(`✅ Password verified successfully`);
@@ -767,15 +876,23 @@ class AdminAuth {
 
       // Ensure session is saved one more time before response
       // This ensures cookie is set properly
+      // Use non-blocking approach - don't wait if it takes too long
       try {
-        await new Promise((resolve, reject) => {
+        const savePromise = new Promise((resolve, reject) => {
           if (!req.session || typeof req.session.save !== 'function') {
-            console.error("❌ Session or session.save not available");
-            reject(new Error("Session not available for saving"));
+            console.warn("⚠️ Session or session.save not available - continuing anyway");
+            resolve(); // Don't fail login
             return;
           }
           
+          // Set timeout to prevent blocking
+          const timeout = setTimeout(() => {
+            console.warn("⚠️ Session save timeout - continuing with login");
+            resolve(); // Don't fail login
+          }, 2000); // 2 second timeout
+          
           req.session.save((err) => {
+            clearTimeout(timeout);
             if (err) {
               console.error("❌ Final session save error:", err);
               console.error("❌ Session save error details:", {
@@ -784,18 +901,30 @@ class AdminAuth {
                 code: err.code,
                 name: err.name,
               });
-              reject(err);
+              // In development, don't fail login on session save error
+              if (process.env.NODE_ENV !== "production") {
+                console.warn("⚠️ Development mode: Continuing despite session save error");
+                resolve(); // Don't fail login
+              } else {
+                reject(err);
+              }
             } else {
               console.log("✅ Final session save completed before response");
               resolve();
             }
           });
         });
+        
+        // Wait for save but with timeout
+        await Promise.race([
+          savePromise,
+          new Promise(resolve => setTimeout(resolve, 3000)) // Max 3 seconds
+        ]);
       } catch (saveError) {
         console.error("❌ Critical: Session save failed in login:", saveError);
         // Don't fail the login if session save fails - user is already authenticated
         // Just log the error for debugging
-        console.error("⚠️ Warning: Login succeeded but session save failed");
+        console.error("⚠️ Warning: Login succeeded but session save failed - continuing anyway");
       }
 
       // Touch session to refresh expiration
@@ -853,7 +982,8 @@ class AdminAuth {
       console.log("🔐 Login response - Cookie set using res.cookie()");
 
       // Send response with session cookie
-      res.status(200).json({
+      // Ensure response is sent immediately - don't wait for any async operations
+      const responseData = {
         success: true,
         message: "Admin login successful",
         data: {
@@ -866,7 +996,11 @@ class AdminAuth {
           },
           sessionId: sessionId, // Only for debugging, not used by frontend
         },
-      });
+      };
+      
+      console.log("🔐 Sending login response:", JSON.stringify(responseData, null, 2));
+      res.status(200).json(responseData);
+      console.log("✅ Login response sent successfully");
     } catch (error) {
       console.error("❌ Admin login error:", error);
       console.error("❌ Error stack:", error.stack);
@@ -886,23 +1020,28 @@ class AdminAuth {
         referer: req.headers.referer,
       });
       
-      // Return more detailed error in development, generic in production
-      const errorMessage = process.env.NODE_ENV === "development" || process.env.NODE_ENV !== "production"
-        ? error.message
-        : "Internal server error during login.";
-      
-      res.status(500).json({
-        success: false,
-        message: "Internal server error during login.",
-        error: errorMessage,
-        ...(process.env.NODE_ENV !== "production" && {
-          stack: error.stack,
-          details: {
-            name: error.name,
-            code: error.code,
-          }
-        }),
-      });
+      // Only send response if headers haven't been sent
+      if (!res.headersSent) {
+        // Return more detailed error in development, generic in production
+        const errorMessage = process.env.NODE_ENV === "development" || process.env.NODE_ENV !== "production"
+          ? error.message
+          : "Internal server error during login.";
+        
+        res.status(500).json({
+          success: false,
+          message: "Internal server error during login.",
+          error: errorMessage,
+          ...(process.env.NODE_ENV !== "production" && {
+            stack: error.stack,
+            details: {
+              name: error.name,
+              code: error.code,
+            }
+          }),
+        });
+      } else {
+        console.error("⚠️ Response already sent, cannot send error response");
+      }
     }
   }
 

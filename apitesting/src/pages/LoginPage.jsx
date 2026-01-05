@@ -45,13 +45,18 @@ const LoginPage = () => {
       let result = null;
       let detectedRole = null;
       let lastError = null;
+      const loginAttempts = [];
 
       console.log('🔐 LoginPage - Starting auto-detection login');
       console.log('   Email:', trimmedEmail);
       console.log('   Will try roles in order:', allRoles);
+      console.log('   Total roles to try:', allRoles.length);
 
       // Try all roles sequentially - stop on first success
-      for (const role of allRoles) {
+      for (let i = 0; i < allRoles.length; i++) {
+        const role = allRoles[i];
+        console.log(`\n🔐 [${i + 1}/${allRoles.length}] Trying ${role.toUpperCase()} login...`);
+        
         try {
           result = await login(trimmedEmail, trimmedPassword, role);
           
@@ -59,19 +64,91 @@ const LoginPage = () => {
             // Backend has confirmed this role is correct
             detectedRole = role;
             console.log(`✅ [${role.toUpperCase()}] Login successful! Role: ${role}`);
+            loginAttempts.push({ role, success: true, attempt: i + 1 });
             break; // Stop immediately on success
+          } else {
+            console.log(`⚠️ [${role.toUpperCase()}] Login returned but success=false`);
+            console.log(`   Response:`, result);
+            loginAttempts.push({ role, success: false, reason: 'success=false in response', attempt: i + 1 });
+            lastError = new Error('Login response success=false');
           }
         } catch (error) {
+          // Log all errors for debugging
+          const errorDetails = {
+            role,
+            status: error.response?.status,
+            message: error.response?.data?.message || error.message,
+            success: false,
+            attempt: i + 1
+          };
+          
+          loginAttempts.push(errorDetails);
+          
           // 401 is expected for wrong role - continue to next
           if (error.response?.status === 401) {
-            // Silent continue - this is expected during auto-detection
-            continue;
+            // Always log 401 errors with detail for debugging
+            console.log(`⚠️ [${role.toUpperCase()}] Login failed with 401 (expected if wrong role)`);
+            console.log(`   Error message: ${error.response?.data?.message || error.message}`);
+            if (error.response?.data?.debug) {
+              console.log(`   Debug info:`, error.response.data.debug);
+            }
+            // Continue to next role
+            lastError = error;
+            
+            // If this is not the last role, continue
+            if (i < allRoles.length - 1) {
+              console.log(`   → Continuing to next role...`);
+              continue;
+            } else {
+              console.log(`   → This was the last role to try`);
+            }
           } else {
             // Other errors - log but continue
             console.error(`❌ [${role.toUpperCase()}] Error:`, error.message);
+            console.error(`   Status: ${error.response?.status}`);
+            if (error.response?.data) {
+              console.error(`   Response data:`, error.response.data);
+            }
+            lastError = error;
+            
+            // For non-401 errors, still try next role (might be network issue)
+            if (i < allRoles.length - 1) {
+              console.log(`   → Continuing to next role despite error...`);
+            }
           }
-          lastError = error;
         }
+      }
+      
+      // Log summary of all attempts
+      console.log('\n📊 LoginPage - Login attempts summary:');
+      console.log(`   Total attempts: ${loginAttempts.length}`);
+      loginAttempts.forEach(attempt => {
+        if (attempt.success) {
+          console.log(`   ✅ [${attempt.attempt}] ${attempt.role.toUpperCase()}: SUCCESS`);
+        } else {
+          console.log(`   ❌ [${attempt.attempt}] ${attempt.role.toUpperCase()}: FAILED - ${attempt.message || attempt.reason || 'Unknown error'}`);
+        }
+      });
+      
+      if (!result || !result.success) {
+        console.log('\n❌ All login attempts failed');
+        console.log('   Tried roles:', loginAttempts.map(a => a.role).join(', '));
+      }
+
+      // Check if we got a successful login
+      if (!result || !result.success) {
+        console.error('❌ LoginPage - All login attempts failed');
+        console.error('   Login attempts:', loginAttempts);
+        if (lastError) {
+          console.error('   Last error:', lastError.message);
+          console.error('   Last error response:', lastError.response?.data);
+        }
+        
+        // Show user-friendly error
+        const errorMessage = lastError?.response?.data?.message || lastError?.message || 'Login failed. Please check your credentials.';
+        toast.error(errorMessage);
+        setLoading(false);
+        return;
       }
 
       if (result && result.success && detectedRole) {
