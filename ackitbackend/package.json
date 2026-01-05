@@ -11,7 +11,9 @@
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "init-db": "node migrations/init-database.js",
-    "migrate": "node migrations/add-missing-columns-railway.js"
+    "migrate": "node migrations/add-missing-columns-railway.js",
+    "migrate:all": "node migrations/run-all-migrations.js",
+    "migrate:complete": "node migrations/complete-schema-fix.js"
   },
   "author": "",
   "license": "ISC",
