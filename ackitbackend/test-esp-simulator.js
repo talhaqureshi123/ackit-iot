@@ -213,6 +213,7 @@ function connect() {
     reconnectDelay = 5000; // Reset delay to initial value
 
     try {
+      console.log(`🔍 Checking if device exists in database: ${SERIAL_NUMBER}`);
       const ac = await AC.findOne({
         where: { serialNumber: SERIAL_NUMBER },
         attributes: [
@@ -226,6 +227,14 @@ function connect() {
       });
 
       if (ac) {
+        console.log(`✅ Device found in database:`, {
+          id: ac.id,
+          name: ac.name,
+          serialNumber: ac.serialNumber,
+          temperature: ac.temperature,
+          isOn: ac.isOn,
+        });
+        
         if (ac.temperature !== undefined && ac.temperature !== null) {
           const dbTemp = parseFloat(ac.temperature);
           if (dbTemp >= 16 && dbTemp <= 30) {
@@ -243,9 +252,15 @@ function connect() {
 
         // 1. SYNC CONSOLE (ON/OFF)
         logSync(deviceState.power, deviceState.temperature);
+      } else {
+        console.error(`❌ Device NOT found in database with serial number: ${SERIAL_NUMBER}`);
+        console.error(`   └─ Please create the device in the database first`);
+        console.error(`   └─ Serial number must match exactly: ${SERIAL_NUMBER}`);
+        console.error(`   └─ Device will still attempt to connect, but may not be recognized`);
       }
     } catch (error) {
-      // Silent error
+      console.error(`❌ Error checking device in database:`, error.message);
+      console.error(`   └─ Device will still attempt to connect`);
     }
 
     // Send DEVICE_CONNECTED message (matching ESP32 format)
@@ -254,8 +269,17 @@ function connect() {
         type: "DEVICE_CONNECTED",
         serial: SERIAL_NUMBER,
       });
-      console.log(`📤 Sending DEVICE_CONNECTED: ${initMessage}`);
-      ws.send(initMessage);
+      console.log(`📤 Sending DEVICE_CONNECTED message:`, initMessage);
+      console.log(`   └─ Serial Number: ${SERIAL_NUMBER}`);
+      console.log(`   └─ Message Type: DEVICE_CONNECTED`);
+      
+      try {
+        ws.send(initMessage);
+        console.log(`✅ DEVICE_CONNECTED message sent successfully`);
+      } catch (sendError) {
+        console.error(`❌ Error sending DEVICE_CONNECTED message:`, sendError.message);
+      }
+      
       if (!deviceState.deviceKey) {
         deviceState.deviceKey = SERIAL_NUMBER;
       }

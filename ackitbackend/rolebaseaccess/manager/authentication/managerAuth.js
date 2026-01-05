@@ -182,89 +182,110 @@ class ManagerAuth {
       // This happens when express-session loads a new empty session instead of the one from cookie
       if (req.session && req.sessionID && (!req.session.sessionId || !req.session.user)) {
         console.log("⚠️ Session exists but custom data missing - reloading from store");
-        console.log("   Cookie session ID (raw):", req.headers.cookie?.match(/ackit\.sid=([^;]+)/)?.[1]);
-        console.log("   req.sessionID (correct UUID):", req.sessionID);
         
-        // CRITICAL: Always use req.sessionID, not the cookie value
-        // express-session already extracts the UUID from the signed cookie
-        // The cookie value includes signature (s:UUID.signature), but the store uses just UUID
-        const sessionIdToLoad = req.sessionID;
+        // Extract session ID from cookie (might be different from req.sessionID if express-session created new session)
+        const cookieMatch = req.headers.cookie?.match(/ackit\.sid=([^;]+)/);
+        const cookieSessionIdRaw = cookieMatch ? cookieMatch[1] : null;
         
-        console.log("   Attempting to load session from store with ID:", sessionIdToLoad);
+        // Remove URL encoding and signature prefix if present (s:UUID.signature -> UUID)
+        let cookieSessionId = cookieSessionIdRaw;
+        if (cookieSessionIdRaw) {
+          try {
+            cookieSessionId = decodeURIComponent(cookieSessionIdRaw);
+            // Remove signature prefix if present (format: s:UUID.signature)
+            if (cookieSessionId.startsWith('s:')) {
+              cookieSessionId = cookieSessionId.split('.')[0].substring(2);
+            }
+          } catch (e) {
+            // If decoding fails, use raw value
+            cookieSessionId = cookieSessionIdRaw;
+          }
+        }
+        
+        console.log("   Cookie session ID (raw):", cookieSessionIdRaw);
+        console.log("   Cookie session ID (parsed):", cookieSessionId);
+        console.log("   req.sessionID (express-session):", req.sessionID);
+        
+        // Try both session IDs - cookie's ID first (the actual session), then req.sessionID
+        const sessionIdsToTry = [];
+        if (cookieSessionId && cookieSessionId !== req.sessionID) {
+          sessionIdsToTry.push(cookieSessionId); // Try cookie's session ID first
+        }
+        sessionIdsToTry.push(req.sessionID); // Then try express-session's ID
+        
+        console.log("   Will try session IDs in order:", sessionIdsToTry);
         
         try {
           const sessionStore = req.app.get("sessionStore");
           if (sessionStore && sessionStore.get) {
-            await new Promise((resolve, reject) => {
-              sessionStore.get(sessionIdToLoad, (err, sessionData) => {
-                if (err) {
-                  console.error("❌ Error loading session from store:", err);
-                  console.error("   Error details:", err.message);
-                  console.error("   Session ID used:", sessionIdToLoad);
-                  reject(err);
-                } else if (sessionData) {
-                  console.log("📦 Session data loaded from store:", {
-                    hasSessionId: !!sessionData.sessionId,
-                    hasUser: !!sessionData.user,
-                    sessionId: sessionData.sessionId,
-                    user: sessionData.user,
-                    allKeys: Object.keys(sessionData || {}),
-                  });
-                  
-                  // Restore custom properties
-                  if (sessionData.sessionId) {
-                    req.session.sessionId = sessionData.sessionId;
-                  }
-                  if (sessionData.user) {
-                    req.session.user = sessionData.user;
-                  }
-                  
-                  // Mark as modified and save to ensure it persists
-                  if (req.session.touch) {
-                    req.session.touch();
-                  }
-                  
-                  // Save the session again to ensure it's persisted
-                  req.session.save((saveErr) => {
-                    if (saveErr) {
-                      console.error("❌ Error saving reloaded session:", saveErr);
-                    } else {
-                      console.log("✅ Session reloaded and re-saved successfully");
-                      console.log("   - sessionId:", req.session.sessionId);
-                      console.log("   - user:", req.session.user);
-                    }
+            let sessionFound = false;
+            
+            for (const sessionIdToLoad of sessionIdsToTry) {
+              if (sessionFound) break;
+              
+              await new Promise((resolve) => {
+                sessionStore.get(sessionIdToLoad, (err, sessionData) => {
+                  if (err) {
+                    console.error(`❌ Error loading session with ID ${sessionIdToLoad}:`, err.message);
                     resolve();
-                  });
-                } else {
-                  console.log("❌ No session data found in store for ID:", sessionIdToLoad);
-                  console.log("   This means:");
-                  console.log("   1. Session was never saved during login");
-                  console.log("   2. Session expired or was deleted");
-                  console.log("   3. Session ID mismatch");
-                  console.log("   → User needs to login again");
-                  
-                  // Try to check if session exists with a different format
-                  console.log("   Attempting to check session store directly...");
-                  if (sessionStore.all) {
-                    sessionStore.all((allErr, allSessions) => {
-                      if (!allErr && allSessions) {
-                        console.log("   Total sessions in store:", Object.keys(allSessions || {}).length);
-                        const matchingSession = Object.values(allSessions || {}).find(
-                          (s) => s && (s.sessionId === sessionIdToLoad || s.sess?.sessionId === sessionIdToLoad)
-                        );
-                        if (matchingSession) {
-                          console.log("   ✅ Found session with different structure!");
-                          console.log("   Session structure:", Object.keys(matchingSession));
-                        }
+                  } else if (sessionData) {
+                    console.log(`✅ Session found in store with ID: ${sessionIdToLoad}`);
+                    console.log("📦 Session data loaded from store:", {
+                      hasSessionId: !!sessionData.sessionId,
+                      hasUser: !!sessionData.user,
+                      sessionId: sessionData.sessionId,
+                      user: sessionData.user,
+                      allKeys: Object.keys(sessionData || {}),
+                    });
+                    
+                    // Note: If sessionIdToLoad !== req.sessionID, it means express-session created a new session
+                    // We'll restore the data to the current session, which will work for authentication
+                    if (sessionIdToLoad !== req.sessionID) {
+                      console.log(`   ⚠️ Session ID mismatch: cookie has ${sessionIdToLoad}, but req.sessionID is ${req.sessionID}`);
+                      console.log(`   → Restoring data to current session (${req.sessionID})`);
+                    }
+                    
+                    // Restore custom properties
+                    if (sessionData.sessionId) {
+                      req.session.sessionId = sessionData.sessionId;
+                    }
+                    if (sessionData.user) {
+                      req.session.user = sessionData.user;
+                    }
+                    
+                    // Mark as modified and save to ensure it persists
+                    if (req.session.touch) {
+                      req.session.touch();
+                    }
+                    
+                    // Save the session again to ensure it's persisted
+                    req.session.save((saveErr) => {
+                      if (saveErr) {
+                        console.error("❌ Error saving reloaded session:", saveErr);
+                      } else {
+                        console.log("✅ Session reloaded and re-saved successfully");
+                        console.log("   - sessionId:", req.session.sessionId);
+                        console.log("   - user:", req.session.user);
                       }
+                      sessionFound = true;
                       resolve();
                     });
                   } else {
+                    console.log(`❌ No session found in store for ID: ${sessionIdToLoad}`);
                     resolve();
                   }
-                }
+                });
               });
-            });
+            }
+            
+            if (!sessionFound) {
+              console.log("❌ No session data found in store for any of the tried IDs");
+              console.log("   This means:");
+              console.log("   1. Session was never saved during login");
+              console.log("   2. Session expired or was deleted");
+              console.log("   3. Session ID mismatch");
+              console.log("   → User needs to login again");
+            }
           } else {
             console.log("⚠️ Session store not available for reload");
             console.log("   req.app exists:", !!req.app);

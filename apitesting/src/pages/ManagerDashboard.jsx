@@ -65,21 +65,21 @@ const ManagerDashboard = () => {
   const [contentMarginLeft, setContentMarginLeft] = useState('0px');
   const [contentWidth, setContentWidth] = useState('100%');
   
-  // Close sidebar by default when on dashboard tab, keep it closed and disable expand
+  // Close sidebar by default when on dashboard or venue-dashboard tab, keep it closed and disable expand
   useEffect(() => {
-    if (activeTab === 'dashboard') {
+    if (activeTab === 'dashboard' || activeTab === 'venue-dashboard') {
       setSidebarOpen(false);
     }
     // Keep sidebar state as is for other tabs (user can toggle)
   }, [activeTab]);
   
-  // Prevent sidebar from opening on dashboard tab (even if user tries to toggle)
-  // Only force close if we're on dashboard tab - allow expansion on all other tabs
+  // Prevent sidebar from opening on dashboard or venue-dashboard tab (even if user tries to toggle)
+  // Only force close if we're on dashboard/venue-dashboard tab - allow expansion on all other tabs
   useEffect(() => {
-    if (activeTab === 'dashboard') {
-      // Force close sidebar on dashboard tab - no exceptions
+    if (activeTab === 'dashboard' || activeTab === 'venue-dashboard') {
+      // Force close sidebar on dashboard/venue-dashboard tab - no exceptions
       if (sidebarOpen) {
-        console.log("🚫 Dashboard tab: Forcing sidebar to close");
+        console.log(`🚫 ${activeTab} tab: Forcing sidebar to close`);
         setSidebarOpen(false);
       }
     }
@@ -96,13 +96,13 @@ const ManagerDashboard = () => {
       let contentWidth = '100%';
       
       if (width >= 1280) {
-        // xl breakpoint
-        marginLeft = sidebarOpen ? '208px' : '64px';
-        contentWidth = sidebarOpen ? 'calc(100% - 208px)' : 'calc(100% - 64px)';
+        // xl breakpoint - increased sidebar width
+        marginLeft = sidebarOpen ? '256px' : '64px'; // w-64 = 256px
+        contentWidth = sidebarOpen ? 'calc(100% - 256px)' : 'calc(100% - 64px)';
       } else if (width >= 1024) {
-        // lg breakpoint
-        marginLeft = sidebarOpen ? '192px' : '56px';
-        contentWidth = sidebarOpen ? 'calc(100% - 192px)' : 'calc(100% - 56px)';
+        // lg breakpoint - increased sidebar width
+        marginLeft = sidebarOpen ? '224px' : '56px'; // w-56 = 224px
+        contentWidth = sidebarOpen ? 'calc(100% - 224px)' : 'calc(100% - 56px)';
       } else {
         // Mobile - no sidebar margin
         marginLeft = '0px';
@@ -3884,7 +3884,7 @@ const ManagerDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-48 sm:w-52 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-56 sm:w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
         <div className={`p-3 sm:p-4 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
@@ -3902,28 +3902,28 @@ const ManagerDashboard = () => {
               <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
-          {/* Collapse button - only show when sidebar is open, hide expand button on dashboard */}
+          {/* Collapse button - only show when sidebar is open, hide expand button on dashboard/venue-dashboard */}
           {sidebarOpen ? (
             <button
               onClick={() => {
-                // Allow collapse on all tabs except dashboard (dashboard sidebar always collapsed)
-                if (activeTab !== 'dashboard') {
+                // Allow collapse on all tabs except dashboard/venue-dashboard (sidebar always collapsed on these tabs)
+                if (activeTab !== 'dashboard' && activeTab !== 'venue-dashboard') {
                   setSidebarOpen(false);
                 }
               }}
-              className={`p-2 hover:bg-blue-700 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={activeTab === 'dashboard' ? 'Sidebar cannot be collapsed on dashboard' : 'Collapse sidebar'}
-              disabled={activeTab === 'dashboard'}
+              className={`p-2 hover:bg-blue-700 rounded-lg transition-colors ${(activeTab === 'dashboard' || activeTab === 'venue-dashboard') ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={(activeTab === 'dashboard' || activeTab === 'venue-dashboard') ? 'Sidebar cannot be collapsed on dashboard' : 'Collapse sidebar'}
+              disabled={activeTab === 'dashboard' || activeTab === 'venue-dashboard'}
             >
               <Menu className="w-5 h-5" />
             </button>
           ) : (
-            // Show expand button only if NOT on dashboard tab
-            activeTab !== 'dashboard' && (
+            // Show expand button only if NOT on dashboard/venue-dashboard tab
+            activeTab !== 'dashboard' && activeTab !== 'venue-dashboard' && (
               <button
                 onClick={() => {
-                  // Double-check: don't allow expansion on dashboard
-                  if (activeTab !== 'dashboard') {
+                  // Double-check: don't allow expansion on dashboard/venue-dashboard
+                  if (activeTab !== 'dashboard' && activeTab !== 'venue-dashboard') {
                     setSidebarOpen(true);
                   }
                 }}
@@ -3947,8 +3947,8 @@ const ManagerDashboard = () => {
                   key={tab.id}
                   onClick={() => {
                     setActiveTab(tab.id);
-                    // Force close sidebar ALWAYS when switching to dashboard tab
-                    if (tab.id === 'dashboard') {
+                    // Force close sidebar ALWAYS when switching to dashboard or venue-dashboard tab
+                    if (tab.id === 'dashboard' || tab.id === 'venue-dashboard') {
                       setSidebarOpen(false);
                     } else {
                       // Close sidebar on mobile after selection (for non-dashboard tabs)
