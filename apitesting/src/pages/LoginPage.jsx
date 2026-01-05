@@ -84,6 +84,16 @@ const LoginPage = () => {
           
           loginAttempts.push(errorDetails);
           
+          // Network errors (timeout, connection refused, etc.) - stop trying other roles
+          if (!error.response) {
+            console.error(`❌ [${role.toUpperCase()}] Network error - stopping role detection`);
+            console.error(`   Error message: ${error.message}`);
+            console.error(`   Error code: ${error.code || 'UNKNOWN'}`);
+            console.error(`   This indicates a connection issue (backend not reachable or timeout)`);
+            lastError = error;
+            break; // Stop trying other roles on network errors
+          }
+          
           // 500 errors indicate server issues - stop trying other roles
           if (error.response?.status === 500) {
             console.error(`❌ [${role.toUpperCase()}] Server error (500) - stopping role detection`);

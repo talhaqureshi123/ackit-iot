@@ -26,7 +26,7 @@ const BACKEND_IP =
   rootEnv.VITE_BACKEND_IP ||
   configEnv.VITE_BACKEND_IP ||
   process.env.VITE_BACKEND_IP ||
-  "192.168.0.101";
+  "10.39.58.140";
 const BACKEND_PORT = "5050";
 
 // Backend base URL - prefer Railway URL in production, always use local IP in development

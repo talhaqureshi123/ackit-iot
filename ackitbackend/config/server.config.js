@@ -25,7 +25,7 @@ function getServerIP() {
       }
     }
   }
-  return "192.168.0.101"; // Fallback IP (change this if needed)
+  return "10.39.58.140"; // Fallback IP (change this if needed)
 }
 
 // Auto-detect server IP, or use environment variable, or fallback to current IP
