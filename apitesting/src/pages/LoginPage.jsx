@@ -52,8 +52,9 @@ const LoginPage = () => {
       console.log('   Will try roles in order:', allRoles);
       console.log('   Total roles to try:', allRoles.length);
 
-      // Try all roles sequentially - stop on first success
-      for (let i = 0; i < allRoles.length; i++) {
+      // Try all roles sequentially - stop on first success or server error
+      let shouldStop = false;
+      for (let i = 0; i < allRoles.length && !shouldStop; i++) {
         const role = allRoles[i];
         console.log(`\n🔐 [${i + 1}/${allRoles.length}] Trying ${role.toUpperCase()} login...`);
         
@@ -65,7 +66,8 @@ const LoginPage = () => {
             detectedRole = role;
             console.log(`✅ [${role.toUpperCase()}] Login successful! Role: ${role}`);
             loginAttempts.push({ role, success: true, attempt: i + 1 });
-            break; // Stop immediately on success
+            shouldStop = true; // Stop immediately on success
+            break;
           } else {
             console.log(`⚠️ [${role.toUpperCase()}] Login returned but success=false`);
             console.log(`   Response:`, result);
@@ -91,6 +93,7 @@ const LoginPage = () => {
             console.error(`   Error code: ${error.code || 'UNKNOWN'}`);
             console.error(`   This indicates a connection issue (backend not reachable or timeout)`);
             lastError = error;
+            shouldStop = true;
             break; // Stop trying other roles on network errors
           }
           
@@ -98,12 +101,14 @@ const LoginPage = () => {
           const errorStatus = error.response?.status || error.status || (error.response ? 500 : null);
           
           // 500 errors indicate server issues - stop trying other roles
-          if (errorStatus === 500 || errorStatus === '500') {
+          if (errorStatus === 500 || errorStatus === '500' || errorStatus === 500) {
             console.error(`❌ [${role.toUpperCase()}] Server error (500) - stopping role detection`);
             console.error(`   Error message: ${error.response?.data?.message || error.message}`);
             console.error(`   Error status: ${errorStatus}`);
             console.error(`   This indicates a backend issue, not a wrong role`);
             lastError = error;
+            shouldStop = true;
+            toast.error("Server error. Please try again later or contact support.");
             break; // Stop trying other roles on server errors
           }
           
@@ -145,6 +150,7 @@ const LoginPage = () => {
                 console.log(`   → ${role.toUpperCase()} login failed (email exists but password/status issue), stopping role detection`);
                 console.log(`   → Email is registered as ${role.toUpperCase()}, not trying other roles`);
                 console.log(`   → Debug info:`, debugInfo);
+                shouldStop = true;
                 break; // Stop trying other roles
               } else {
                 // For other roles, continue if not found
@@ -157,11 +163,13 @@ const LoginPage = () => {
           } else {
             // Other errors - check if it's a server error (500) that we might have missed
             const otherErrorStatus = error.response?.status || error.status;
-            if (otherErrorStatus === 500 || otherErrorStatus === '500') {
+            if (otherErrorStatus === 500 || otherErrorStatus === '500' || otherErrorStatus === 500) {
               console.error(`❌ [${role.toUpperCase()}] Server error (500) detected in else block - stopping role detection`);
               console.error(`   Error message: ${error.message}`);
               console.error(`   Error status: ${otherErrorStatus}`);
               lastError = error;
+              shouldStop = true;
+              toast.error("Server error. Please try again later or contact support.");
               break; // Stop trying other roles on server errors
             }
             
@@ -174,7 +182,7 @@ const LoginPage = () => {
             lastError = error;
             
             // For non-401/500 errors, still try next role (might be network issue or other recoverable error)
-            if (i < allRoles.length - 1) {
+            if (i < allRoles.length - 1 && !shouldStop) {
               console.log(`   → Continuing to next role despite error...`);
             }
           }
