@@ -8,11 +8,21 @@
  */
 
 import axios from 'axios';
-import { BACKEND_IP } from '../config/api';
+import { BACKEND_BASE_URL, API_BASE_URL } from '../config/api';
+
+// Determine API base URL based on environment
+// Production: Use full backend URL (Railway)
+// Development: Use Vite proxy (/api)
+const isProduction =
+  import.meta.env.PROD || import.meta.env.MODE === "production";
+const UNIFIED_API_BASE = isProduction
+  ? `${BACKEND_BASE_URL}/api/auth` // Production: Full backend URL
+  : "/api/auth"; // Development: Vite proxy
 
 // Create axios instance for unified auth
 const apiUnified = axios.create({
-  baseURL: `/api/auth`, // Use proxy
+  baseURL: UNIFIED_API_BASE,
+  timeout: 30000,
   withCredentials: true, // Important for cookies
   headers: {
     'Content-Type': 'application/json',

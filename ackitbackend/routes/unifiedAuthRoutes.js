@@ -55,59 +55,107 @@ router.post("/login", async (req, res) => {
     let userRole = null;
     let userType = null;
 
+    // Search in all three tables (order: superadmin, admin, manager)
+    // IMPORTANT: Check ALL tables, don't stop early
+    
     // 1. Check SuperAdmin
     console.log("🔍 [1/3] Checking SuperAdmin table...");
-    let superAdmin = await SuperAdmin.findOne({
-      where: Sequelize.where(
-        Sequelize.fn("LOWER", Sequelize.col("email")),
-        trimmedEmail.toLowerCase()
-      ),
-    });
-
-    if (superAdmin) {
-      console.log("✅ Found in SuperAdmin table");
-      user = superAdmin;
-      userRole = "superadmin";
-      userType = "SuperAdmin";
-    } else {
-      // 2. Check Admin
-      console.log("🔍 [2/3] Checking Admin table...");
-      let admin = await Admin.findOne({
+    try {
+      let superAdmin = await SuperAdmin.findOne({
         where: Sequelize.where(
           Sequelize.fn("LOWER", Sequelize.col("email")),
           trimmedEmail.toLowerCase()
         ),
       });
 
-      if (admin) {
-        console.log("✅ Found in Admin table");
-        user = admin;
-        userRole = "admin";
-        userType = "Admin";
+      if (superAdmin) {
+        console.log("✅ Found in SuperAdmin table");
+        console.log(`   SuperAdmin ID: ${superAdmin.id}, Email: ${superAdmin.email}`);
+        user = superAdmin;
+        userRole = "superadmin";
+        userType = "SuperAdmin";
       } else {
-        // 3. Check Manager
-        console.log("🔍 [3/3] Checking Manager table...");
+        console.log("   ❌ Not found in SuperAdmin table");
+      }
+    } catch (superAdminError) {
+      console.error("❌ Error checking SuperAdmin table:", superAdminError.message);
+      // Continue to check other tables
+    }
+
+    // 2. Check Admin (only if not found in SuperAdmin)
+    if (!user) {
+      console.log("🔍 [2/3] Checking Admin table...");
+      try {
+        let admin = await Admin.findOne({
+          where: Sequelize.where(
+            Sequelize.fn("LOWER", Sequelize.col("email")),
+            trimmedEmail.toLowerCase()
+          ),
+        });
+
+        if (admin) {
+          console.log("✅ Found in Admin table");
+          console.log(`   Admin ID: ${admin.id}, Email: ${admin.email}, Status: ${admin.status}`);
+          user = admin;
+          userRole = "admin";
+          userType = "Admin";
+        } else {
+          console.log("   ❌ Not found in Admin table");
+        }
+      } catch (adminError) {
+        console.error("❌ Error checking Admin table:", adminError.message);
+        // Continue to check Manager table
+      }
+    } else {
+      console.log("   ⏭️ Skipping Admin check (already found in SuperAdmin)");
+    }
+
+    // 3. Check Manager (only if not found in SuperAdmin or Admin)
+    if (!user) {
+      console.log("🔍 [3/3] Checking Manager table...");
+      try {
+        // First try without include to avoid association errors
         let manager = await Manager.findOne({
           where: Sequelize.where(
             Sequelize.fn("LOWER", Sequelize.col("email")),
             trimmedEmail.toLowerCase()
           ),
-          include: [
-            {
-              model: Admin,
-              as: "admin",
-              attributes: ["id", "name", "email", "status"],
-            },
-          ],
         });
 
+        // If found, get admin info separately if needed
         if (manager) {
           console.log("✅ Found in Manager table");
+          console.log(`   Manager ID: ${manager.id}, Email: ${manager.email}, Status: ${manager.status}`);
+          
+          // Get admin info if needed (for status check)
+          try {
+            if (manager.adminId) {
+              const adminInfo = await Admin.findByPk(manager.adminId, {
+                attributes: ["id", "name", "email", "status"],
+              });
+              if (adminInfo) {
+                manager.admin = adminInfo;
+                console.log(`   Manager's Admin: ${adminInfo.email}, Status: ${adminInfo.status}`);
+              }
+            }
+          } catch (adminFetchError) {
+            console.warn("⚠️ Could not fetch admin info for manager:", adminFetchError.message);
+            // Non-critical, continue
+          }
+          
           user = manager;
           userRole = "manager";
           userType = "Manager";
+        } else {
+          console.log("   ❌ Not found in Manager table");
         }
+      } catch (managerError) {
+        console.error("❌ Error checking Manager table:", managerError.message);
+        console.error("   Manager error stack:", managerError.stack);
+        console.error("   Full error:", managerError);
       }
+    } else {
+      console.log(`   ⏭️ Skipping Manager check (already found in ${userType})`);
     }
 
     // User not found in any table
