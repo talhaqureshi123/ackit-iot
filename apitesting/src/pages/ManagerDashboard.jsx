@@ -3302,7 +3302,7 @@ const ManagerDashboard = () => {
 
             {/* Organizations Energy Consumption */}
             {energyViewMode === 'organization' && (
-            <div>
+            <div className="w-full max-w-full overflow-x-hidden">
                 {!hasOrganizations ? (
                   <div className="bg-yellow-50 border-l-4 border-yellow-400 rounded-lg p-6">
                     <div className="flex items-start">
@@ -4031,8 +4031,8 @@ const ManagerDashboard = () => {
       </header>
 
         {/* Content */}
-        <main className={`${sidebarOpen ? 'pl-2 sm:pl-3' : 'pl-4 sm:pl-6'} pr-4 sm:pr-6 pt-4 sm:pt-6 pb-4 sm:pb-6 w-full overflow-x-hidden`}>
-          <div className="w-full max-w-none">
+        <main className={`${sidebarOpen ? 'pl-2 sm:pl-3' : 'pl-4 sm:pl-6'} pr-4 sm:pr-6 pt-4 sm:pt-6 pb-4 sm:pb-6 w-full overflow-x-hidden`} style={{ maxWidth: '100%' }}>
+          <div className="w-full max-w-full overflow-x-hidden">
             {/* Main Content */}
           {renderContent()}
         </div>
