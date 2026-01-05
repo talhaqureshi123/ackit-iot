@@ -516,6 +516,49 @@ class ESPService {
     console.log("🌐 [FRONTEND] Frontend connected");
     this.frontendConnections.add(ws);
     this.frontendSubscriptions.set(ws, new Set());
+    
+    // Send current list of connected devices to newly connected frontend
+    // This ensures dashboard shows correct connection status immediately
+    const connectedDevicesList = Array.from(this.esp32Connections.keys());
+    if (connectedDevicesList.length > 0) {
+      console.log(`📤 [FRONTEND] Sending ${connectedDevicesList.length} connected device(s) to new frontend client`);
+      connectedDevicesList.forEach(async (serialNumber) => {
+        const metadata = this.deviceMetadata.get(serialNumber);
+        if (metadata) {
+          // Send DEVICE_CONNECTED event for each already-connected device
+          const eventData = {
+            type: "DEVICE_CONNECTED",
+            timestamp: new Date().toISOString(),
+            deviceId: metadata.deviceId,
+            venueId: metadata.venueId,
+            organizationId: metadata.organizationId,
+            serialNumber: serialNumber,
+            deviceName: metadata.deviceName,
+            venueName: metadata.venueName,
+            organizationName: metadata.organizationName,
+            message: `Device ${metadata.deviceName || serialNumber} is CONNECTED`,
+          };
+          // Send directly to this frontend client
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(eventData));
+            console.log(`✅ [FRONTEND] Sent DEVICE_CONNECTED for ${serialNumber} to new frontend client`);
+          }
+        } else {
+          // Fallback: send basic CONNECTED message if metadata not available
+          const eventData = {
+            type: "CONNECTED",
+            serial: serialNumber,
+            serialNumber: serialNumber,
+          };
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(eventData));
+            console.log(`✅ [FRONTEND] Sent CONNECTED for ${serialNumber} to new frontend client (no metadata)`);
+          }
+        }
+      });
+    } else {
+      console.log("📤 [FRONTEND] No devices currently connected");
+    }
 
     ws.on("message", async (msg) => {
       try {
