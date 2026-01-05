@@ -70,7 +70,33 @@ class ManagerAuth {
             reject(err);
           } else {
             console.log("✅ Manager session saved successfully");
-            resolve();
+            console.log("   - req.sessionID (express-session ID):", req.sessionID);
+            console.log("   - req.session.sessionId (custom ID):", req.session.sessionId);
+            console.log("   - req.session.user:", req.session.user);
+            
+            // Verify session was saved to store
+            const sessionStore = req.app?.get("sessionStore");
+            if (sessionStore && sessionStore.get) {
+              sessionStore.get(req.sessionID, (storeErr, storeData) => {
+                if (storeErr) {
+                  console.error("❌ Error verifying session in store:", storeErr);
+                } else if (storeData) {
+                  console.log("✅ Session verified in store:", {
+                    hasSessionId: !!storeData.sessionId,
+                    hasUser: !!storeData.user,
+                    sessionId: storeData.sessionId,
+                    userRole: storeData.user?.role,
+                  });
+                } else {
+                  console.warn("⚠️ Session not found in store after save!");
+                  console.warn("   This might indicate a session store issue.");
+                }
+                resolve();
+              });
+            } else {
+              console.warn("⚠️ Session store not available for verification");
+              resolve();
+            }
           }
         });
       });
@@ -111,36 +137,60 @@ class ManagerAuth {
   // Authenticate manager JWT token
   static async authenticateManager(req, res, next) {
     try {
+      // Log cookie information first
+      const cookieHeader = req.headers.cookie || "";
+      const hasAckitSidCookie = cookieHeader.includes("ackit.sid");
+      const cookieMatch = cookieHeader.match(/ackit\.sid=([^;]+)/);
+      const cookieSessionId = cookieMatch ? cookieMatch[1] : null;
+      
       console.log("🔐 Manager Auth - Session check:");
+      console.log("- Request URL:", req.method, req.path);
+      console.log("- Cookie header exists:", !!cookieHeader);
+      console.log("- Cookie header value:", cookieHeader || "(none)");
+      console.log("- Has ackit.sid cookie:", hasAckitSidCookie);
+      console.log("- Cookie session ID:", cookieSessionId || "(not found)");
       console.log("- req.session exists:", !!req.session);
       console.log("- req.session.sessionId:", req.session?.sessionId);
       console.log("- req.session.user:", req.session?.user);
       console.log("- req.sessionID:", req.sessionID);
+      console.log("- req.headers.origin:", req.headers.origin);
+      console.log("- req.headers.referer:", req.headers.referer);
 
       // Check if session exists
       if (!req.session) {
         console.log("❌ Session validation failed - no session object");
+        console.log("   This usually means express-session middleware didn't create a session");
+        console.log("   Check if cookie was sent and if session middleware is configured correctly");
         return res.status(401).json({
           success: false,
           message: "Access denied. Please login first.",
         });
+      }
+      
+      // If cookie is not being sent, log a warning
+      if (!hasAckitSidCookie) {
+        console.warn("⚠️ WARNING: ackit.sid cookie not found in request headers!");
+        console.warn("   This means the browser is not sending the cookie.");
+        console.warn("   Possible reasons:");
+        console.warn("   1. Cookie was never set during login");
+        console.warn("   2. Cookie was set with wrong attributes (domain, path, SameSite, Secure)");
+        console.warn("   3. Browser is blocking the cookie");
+        console.warn("   4. Cookie expired or was deleted");
       }
 
       // CRITICAL FIX: If session exists but custom data is missing, reload from database
       // This happens when express-session loads a new empty session instead of the one from cookie
       if (req.session && req.sessionID && (!req.session.sessionId || !req.session.user)) {
         console.log("⚠️ Session exists but custom data missing - reloading from store");
-        console.log("   Cookie session ID:", req.headers.cookie?.match(/ackit\.sid=([^;]+)/)?.[1]);
-        console.log("   req.sessionID:", req.sessionID);
+        console.log("   Cookie session ID (raw):", req.headers.cookie?.match(/ackit\.sid=([^;]+)/)?.[1]);
+        console.log("   req.sessionID (correct UUID):", req.sessionID);
         
-        // Extract session ID from cookie header
-        const cookieMatch = req.headers.cookie?.match(/ackit\.sid=([^;]+)/);
-        const cookieSessionId = cookieMatch ? cookieMatch[1] : null;
+        // CRITICAL: Always use req.sessionID, not the cookie value
+        // express-session already extracts the UUID from the signed cookie
+        // The cookie value includes signature (s:UUID.signature), but the store uses just UUID
+        const sessionIdToLoad = req.sessionID;
         
-        // Use cookie session ID if available, otherwise use req.sessionID
-        const sessionIdToLoad = cookieSessionId || req.sessionID;
-        
-        console.log("   Attempting to load session:", sessionIdToLoad);
+        console.log("   Attempting to load session from store with ID:", sessionIdToLoad);
         
         try {
           const sessionStore = req.app.get("sessionStore");
@@ -149,13 +199,16 @@ class ManagerAuth {
               sessionStore.get(sessionIdToLoad, (err, sessionData) => {
                 if (err) {
                   console.error("❌ Error loading session from store:", err);
+                  console.error("   Error details:", err.message);
+                  console.error("   Session ID used:", sessionIdToLoad);
                   reject(err);
                 } else if (sessionData) {
                   console.log("📦 Session data loaded from store:", {
                     hasSessionId: !!sessionData.sessionId,
                     hasUser: !!sessionData.user,
                     sessionId: sessionData.sessionId,
-                    user: sessionData.user
+                    user: sessionData.user,
+                    allKeys: Object.keys(sessionData || {}),
                   });
                   
                   // Restore custom properties
@@ -166,32 +219,60 @@ class ManagerAuth {
                     req.session.user = sessionData.user;
                   }
                   
-                  // Also ensure req.sessionID is correctly set for express-session
-                  req.sessionID = sessionIdToLoad;
-                  
-                  // Mark as modified and save
+                  // Mark as modified and save to ensure it persists
                   if (req.session.touch) {
                     req.session.touch();
                   }
                   
-                  console.log("✅ Session reloaded successfully");
-                  console.log("   - sessionId:", req.session.sessionId);
-                  console.log("   - user:", req.session.user);
+                  // Save the session again to ensure it's persisted
+                  req.session.save((saveErr) => {
+                    if (saveErr) {
+                      console.error("❌ Error saving reloaded session:", saveErr);
+                    } else {
+                      console.log("✅ Session reloaded and re-saved successfully");
+                      console.log("   - sessionId:", req.session.sessionId);
+                      console.log("   - user:", req.session.user);
+                    }
+                    resolve();
+                  });
                 } else {
                   console.log("❌ No session data found in store for ID:", sessionIdToLoad);
                   console.log("   This means:");
                   console.log("   1. Session was never saved during login");
                   console.log("   2. Session expired or was deleted");
                   console.log("   3. Session ID mismatch");
+                  console.log("   → User needs to login again");
+                  
+                  // Try to check if session exists with a different format
+                  console.log("   Attempting to check session store directly...");
+                  if (sessionStore.all) {
+                    sessionStore.all((allErr, allSessions) => {
+                      if (!allErr && allSessions) {
+                        console.log("   Total sessions in store:", Object.keys(allSessions || {}).length);
+                        const matchingSession = Object.values(allSessions || {}).find(
+                          (s) => s && (s.sessionId === sessionIdToLoad || s.sess?.sessionId === sessionIdToLoad)
+                        );
+                        if (matchingSession) {
+                          console.log("   ✅ Found session with different structure!");
+                          console.log("   Session structure:", Object.keys(matchingSession));
+                        }
+                      }
+                      resolve();
+                    });
+                  } else {
+                    resolve();
+                  }
                 }
-                resolve();
               });
             });
           } else {
             console.log("⚠️ Session store not available for reload");
+            console.log("   req.app exists:", !!req.app);
+            console.log("   sessionStore exists:", !!req.app?.get("sessionStore"));
           }
         } catch (reloadError) {
           console.error("❌ Failed to reload session:", reloadError);
+          console.error("   Error stack:", reloadError.stack);
         }
       }
 

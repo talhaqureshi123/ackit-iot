@@ -286,20 +286,69 @@ router.post("/login", async (req, res) => {
     } else if (userRole === "manager") {
       token = ManagerAuth.generateToken(user);
       await ManagerAuth.createSession(req, user);
-      
-      // Ensure session is saved before setting cookie
-      await new Promise((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) {
-            console.error("❌ Manager session save error in unified login:", err);
-            reject(err);
-          } else {
-            console.log("✅ Manager session saved in unified login");
-            resolve();
-          }
+
+      // createSession already saves the session, but verify it's still there
+      // and ensure it's persisted before setting cookie
+      if (!req.session.sessionId || !req.session.user) {
+        console.error("❌ CRITICAL: Session data missing after createSession!");
+        console.error("   - req.session.sessionId:", req.session.sessionId);
+        console.error("   - req.session.user:", req.session.user);
+        throw new Error("Session data not properly saved during login");
+      }
+
+      // Verify session is in store (createSession already does this, but double-check)
+      const sessionStore = req.app?.get("sessionStore");
+      if (sessionStore && sessionStore.get) {
+        await new Promise((resolve) => {
+          sessionStore.get(req.sessionID, (storeErr, storeData) => {
+            if (storeErr) {
+              console.error(
+                "❌ Error verifying manager session in store:",
+                storeErr
+              );
+            } else if (storeData) {
+              console.log("✅ Manager session verified in store:", {
+                hasSessionId: !!storeData.sessionId,
+                hasUser: !!storeData.user,
+                userRole: storeData.user?.role,
+                allKeys: Object.keys(storeData || {}),
+              });
+
+              // If session data is missing from store, restore it
+              if (!storeData.sessionId || !storeData.user) {
+                console.warn("⚠️ Session data missing in store, restoring...");
+                req.session.sessionId = req.session.sessionId;
+                req.session.user = req.session.user;
+                req.session.save((saveErr) => {
+                  if (saveErr) {
+                    console.error("❌ Error re-saving session:", saveErr);
+                  } else {
+                    console.log("✅ Session data restored and re-saved");
+                  }
+                  resolve();
+                });
+              } else {
+                resolve();
+              }
+            } else {
+              console.warn(
+                "⚠️ Manager session not found in store after createSession!"
+              );
+              console.warn("   Session ID:", req.sessionID);
+              console.warn("   Re-saving session...");
+              req.session.save((saveErr) => {
+                if (saveErr) {
+                  console.error("❌ Error re-saving session:", saveErr);
+                } else {
+                  console.log("✅ Session re-saved");
+                }
+                resolve();
+              });
+            }
+          });
         });
-      });
-      
+      }
+
       userData = {
         id: user.id,
         name: user.name,
@@ -331,52 +380,119 @@ router.post("/login", async (req, res) => {
     // Explicitly set session cookie (same logic as individual login routes)
     const cookieName = req.session.cookie.name || "ackit.sid";
     const requestOrigin = req.headers.origin || req.headers.referer || "";
-    const isLocalhost =
+    const requestHost = req.headers.host || "";
+    const requestUrl = req.url || "";
+
+    // Detect localhost more reliably
+    // Check origin, host, and URL for localhost indicators
+    const isLocalhostOrigin =
       requestOrigin.includes("localhost") ||
       requestOrigin.includes("127.0.0.1");
-    const isRailway =
+    const isLocalhostHost =
+      requestHost.includes("localhost") ||
+      requestHost.includes("127.0.0.1") ||
+      requestHost.includes(":5050");
+    const isLocalhostUrl =
+      requestUrl.includes("localhost") || requestUrl.includes("127.0.0.1");
+    const isLocalhost = isLocalhostOrigin || isLocalhostHost || isLocalhostUrl;
+
+    // Detect Railway
+    const isRailwayOrigin =
       requestOrigin.includes(".railway.app") ||
       requestOrigin.includes(".up.railway.app");
+    const isRailwayHost =
+      requestHost.includes(".railway.app") ||
+      requestHost.includes(".up.railway.app");
+    const isRailway = isRailwayOrigin || isRailwayHost;
+
     const isProduction = process.env.NODE_ENV === "production";
+    const backendIsHTTPS =
+      req.protocol === "https" || req.headers["x-forwarded-proto"] === "https";
 
     console.log("🔐 Unified Login - Cookie settings:");
     console.log("   Request origin:", requestOrigin);
-    console.log("   Is localhost:", isLocalhost);
+    console.log("   Request host:", requestHost);
+    console.log("   Request URL:", requestUrl);
+    console.log("   Is localhost (origin):", isLocalhostOrigin);
+    console.log("   Is localhost (host):", isLocalhostHost);
+    console.log("   Is localhost (url):", isLocalhostUrl);
+    console.log("   Is localhost (combined):", isLocalhost);
     console.log("   Is Railway:", isRailway);
     console.log("   Is production:", isProduction);
+    console.log("   Backend is HTTPS:", backendIsHTTPS);
+    console.log("   Protocol:", req.protocol);
+    console.log("   X-Forwarded-Proto:", req.headers["x-forwarded-proto"]);
 
     // Determine cookie settings based on origin
+    // CRITICAL: For cross-origin requests, we need SameSite=None and Secure=true
+    // This handles both local development (localhost -> Railway) and production (Railway -> Railway)
     let cookieSecure = false;
     let cookieSameSite = "lax";
 
-    if (isLocalhost) {
+    // PRIORITY 1: If backend host is localhost (regardless of origin), use localhost settings
+    // This handles Vite proxy cases where origin might be different
+    if (isLocalhostHost || (!backendIsHTTPS && isLocalhost)) {
       cookieSecure = false;
       cookieSameSite = "lax";
       console.log(
-        "🔐 Unified Login - Setting cookie for localhost (no Secure, SameSite=Lax)"
+        "🔐 Unified Login - [LOCAL] Same-origin (localhost backend detected): Secure=false, SameSite=Lax"
       );
-    } else if (isRailway && !isLocalhost) {
+      console.log(
+        "   Note: Using localhost settings because backend host is localhost"
+      );
+    }
+    // Case 1: Cross-origin - localhost frontend -> HTTPS Railway backend (Development)
+    else if (isLocalhost && backendIsHTTPS) {
       cookieSecure = true;
       cookieSameSite = "none";
       console.log(
-        "🔐 Unified Login - Setting cookie for Railway frontend (Secure, SameSite=None)"
+        "🔐 Unified Login - [DEV] Cross-origin (localhost -> Railway HTTPS): Secure=true, SameSite=None"
       );
-    } else if (isProduction && !isLocalhost) {
-      cookieSecure = true;
-      cookieSameSite = "none";
-      console.log(
-        "🔐 Unified Login - Setting cookie for production (Secure, SameSite=None)"
-      );
-    } else {
-      // Development: Backend on Railway, Frontend on localhost
+    }
+    // Case 2: Same-origin - localhost frontend -> localhost backend (Local Development)
+    // NOTE: Even if ports differ (3000 vs 5050), if using Vite proxy, it's same-origin
+    else if (isLocalhost && !backendIsHTTPS) {
       cookieSecure = false;
       cookieSameSite = "lax";
       console.log(
-        "🔐 Unified Login - Setting cookie for development (local frontend, Railway backend)"
+        "🔐 Unified Login - [LOCAL] Same-origin (localhost -> localhost): Secure=false, SameSite=Lax"
+      );
+      console.log(
+        "   Note: If frontend uses Vite proxy (/api), requests are same-origin and cookies work with SameSite=Lax"
+      );
+    }
+    // Case 3: Production - Railway frontend -> Railway backend (Same-origin or cross-subdomain)
+    else if (isRailway || (isProduction && backendIsHTTPS)) {
+      cookieSecure = true;
+      cookieSameSite = "none";
+      console.log(
+        "🔐 Unified Login - [PROD] Railway/Production (HTTPS): Secure=true, SameSite=None"
+      );
+    }
+    // Case 4: Fallback - Use secure settings if backend is HTTPS
+    else {
+      cookieSecure = backendIsHTTPS;
+      cookieSameSite = backendIsHTTPS ? "none" : "lax";
+      console.log(
+        `🔐 Unified Login - [FALLBACK] Secure=${cookieSecure}, SameSite=${cookieSameSite}`
       );
     }
 
+    // Ensure session is saved one final time before setting cookie
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error("❌ Final unified session save error:", err);
+          reject(err);
+        } else {
+          console.log("✅ Final unified session save completed before cookie");
+          resolve();
+        }
+      });
+    });
+
     // Explicitly set the session cookie
+    // CRITICAL: This overrides the session middleware's default cookie settings
     res.cookie(cookieName, req.sessionID, {
       path: "/",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
@@ -386,6 +502,16 @@ router.post("/login", async (req, res) => {
       domain: undefined, // Don't set domain for cross-origin
     });
 
+    // Also update the session cookie object to match (for future requests)
+    if (req.session && req.session.cookie) {
+      req.session.cookie.secure = cookieSecure;
+      req.session.cookie.sameSite = cookieSameSite;
+    }
+
+    // Verify cookie was set in response headers
+    const setCookieHeader = res.getHeader("set-cookie");
+    const allHeaders = res.getHeaders();
+
     console.log(
       `🔐 Unified Login - Cookie set: ${cookieName}=${req.sessionID}`
     );
@@ -394,6 +520,54 @@ router.post("/login", async (req, res) => {
       sameSite: cookieSameSite,
       httpOnly: true,
       path: "/",
+      domain: undefined,
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+    console.log("🔐 Unified Login - Set-Cookie header:", setCookieHeader);
+    console.log(
+      "🔐 Unified Login - All response headers:",
+      Object.keys(allHeaders)
+    );
+
+    // Verify the Set-Cookie header contains the expected values
+    if (setCookieHeader) {
+      const setCookieStr = Array.isArray(setCookieHeader)
+        ? setCookieHeader.join("; ")
+        : setCookieHeader;
+      console.log("🔐 Unified Login - Set-Cookie string:", setCookieStr);
+      console.log(
+        "🔐 Unified Login - Cookie contains Secure:",
+        setCookieStr.includes("Secure")
+      );
+      console.log(
+        "🔐 Unified Login - Cookie contains SameSite:",
+        setCookieStr.includes("SameSite")
+      );
+      console.log(
+        "🔐 Unified Login - Cookie contains HttpOnly:",
+        setCookieStr.includes("HttpOnly")
+      );
+      console.log(
+        "🔐 Unified Login - Cookie contains Path:",
+        setCookieStr.includes("Path=")
+      );
+    } else {
+      console.error("❌ Unified Login - Set-Cookie header is missing!");
+      console.error("   This means the cookie was not set in the response.");
+      console.error("   Check if res.cookie() was called correctly.");
+    }
+
+    console.log("🔐 Unified Login - Session data:", {
+      sessionId: req.session.sessionId,
+      userId: req.session.user?.id,
+      userRole: req.session.user?.role,
+    });
+    console.log("🔐 Unified Login - Session cookie object:", {
+      secure: req.session.cookie?.secure,
+      sameSite: req.session.cookie?.sameSite,
+      httpOnly: req.session.cookie?.httpOnly,
+      path: req.session.cookie?.path,
+      domain: req.session.cookie?.domain,
     });
 
     return res.status(200).json({

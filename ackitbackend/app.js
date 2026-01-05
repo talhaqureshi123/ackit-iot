@@ -118,6 +118,59 @@ try {
   console.log("✅ Using memory session store (fallback)");
 }
 
+// Dynamic cookie settings based on request origin
+// This allows cookies to work in both localhost (same-origin) and cross-origin scenarios
+const getCookieSettings = (req) => {
+  const requestOrigin = req.headers.origin || req.headers.referer || "";
+  const isLocalhost =
+    requestOrigin.includes("localhost") ||
+    requestOrigin.includes("127.0.0.1") ||
+    req.headers.host?.includes("localhost") ||
+    req.headers.host?.includes("127.0.0.1");
+  const isRailway =
+    requestOrigin.includes(".railway.app") ||
+    requestOrigin.includes(".up.railway.app") ||
+    req.headers.host?.includes(".railway.app") ||
+    req.headers.host?.includes(".up.railway.app");
+  const isProduction = process.env.NODE_ENV === "production";
+  const backendIsHTTPS =
+    req.protocol === "https" || req.headers["x-forwarded-proto"] === "https";
+
+  // Default settings for localhost (same-origin HTTP)
+  let cookieSecure = false;
+  let cookieSameSite = "lax";
+
+  // Case 1: Cross-origin - localhost frontend -> HTTPS Railway backend
+  if (isLocalhost && backendIsHTTPS) {
+    cookieSecure = true;
+    cookieSameSite = "none";
+  }
+  // Case 2: Same-origin - localhost frontend -> localhost backend (HTTP)
+  else if (isLocalhost && !backendIsHTTPS) {
+    cookieSecure = false;
+    cookieSameSite = "lax";
+  }
+  // Case 3: Production - Railway frontend -> Railway backend (HTTPS)
+  else if (isRailway || (isProduction && backendIsHTTPS)) {
+    cookieSecure = true;
+    cookieSameSite = "none";
+  }
+  // Case 4: Fallback - Use secure if backend is HTTPS
+  else {
+    cookieSecure = backendIsHTTPS;
+    cookieSameSite = backendIsHTTPS ? "none" : "lax";
+  }
+
+  return {
+    secure: cookieSecure,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: cookieSameSite,
+    path: "/",
+    domain: undefined, // Don't set domain for cross-origin
+  };
+};
+
 app.use(
   session({
     store: sessionStore,
@@ -127,17 +180,14 @@ app.use(
     saveUninitialized: true, // Save uninitialized sessions (needed for login to set cookie)
     rolling: true, // Reset expiration on each request
     cookie: {
-      // In production (Railway), use secure cookies with sameSite: "none" for cross-origin
-      // In development, use lax for same-origin
-      // Note: When frontend is on localhost (HTTP) and backend is on Railway (HTTPS),
-      // the cookie will be modified by Vite proxy to remove Secure flag
-      secure: process.env.NODE_ENV === "production", // HTTPS in production, HTTP in development
+      // Default cookie settings (will be overridden by res.cookie() in login routes)
+      // These are fallback settings for non-login requests
+      secure: false, // Default to false, will be set dynamically per request
       httpOnly: true, // Prevent XSS
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Allow cross-site in production
+      sameSite: "lax", // Default to lax, will be set dynamically per request
       path: "/", // Ensure cookie is sent for all paths
-      // Don't set domain - allows cookie to work with proxy and cross-origin
-      domain: undefined,
+      domain: undefined, // Don't set domain for cross-origin
     },
     // Force session to be saved even if not modified (helps with cross-origin)
     genid: (req) => {
@@ -148,6 +198,30 @@ app.use(
     name: "ackit.sid", // Custom session name
   })
 );
+
+// Middleware to dynamically update cookie settings based on request origin
+app.use((req, res, next) => {
+  if (req.session) {
+    const cookieSettings = getCookieSettings(req);
+    // Update session cookie settings dynamically
+    req.session.cookie.secure = cookieSettings.secure;
+    req.session.cookie.sameSite = cookieSettings.sameSite;
+    
+    // Log cookie settings for debugging (only on first request or login)
+    if (req.path.includes("/login") || req.path.includes("/auth/login")) {
+      console.log("🔐 Dynamic Cookie Settings:", {
+        path: req.path,
+        origin: req.headers.origin || req.headers.referer,
+        secure: cookieSettings.secure,
+        sameSite: cookieSettings.sameSite,
+        host: req.headers.host,
+        protocol: req.protocol,
+        forwardedProto: req.headers["x-forwarded-proto"],
+      });
+    }
+  }
+  next();
+});
 
 // Make sessionStore accessible globally for session invalidation
 app.set("sessionStore", sessionStore);

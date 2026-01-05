@@ -32,7 +32,18 @@ export const markManagerLogin = () => {
 // Request interceptor for session-based auth
 apiManager.interceptors.request.use(
   (config) => {
-    // Session is handled automatically by cookies
+    // Check if session cookie exists (httpOnly cookies won't be visible, but we can check if any cookies exist)
+    const cookies = document.cookie || "";
+    const hasSessionCookie = cookies.includes("ackit.sid");
+    
+    // Log cookie status for debugging (only on first request or if cookie is missing)
+    if (!hasSessionCookie && localStorage.getItem("user")) {
+      console.warn("⚠️ Manager API Request - Session cookie not found in document.cookie");
+      console.warn("  Note: httpOnly cookies may not be visible, but should still be sent automatically");
+      console.warn("  If requests fail with 401, the cookie may not be set or has wrong domain/path");
+    }
+    
+    // Session is handled automatically by cookies via withCredentials: true
     return config;
   },
   (error) => {
@@ -123,26 +134,72 @@ apiManager.interceptors.response.use(
       const hasUserData =
         !!storedUser && (!!storedRole || !!userRoleFromObject);
 
+      // Check cookies (note: httpOnly cookies won't be visible in document.cookie)
+      const cookies = document.cookie || "";
+      // Note: ackit.sid is httpOnly, so it won't appear in document.cookie
+      // But we can check if any cookies are being sent
+      const hasAnyCookies = cookies.length > 0;
+      
       // Log detailed error info for debugging
       console.error("🔴 Manager API - 401 Error Details:");
       console.error("  URL:", url);
       console.error("  Request Headers:", error.config?.headers);
       console.error("  Response:", error.response?.data);
-      console.error("  Cookies sent:", document.cookie);
+      console.error("  Cookies visible in document.cookie:", cookies || "(none)");
+      console.error("  Note: httpOnly cookies (ackit.sid) won't be visible here");
       console.error("  localStorage user:", localStorage.getItem("user"));
       console.error("  localStorage role:", localStorage.getItem("role"));
       console.error("  Time since login:", timeSinceLogin, "ms");
       console.error("  In grace period:", isInGracePeriod);
       console.error("  Has user data:", hasUserData);
 
-      // Don't auto-logout if we're in grace period after login OR if we have user data
-      if (isInGracePeriod || hasUserData) {
+      // CRITICAL: If we have user data but are getting 401s after grace period,
+      // it likely means the session cookie wasn't set or expired
+      // Check if it's been more than 1 minute since login (beyond grace period)
+      const SESSION_TIMEOUT_THRESHOLD = 60000; // 1 minute
+      const isBeyondGracePeriod = timeSinceLogin > SESSION_TIMEOUT_THRESHOLD;
+      
+      // If we have user data but are getting 401s and it's been more than 1 minute,
+      // the session likely expired or was never properly set
+      if (hasUserData && isBeyondGracePeriod && !isInGracePeriod) {
+        console.error("❌ 401 error with user data after grace period - session likely expired");
+        console.error("  Time since login:", Math.round(timeSinceLogin / 1000), "seconds");
+        console.error("  This indicates the session cookie was never set or has expired");
+        console.error("  Clearing localStorage and redirecting to login...");
+        
+        // Clear all auth data
+        localStorage.removeItem("user");
+        localStorage.removeItem("role");
+        localStorage.removeItem("sessionId");
+        localStorage.removeItem("loginTime");
+        
+        // Redirect to login with clear message
+        setTimeout(() => {
+          window.location.href = "/login?session=expired";
+        }, 100);
+        
+        return Promise.reject({
+          ...error,
+          isSessionExpired: true,
+          message: "Session expired. Please login again.",
+        });
+      }
+
+      // Don't auto-logout if we're in grace period after login
+      if (isInGracePeriod) {
         console.log(
-          `⚠️ Manager API - 401 error during login grace period or with user data, not logging out`
+          `⚠️ Manager API - 401 error during login grace period, not logging out`
         );
-        console.log(
-          `  Reason: ${isInGracePeriod ? "Grace period" : "Has user data"}`
+        return Promise.reject(error);
+      }
+      
+      // If we have user data but it's been less than 1 minute, might be a temporary issue
+      // Don't logout immediately, but log a warning
+      if (hasUserData && !isBeyondGracePeriod) {
+        console.warn(
+          `⚠️ Manager API - 401 error with user data (${Math.round(timeSinceLogin / 1000)}s since login)`
         );
+        console.warn("  This might be a temporary session issue. Not logging out yet.");
         return Promise.reject(error);
       }
 

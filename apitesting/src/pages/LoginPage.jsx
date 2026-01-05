@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
@@ -15,6 +15,20 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  
+  // Check for session expired parameter
+  useEffect(() => {
+    const sessionExpired = searchParams.get('session');
+    if (sessionExpired === 'expired') {
+      toast.error('Your session has expired. Please login again.', {
+        duration: 5000,
+        icon: '🔒',
+      });
+      // Clean up the URL
+      navigate('/login', { replace: true });
+    }
+  }, [searchParams, navigate]);
 
   const handleChange = (e) => {
     setFormData({
@@ -51,15 +65,15 @@ const LoginPage = () => {
       
       try {
         result = await unifiedLogin(trimmedEmail, trimmedPassword);
-        
+
         console.log('📥 LoginPage - Unified login response received:');
         console.log('   Full result:', result);
         console.log('   Result success:', result?.success);
         console.log('   Result role:', result?.role);
         console.log('   Result user:', result?.user);
         console.log('   Result user role:', result?.user?.role);
-        
-        if (result && result.success) {
+          
+          if (result && result.success) {
           // Backend has detected and returned the correct role
           // Try multiple ways to get the role
           detectedRole = result.role || result.user?.role || result.user?.role?.toLowerCase();

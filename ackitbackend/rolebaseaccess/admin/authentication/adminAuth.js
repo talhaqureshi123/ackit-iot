@@ -842,7 +842,7 @@ class AdminAuth {
           };
           
           // Add more details in development
-          if (process.env.NODE_ENV !== "production") {
+        if (process.env.NODE_ENV !== "production") {
             errorResponse.debug.environment = process.env.NODE_ENV || 'development';
             errorResponse.debug.passwordHashExists = !!admin?.password;
             errorResponse.debug.passwordHashLength = admin?.password ? admin.password.length : 0;
