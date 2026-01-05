@@ -1,4 +1,26 @@
 // Server entry point - ACKit Backend
+
+// Add global error handlers FIRST, before any other code
+process.on("uncaughtException", (error) => {
+  console.error("❌ UNCAUGHT EXCEPTION - Server will exit");
+  console.error("Error:", error);
+  console.error("Stack:", error.stack);
+  // Give time for logs to flush
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ UNHANDLED REJECTION - Server will exit");
+  console.error("Reason:", reason);
+  console.error("Promise:", promise);
+  // Give time for logs to flush
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
 const app = require("./app");
 const path = require("path");
 const http = require("http");
@@ -31,15 +53,29 @@ const server = http.createServer(app);
 // Initialize services through services gateway
 // IMPORTANT: Initialize WebSocket servers BEFORE Express routes
 // This ensures WebSocket upgrade requests are handled before Express intercepts them
-const Services = require("./services");
+try {
+  console.log("🔧 Initializing services...");
+  const Services = require("./services");
 
-// Initialize ESP service (native WebSocket server for ESP32 and frontend connections)
-// The WebSocket server will automatically handle upgrade requests for /esp32 and /frontend paths
-Services.initialize.esp(server);
+  // Initialize ESP service (native WebSocket server for ESP32 and frontend connections)
+  // The WebSocket server will automatically handle upgrade requests for /esp32 and /frontend paths
+  console.log("🔧 Initializing ESP service...");
+  Services.initialize.esp(server);
+  console.log("✅ ESP service initialized");
 
-// NOTE: No Express route on "/" to avoid conflicts with WebSocket on root path
-// WebSocket server handles all requests to "/" path
-// Use /health endpoint for server status checks
+  // NOTE: No Express route on "/" to avoid conflicts with WebSocket on root path
+  // WebSocket server handles all requests to "/" path
+  // Use /health endpoint for server status checks
+
+  // Start all schedulers (alert, room temperature, energy, event)
+  console.log("🔧 Starting schedulers...");
+  Services.initialize.schedulers();
+  console.log("✅ Schedulers started");
+} catch (serviceError) {
+  console.error("❌ Error initializing services:", serviceError);
+  console.error("Stack:", serviceError.stack);
+  process.exit(1);
+}
 
 // Add error handler to server before listening (catches WebSocket errors too)
 server.on("error", (err) => {
@@ -67,9 +103,6 @@ server.on("error", (err) => {
   }
 });
 
-// Start all schedulers (alert, room temperature, energy, event)
-Services.initialize.schedulers();
-
 // Verify timezone configuration on startup
 console.log("\n🕐 Timezone Verification:");
 console.log("  Current UTC:", timezoneUtils.getCurrentUTCTime().toISOString());
@@ -83,36 +116,51 @@ console.log(
 );
 console.log("");
 
-// Start the server
-server.listen(PORT, BIND_ADDRESS, () => {
-  console.log(`🚀 ACKit Backend Server running on ${BIND_ADDRESS}:${PORT}`);
-  console.log(`📊 Health check: http://${SERVER_IP}:${PORT}/health`);
-  console.log(`🔐 Super Admin API: http://${SERVER_IP}:${PORT}/api/superadmin`);
-  console.log(`🔌 ESP32 WebSocket: ws://${SERVER_IP}:${PORT}/esp32`);
-  console.log(`📱 Frontend WebSocket: ws://${SERVER_IP}:${PORT}/frontend`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
-  const { getServerIP } = serverConfig;
-  const detectedIP = getServerIP();
-  console.log(
-    `🌐 Server IP: ${SERVER_IP} ${
-      process.env.SERVER_IP
-        ? "(from env)"
-        : detectedIP === SERVER_IP
-        ? "(auto-detected)"
-        : "(from config)"
-    } | Bound to: ${BIND_ADDRESS}`
-  );
-  if (!process.env.SERVER_IP && detectedIP !== SERVER_IP) {
+// Start the server with error handling
+try {
+  server.listen(PORT, BIND_ADDRESS, () => {
+    console.log(`🚀 ACKit Backend Server running on ${BIND_ADDRESS}:${PORT}`);
+    console.log(`📊 Health check: http://${SERVER_IP}:${PORT}/health`);
+    console.log(`🔐 Super Admin API: http://${SERVER_IP}:${PORT}/api/superadmin`);
+    console.log(`🔌 ESP32 WebSocket: ws://${SERVER_IP}:${PORT}/esp32`);
+    console.log(`📱 Frontend WebSocket: ws://${SERVER_IP}:${PORT}/frontend`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+    const { getServerIP } = serverConfig;
+    const detectedIP = getServerIP();
     console.log(
-      `   ⚠️  Note: Detected IP (${detectedIP}) differs from configured IP (${SERVER_IP})`
+      `🌐 Server IP: ${SERVER_IP} ${
+        process.env.SERVER_IP
+          ? "(from env)"
+          : detectedIP === SERVER_IP
+          ? "(auto-detected)"
+          : "(from config)"
+      } | Bound to: ${BIND_ADDRESS}`
     );
-  }
-  const { FRONTEND_PORT } = serverConfig;
-  console.log(
-    `\n📱 Frontend should be accessed at: http://${SERVER_IP}:${FRONTEND_PORT}`
-  );
-  console.log(`🔗 API Base URL: http://${SERVER_IP}:${PORT}/api`);
-});
+    if (!process.env.SERVER_IP && detectedIP !== SERVER_IP) {
+      console.log(
+        `   ⚠️  Note: Detected IP (${detectedIP}) differs from configured IP (${SERVER_IP})`
+      );
+    }
+    const { FRONTEND_PORT } = serverConfig;
+    console.log(
+      `\n📱 Frontend should be accessed at: http://${SERVER_IP}:${FRONTEND_PORT}`
+    );
+    console.log(`🔗 API Base URL: http://${SERVER_IP}:${PORT}/api`);
+    console.log(`✅ Server started successfully!`);
+  });
+  
+  server.on("error", (err) => {
+    console.error("❌ Server listen error:", err);
+    if (err.code === "EADDRINUSE") {
+      console.error(`❌ Port ${PORT} is already in use!`);
+    }
+    process.exit(1);
+  });
+} catch (error) {
+  console.error("❌ Failed to start server:", error);
+  console.error("Error stack:", error.stack);
+  process.exit(1);
+}
 
 // Graceful shutdown
 process.on("SIGTERM", () => {

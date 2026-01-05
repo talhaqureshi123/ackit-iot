@@ -23,11 +23,11 @@ const isProduction =
 // Always use Railway backend URL if available, otherwise use proxy
 const UNIFIED_API_BASE = (() => {
   // If we're on Railway frontend, ALWAYS use the production backend URL
-  const isRailwayFrontend = typeof window !== "undefined" && (
-    window.location.hostname.includes("railway.app") ||
-    window.location.hostname.includes("up.railway.app")
-  );
-  
+  const isRailwayFrontend =
+    typeof window !== "undefined" &&
+    (window.location.hostname.includes("railway.app") ||
+      window.location.hostname.includes("up.railway.app"));
+
   if (isRailwayFrontend) {
     // Hardcode the Railway backend URL for production
     const railwayBackendUrl = "https://ackit-iot-production.up.railway.app";
@@ -35,7 +35,7 @@ const UNIFIED_API_BASE = (() => {
     console.log("🔧 [PRODUCTION] Using Railway backend URL:", url);
     return url;
   }
-  
+
   // Check if BACKEND_BASE_URL contains railway.app (production)
   if (
     BACKEND_BASE_URL &&
@@ -142,18 +142,19 @@ export const unifiedLogin = async (email, password) => {
     console.log("   Response status:", response.status);
     console.log("   Response headers:", response.headers);
     console.log("   Response data type:", typeof response.data);
-    console.log("   Response data (first 200 chars):", 
-      typeof response.data === "string" 
-        ? response.data.substring(0, 200) 
+    console.log(
+      "   Response data (first 200 chars):",
+      typeof response.data === "string"
+        ? response.data.substring(0, 200)
         : response.data
     );
 
     // Check if response is HTML (wrong endpoint) - MUST check BEFORE processing
     if (
       typeof response.data === "string" &&
-      (response.data.includes("<!doctype html>") || 
-       response.data.includes("<html") ||
-       response.data.includes("<!DOCTYPE"))
+      (response.data.includes("<!doctype html>") ||
+        response.data.includes("<html") ||
+        response.data.includes("<!DOCTYPE"))
     ) {
       console.error("❌ Unified Login - Received HTML instead of JSON!");
       console.error(
@@ -162,10 +163,15 @@ export const unifiedLogin = async (email, password) => {
       console.error("   Actual URL used:", UNIFIED_API_BASE);
       console.error("   Expected: Railway backend URL");
       console.error("   Got: HTML page (frontend server)");
-      
-      const error = new Error("Backend connection error. Received HTML instead of JSON.");
+
+      const error = new Error(
+        "Backend connection error. Received HTML instead of JSON."
+      );
       error.status = 500;
-      error.response = { message: "Received HTML response instead of JSON. Backend URL may be incorrect." };
+      error.response = {
+        message:
+          "Received HTML response instead of JSON. Backend URL may be incorrect.",
+      };
       throw error;
     }
 
