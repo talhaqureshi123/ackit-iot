@@ -144,3 +144,6 @@ const EnergyConsumptionView = ({
 export default EnergyConsumptionView;
 
 
+
+
+

@@ -325,3 +325,6 @@ const AdminDetailsModal = ({ admin, onClose }) => {
 export default AdminDetailsModal;
 
 
+
+
+

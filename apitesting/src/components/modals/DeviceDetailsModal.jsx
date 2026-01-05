@@ -132,3 +132,6 @@ const DeviceDetailsModal = ({ isOpen, onClose, device }) => {
 export default DeviceDetailsModal;
 
 
+
+
+

@@ -245,3 +245,6 @@ After extracting components:
 - All callbacks should be passed as props for flexibility
 
 
+
+
+
