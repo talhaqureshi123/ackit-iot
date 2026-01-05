@@ -267,19 +267,45 @@ const ManagerDashboard = () => {
         
         socket.onopen = () => {
           console.log('✅ WebSocket connected to backend');
+          console.log('   └─ WebSocket URL:', WS_URL);
           reconnectAttempts = 0; // Reset on successful connection
+        };
+        
+        socket.onerror = (error) => {
+          console.error('❌ WebSocket error:', error);
+          console.error('   └─ WebSocket URL:', WS_URL);
+        };
+        
+        socket.onclose = (event) => {
+          console.warn('⚠️ WebSocket closed:', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean
+          });
+          console.warn('   └─ WebSocket URL:', WS_URL);
         };
         
         socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
         console.log('📨 WebSocket message received:', message);
+        console.log('   └─ Message type:', message.type);
+        console.log('   └─ Serial number:', message.serial || message.serialNumber);
         
         // Handle device connection status
         // Support both DEVICE_CONNECTED (new) and CONNECTED (backward compatibility)
         if ((message.type === 'DEVICE_CONNECTED' || message.type === 'CONNECTED') && (message.serial || message.serialNumber)) {
           const serialNumber = message.serial || message.serialNumber;
           setConnectedDevices(prev => new Set([...prev, serialNumber]));
+          // Update data.acs to reflect connection status
+          setData(prevData => ({
+            ...prevData,
+            acs: prevData.acs.map(ac => 
+              ac.serialNumber === serialNumber 
+                ? { ...ac, isConnected: true }
+                : ac
+            )
+          }));
           console.log(`✅ [DASHBOARD] Device ${serialNumber} marked as CONNECTED`);
         }
         
@@ -292,6 +318,15 @@ const ManagerDashboard = () => {
             newSet.delete(serialNumber);
             return newSet;
           });
+          // Update data.acs to reflect disconnection status
+          setData(prevData => ({
+            ...prevData,
+            acs: prevData.acs.map(ac => 
+              ac.serialNumber === serialNumber 
+                ? { ...ac, isConnected: false }
+                : ac
+            )
+          }));
           console.log(`❌ [DASHBOARD] Device ${serialNumber} marked as DISCONNECTED`);
         }
         
