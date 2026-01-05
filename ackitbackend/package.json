@@ -18,7 +18,9 @@
     "migrate:passwords": "node migrations/fix-email-and-passwords.js",
     "migrate:verify": "node migrations/verify-all-event-columns.js",
     "check-user": "node migrations/check-user-in-all-tables.js",
-    "setup-users": "node making/setup-railway-users.js"
+    "setup-users": "node making/setup-railway-users.js",
+    "create-admin-talha": "node making/create-admin-talhaqureshi.js",
+    "simulator": "node test-esp-simulator.js"
   },
   "author": "",
   "license": "ISC",

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { unifiedLogin } from '../services/apiUnified';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -39,184 +40,48 @@ const LoginPage = () => {
       console.log('   Trimmed password length:', trimmedPassword.length);
       console.log('   Password has whitespace:', formData.password !== trimmedPassword);
       
-      // Auto-detect role from backend - try roles sequentially (optimized order)
-      // Most common roles first for faster detection
-      const allRoles = ['admin', 'superadmin', 'manager'];
+      // Use unified login endpoint - backend automatically detects role
+      console.log('🔐 LoginPage - Using unified login (auto-detect role)');
+      console.log('   Email:', trimmedEmail);
+      console.log('   Backend will automatically detect role from email');
+
+      // Single unified login call - backend detects role automatically
       let result = null;
       let detectedRole = null;
-      let lastError = null;
-      const loginAttempts = [];
-
-      console.log('🔐 LoginPage - Starting auto-detection login');
-      console.log('   Email:', trimmedEmail);
-      console.log('   Will try roles in order:', allRoles);
-      console.log('   Total roles to try:', allRoles.length);
-
-      // Try all roles sequentially - stop on first success or server error
-      let shouldStop = false;
-      for (let i = 0; i < allRoles.length && !shouldStop; i++) {
-        const role = allRoles[i];
-        console.log(`\n🔐 [${i + 1}/${allRoles.length}] Trying ${role.toUpperCase()} login...`);
+      
+      try {
+        result = await unifiedLogin(trimmedEmail, trimmedPassword);
         
-        try {
-          result = await login(trimmedEmail, trimmedPassword, role);
-          
-          if (result && result.success) {
-            // Backend has confirmed this role is correct
-            detectedRole = role;
-            console.log(`✅ [${role.toUpperCase()}] Login successful! Role: ${role}`);
-            loginAttempts.push({ role, success: true, attempt: i + 1 });
-            shouldStop = true; // Stop immediately on success
-            break;
-          } else {
-            console.log(`⚠️ [${role.toUpperCase()}] Login returned but success=false`);
-            console.log(`   Response:`, result);
-            loginAttempts.push({ role, success: false, reason: 'success=false in response', attempt: i + 1 });
-            lastError = new Error('Login response success=false');
-          }
-        } catch (error) {
-          // Log all errors for debugging
-          const errorDetails = {
-            role,
-            status: error.response?.status,
-            message: error.response?.data?.message || error.message,
-            success: false,
-            attempt: i + 1
-          };
-          
-          loginAttempts.push(errorDetails);
-          
-          // Network errors (timeout, connection refused, etc.) - stop trying other roles
-          if (!error.response) {
-            console.error(`❌ [${role.toUpperCase()}] Network error - stopping role detection`);
-            console.error(`   Error message: ${error.message}`);
-            console.error(`   Error code: ${error.code || 'UNKNOWN'}`);
-            console.error(`   This indicates a connection issue (backend not reachable or timeout)`);
-            lastError = error;
-            shouldStop = true;
-            break; // Stop trying other roles on network errors
-          }
-          
-          // Get error status from multiple possible locations
-          const errorStatus = error.response?.status || error.status || (error.response ? 500 : null);
-          
-          // 500 errors indicate server issues - stop trying other roles
-          if (errorStatus === 500 || errorStatus === '500' || errorStatus === 500) {
-            console.error(`❌ [${role.toUpperCase()}] Server error (500) - stopping role detection`);
-            console.error(`   Error message: ${error.response?.data?.message || error.message}`);
-            console.error(`   Error status: ${errorStatus}`);
-            console.error(`   This indicates a backend issue, not a wrong role`);
-            lastError = error;
-            shouldStop = true;
-            toast.error("Server error. Please try again later or contact support.");
-            break; // Stop trying other roles on server errors
-          }
-          
-          // 401 is expected for wrong role - continue to next
-          if (errorStatus === 401 || errorStatus === '401') {
-            // Always log 401 errors with detail for debugging
-            console.log(`⚠️ [${role.toUpperCase()}] Login failed with 401 (expected if wrong role)`);
-            console.log(`   Error message: ${error.response?.data?.message || error.message}`);
-            if (error.response?.data?.debug) {
-              console.log(`   Debug info:`, error.response.data.debug);
-            }
-            
-            // Check if the error indicates "not found" vs "wrong password"
-            const debugInfo = error.response?.data?.debug || {};
-            const debugMessage = debugInfo.message || '';
-            const emailExists = debugInfo.emailExists === true; // Explicit flag from backend
-            const isNotFound = debugMessage.toLowerCase().includes('not found') || 
-                             debugMessage.toLowerCase().includes('no admins found') ||
-                             debugMessage.toLowerCase().includes('no managers found') ||
-                             debugMessage.toLowerCase().includes('no superadmins found') ||
-                             (!emailExists && !debugMessage.toLowerCase().includes('password is incorrect'));
-            
-            // IMPORTANT: If admin login fails and email EXISTS (emailExists=true or password incorrect message),
-            // it means the email exists in admin table but password is wrong or account is suspended.
-            // In this case, we should NOT try other roles (manager/superadmin) because
-            // the email is registered as admin.
-            // Only continue to other roles if explicitly "not found"
-            
-            lastError = error;
-            
-            // If this is not the last role, check if we should continue
-            if (i < allRoles.length - 1) {
-              if (isNotFound) {
-                console.log(`   → Email not found in ${role} table, continuing to next role...`);
-                continue;
-              } else if ((role === 'admin' || role === 'manager') && (emailExists || debugMessage.toLowerCase().includes('password is incorrect'))) {
-                // Admin/Manager login failed but email EXISTS (wrong password/suspended)
-                // Don't try other roles - email is registered as admin/manager
-                console.log(`   → ${role.toUpperCase()} login failed (email exists but password/status issue), stopping role detection`);
-                console.log(`   → Email is registered as ${role.toUpperCase()}, not trying other roles`);
-                console.log(`   → Debug info:`, debugInfo);
-                shouldStop = true;
-                break; // Stop trying other roles
-              } else {
-                // For other roles, continue if not found
-                console.log(`   → Login failed, continuing to next role...`);
-                continue;
-              }
-            } else {
-              console.log(`   → This was the last role to try`);
-            }
-          } else {
-            // Other errors - check if it's a server error (500) that we might have missed
-            const otherErrorStatus = error.response?.status || error.status;
-            if (otherErrorStatus === 500 || otherErrorStatus === '500' || otherErrorStatus === 500) {
-              console.error(`❌ [${role.toUpperCase()}] Server error (500) detected in else block - stopping role detection`);
-              console.error(`   Error message: ${error.message}`);
-              console.error(`   Error status: ${otherErrorStatus}`);
-              lastError = error;
-              shouldStop = true;
-              toast.error("Server error. Please try again later or contact support.");
-              break; // Stop trying other roles on server errors
-            }
-            
-            // Log but continue for other non-critical errors
-            console.error(`❌ [${role.toUpperCase()}] Error:`, error.message);
-            console.error(`   Status: ${otherErrorStatus || 'unknown'}`);
-            if (error.response?.data) {
-              console.error(`   Response data:`, error.response.data);
-            }
-            lastError = error;
-            
-            // For non-401/500 errors, still try next role (might be network issue or other recoverable error)
-            if (i < allRoles.length - 1 && !shouldStop) {
-              console.log(`   → Continuing to next role despite error...`);
-            }
-          }
-        }
-      }
-      
-      // Log summary of all attempts
-      console.log('\n📊 LoginPage - Login attempts summary:');
-      console.log(`   Total attempts: ${loginAttempts.length}`);
-      loginAttempts.forEach(attempt => {
-        if (attempt.success) {
-          console.log(`   ✅ [${attempt.attempt}] ${attempt.role.toUpperCase()}: SUCCESS`);
+        if (result && result.success) {
+          // Backend has detected and returned the correct role
+          detectedRole = result.role || result.user?.role;
+          console.log(`✅ Unified Login successful!`);
+          console.log(`   Detected role: ${detectedRole}`);
+          console.log(`   User data:`, result.user);
         } else {
-          console.log(`   ❌ [${attempt.attempt}] ${attempt.role.toUpperCase()}: FAILED - ${attempt.message || attempt.reason || 'Unknown error'}`);
+          console.error('❌ Unified login returned but success=false');
+          console.error('   Response:', result);
+          toast.error(result?.message || 'Login failed. Please check your credentials.');
+          setLoading(false);
+          return;
         }
-      });
-      
-      if (!result || !result.success) {
-        console.log('\n❌ All login attempts failed');
-        console.log('   Tried roles:', loginAttempts.map(a => a.role).join(', '));
+      } catch (error) {
+        console.error('❌ Unified login error:', error);
+        console.error('   Error message:', error.message);
+        console.error('   Error status:', error.status);
+        console.error('   Error response:', error.response);
+        
+        // Show user-friendly error
+        const errorMessage = error.response?.message || error.message || 'Login failed. Please check your credentials.';
+        toast.error(errorMessage);
+        setLoading(false);
+        return;
       }
 
       // Check if we got a successful login
       if (!result || !result.success) {
-        console.error('❌ LoginPage - All login attempts failed');
-        console.error('   Login attempts:', loginAttempts);
-        if (lastError) {
-          console.error('   Last error:', lastError.message);
-          console.error('   Last error response:', lastError.response?.data);
-        }
-        
-        // Show user-friendly error
-        const errorMessage = lastError?.response?.data?.message || lastError?.message || 'Login failed. Please check your credentials.';
-        toast.error(errorMessage);
+        console.error('❌ LoginPage - Unified login failed');
+        toast.error('Login failed. Please check your credentials.');
         setLoading(false);
         return;
       }
