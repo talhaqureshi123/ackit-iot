@@ -24,6 +24,14 @@ const routes = require("./routes/routes");
 const app = express();
 
 // ----------------------
+// 🌐 Trust Railway Proxy (CRITICAL for HTTPS + cookies)
+// ----------------------
+// MUST be set BEFORE session middleware
+// Railway uses a reverse proxy, so Express needs to trust X-Forwarded-* headers
+app.set('trust proxy', 1);
+console.log("✅ Trust proxy enabled (required for Railway HTTPS)");
+
+// ----------------------
 // 🔒 Security middleware
 // ----------------------
 app.use(helmet());
@@ -171,28 +179,46 @@ const getCookieSettings = (req) => {
   };
 };
 
+// Determine if we're in production (Railway HTTPS)
+const isProduction = process.env.NODE_ENV === "production";
+const isRailwayProduction = 
+  process.env.RAILWAY_ENVIRONMENT === "production" ||
+  process.env.RAILWAY_ENVIRONMENT_NAME === "production" ||
+  (typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.includes("railway"));
+
+// Default cookie settings for Railway HTTPS production
+const defaultCookieSecure = isProduction || isRailwayProduction;
+const defaultCookieSameSite = (isProduction || isRailwayProduction) ? "none" : "lax";
+
+console.log("🔐 Session Configuration:");
+console.log("   - Environment:", process.env.NODE_ENV || "development");
+console.log("   - Is Railway Production:", isRailwayProduction);
+console.log("   - Default cookie secure:", defaultCookieSecure);
+console.log("   - Default cookie sameSite:", defaultCookieSameSite);
+
 app.use(
   session({
     store: sessionStore,
     secret:
       process.env.SESSION_SECRET || "AADFDDDDDDDDDDDDDDD342332436737WQWEWQASDD",
-    resave: true, // Save session even if not modified (needed for cross-origin cookie setting)
-    saveUninitialized: true, // Save uninitialized sessions (needed for login to set cookie)
+    resave: false, // Don't save session if not modified (better for performance)
+    saveUninitialized: false, // Don't save empty sessions (better for security)
     rolling: true, // Reset expiration on each request
     cookie: {
-      // Default cookie settings (will be overridden by res.cookie() in login routes)
-      // These are fallback settings for non-login requests
-      secure: false, // Default to false, will be set dynamically per request
-      httpOnly: true, // Prevent XSS
+      // Default cookie settings for Railway HTTPS production
+      secure: defaultCookieSecure, // REQUIRED for Railway HTTPS
+      httpOnly: true, // Prevent XSS attacks
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: "lax", // Default to lax, will be set dynamically per request
+      sameSite: defaultCookieSameSite, // REQUIRED for cross-origin on Railway
       path: "/", // Ensure cookie is sent for all paths
-      domain: undefined, // Don't set domain for cross-origin
+      domain: undefined, // Don't set domain (allows cross-subdomain)
     },
-    // Force session to be saved even if not modified (helps with cross-origin)
     genid: (req) => {
       const sessionId = require("uuid").v4();
-      console.log("🔐 Generated session ID:", sessionId);
+      // Only log in development to reduce noise
+      if (process.env.NODE_ENV !== "production") {
+        console.log("🔐 Generated session ID:", sessionId);
+      }
       return sessionId;
     },
     name: "ackit.sid", // Custom session name

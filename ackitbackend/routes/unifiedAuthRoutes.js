@@ -478,35 +478,42 @@ router.post("/login", async (req, res) => {
       );
     }
 
-    // Ensure session is saved one final time before setting cookie
+    // Update session cookie settings BEFORE saving (so express-session uses correct settings)
+    if (req.session && req.session.cookie) {
+      req.session.cookie.secure = cookieSecure;
+      req.session.cookie.sameSite = cookieSameSite;
+      req.session.cookie.httpOnly = true;
+      req.session.cookie.maxAge = 24 * 60 * 60 * 1000; // 24 hours
+      req.session.cookie.path = "/";
+      req.session.cookie.domain = undefined;
+    }
+
+    // Mark session as modified to ensure it gets saved
+    req.session.touch();
+
+    // Ensure session is saved (express-session will automatically set the cookie)
     await new Promise((resolve, reject) => {
       req.session.save((err) => {
         if (err) {
           console.error("❌ Final unified session save error:", err);
           reject(err);
         } else {
-          console.log("✅ Final unified session save completed before cookie");
+          console.log("✅ Final unified session save completed");
+          console.log("   - Session ID:", req.sessionID);
+          console.log("   - Session data saved:", {
+            hasSessionId: !!req.session.sessionId,
+            hasUser: !!req.session.user,
+            userRole: req.session.user?.role,
+          });
+          console.log("   - Cookie settings:", {
+            secure: cookieSecure,
+            sameSite: cookieSameSite,
+            httpOnly: true,
+          });
           resolve();
         }
       });
     });
-
-    // Explicitly set the session cookie
-    // CRITICAL: This overrides the session middleware's default cookie settings
-    res.cookie(cookieName, req.sessionID, {
-      path: "/",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      httpOnly: true,
-      secure: cookieSecure,
-      sameSite: cookieSameSite,
-      domain: undefined, // Don't set domain for cross-origin
-    });
-
-    // Also update the session cookie object to match (for future requests)
-    if (req.session && req.session.cookie) {
-      req.session.cookie.secure = cookieSecure;
-      req.session.cookie.sameSite = cookieSameSite;
-    }
 
     // Verify cookie was set in response headers
     const setCookieHeader = res.getHeader("set-cookie");
