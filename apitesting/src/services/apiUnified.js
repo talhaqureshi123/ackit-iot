@@ -106,6 +106,31 @@ apiUnified.interceptors.response.use(
       response.status,
       response.config.url
     );
+    
+    // Check for HTML response in interceptor (early detection)
+    if (
+      response.data &&
+      typeof response.data === "string" &&
+      (response.data.includes("<!doctype html>") ||
+        response.data.includes("<html") ||
+        response.data.includes("<!DOCTYPE"))
+    ) {
+      console.error("❌ [INTERCEPTOR] HTML response detected!");
+      console.error("   This means request hit frontend instead of backend");
+      console.error("   URL used:", response.config.url);
+      console.error("   Base URL:", response.config.baseURL);
+      
+      // Reject with clear error
+      const error = new Error("Backend connection error. Received HTML instead of JSON.");
+      error.response = {
+        status: 500,
+        data: {
+          message: "Received HTML response instead of JSON. Backend URL may be incorrect.",
+        },
+      };
+      return Promise.reject(error);
+    }
+    
     return response;
   },
   (error) => {
