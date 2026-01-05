@@ -1479,20 +1479,29 @@ const ManagerDashboard = () => {
       const currentState = currentPowerState === true || currentPowerState === 'true' || currentPowerState === 1;
       const newPowerState = !currentState;
       
-      console.log('🔌 Toggling organization power:', {
+      console.log('📤 [MANAGER] Toggling organization power:', {
         orgId,
         currentState,
-        newPowerState
+        newPowerState,
+        endpoint: `/manager/organizations/${orgId}/power`,
+        body: { powerState: newPowerState }
       });
 
       const response = await managerAPI.toggleOrganizationPower(orgId, newPowerState);
+      
+      console.log('✅ [MANAGER] Toggle organization power response:', response?.data);
+      console.log('   Response status:', response?.status);
       
       toast.success(response.data?.message || `Organization power ${newPowerState ? 'turned ON' : 'turned OFF'}`);
       
       // Reload data to reflect changes
       await loadData(false);
     } catch (error) {
-      console.error('Toggle organization power error:', error);
+      console.error('❌ [MANAGER] Toggle organization power error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
       const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to toggle organization power';
       toast.error(errorMessage);
     }
@@ -1510,20 +1519,29 @@ const ManagerDashboard = () => {
       const currentState = currentPowerState === true || currentPowerState === 'true' || currentPowerState === 1;
       const newPowerState = !currentState;
       
-      console.log('🔌 Toggling venue power:', {
+      console.log('📤 [MANAGER] Toggling venue power:', {
         venueId,
         currentState,
-        newPowerState
+        newPowerState,
+        endpoint: `/manager/venues/${venueId}/power`,
+        body: { powerState: newPowerState }
       });
 
       const response = await managerAPI.toggleVenuePower(venueId, newPowerState);
+      
+      console.log('✅ [MANAGER] Toggle venue power response:', response?.data);
+      console.log('   Response status:', response?.status);
       
       toast.success(response.data?.message || `Venue power ${newPowerState ? 'turned ON' : 'turned OFF'}`);
       
       // Reload data to reflect changes
       await loadData(false);
     } catch (error) {
-      console.error('Toggle venue power error:', error);
+      console.error('❌ [MANAGER] Toggle venue power error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
       const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to toggle venue power';
       toast.error(errorMessage);
     }
@@ -1567,7 +1585,18 @@ const ManagerDashboard = () => {
           return;
         }
         
+        console.log('📤 [MANAGER] Setting organization temperature:', {
+          orgId: id,
+          temperature,
+          endpoint: `/manager/organizations/${id}/temperature`,
+          body: { temperature }
+        });
+        
         response = await managerAPI.setOrganizationTemperature(id, temperature);
+        
+        console.log('✅ [MANAGER] Set organization temperature response:', response?.data);
+        console.log('   Response status:', response?.status);
+        
         responseTemp = response?.data?.organization?.temperature ?? response?.data?.temperature ?? temperature;
         responseOrgTemp = responseTemp;
         responseOrgMixed = response?.data?.organization?.hasMixedTemperatures ?? response?.data?.hasMixedTemperatures;
@@ -1609,7 +1638,18 @@ const ManagerDashboard = () => {
           }
         }
         
+        console.log('📤 [MANAGER] Setting venue temperature:', {
+          venueId: id,
+          temperature,
+          endpoint: `/manager/venues/${id}/temperature`,
+          body: { temperature }
+        });
+        
         response = await managerAPI.setVenueTemperature(id, temperature);
+        
+        console.log('✅ [MANAGER] Set venue temperature response:', response?.data);
+        console.log('   Response status:', response?.status);
+        
         responseTemp = response?.data?.venue?.temperature ?? response?.data?.temperature ?? temperature;
         responseOrgTemp = response?.data?.organization?.temperature;
         responseOrgMixed = response?.data?.organization?.hasMixedTemperatures;
@@ -1664,7 +1704,18 @@ const ManagerDashboard = () => {
           }
         }
         
+        console.log('📤 [MANAGER] Setting AC temperature:', {
+          acId: id,
+          temperature,
+          endpoint: `/manager/acs/${id}/temperature`,
+          body: { temperature }
+        });
+        
         response = await managerAPI.setACTemperature(id, temperature);
+        
+        console.log('✅ [MANAGER] Set AC temperature response:', response?.data);
+        console.log('   Response status:', response?.status);
+        
         responseTemp = response?.data?.ac?.temperature ?? response?.data?.temperature ?? temperature;
       
         // Log the action
@@ -1842,9 +1893,14 @@ const ManagerDashboard = () => {
         return newState;
       });
     } catch (error) {
+      console.error('❌ [MANAGER] Temperature update error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
+      console.error('   Type:', type, 'ID:', id, 'Temperature:', temperature);
       const errorMessage = getRestrictionMessage(error);
       toast.error(errorMessage);
-      console.error('Temperature update error:', error);
       // Clear local temperature on error
       setLocalTemperatures(prev => {
         const newState = { ...prev };
@@ -1891,21 +1947,28 @@ const ManagerDashboard = () => {
       const currentState = ac.isOn || false;
       const newState = targetState !== undefined ? targetState : !currentState;
       
-      console.log('🔌 Toggling AC power:', {
+      console.log('📤 [MANAGER] Toggling AC power:', {
         acId,
         acName: ac.name,
         currentState,
         newState,
-        targetState
+        targetState,
+        endpoint: `/manager/acs/${acId}/power`,
+        body: { isOn: newState }
       });
       
       setAcPowerLoading(prev => ({ ...prev, [acId]: true }));
       const response = await managerAPI.toggleManagerACPower(acId, newState);
       
-      console.log('✅ Toggle AC power response:', response?.data);
+      console.log('✅ [MANAGER] Toggle AC power response:', response?.data);
+      console.log('   Response status:', response?.status);
+      console.log('   Full response:', response);
       
       const updatedAC = response?.data?.ac || response?.data?.data?.ac;
       const finalState = updatedAC?.isOn !== undefined ? updatedAC.isOn : newState;
+      
+      console.log('   Updated AC:', updatedAC);
+      console.log('   Final state:', finalState);
       
       toast.success(`AC ${finalState ? 'turned on' : 'turned off'} successfully`);
       
@@ -1945,8 +2008,12 @@ const ManagerDashboard = () => {
         acs: prev.acs.map(a => a.id === acId ? { ...a, isOn: finalState } : a)
       }));
     } catch (error) {
-      console.error('❌ Toggle AC power error:', error);
-      console.error('Error response:', error.response?.data);
+      console.error('❌ [MANAGER] Toggle AC power error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
+      console.error('   Full error:', error);
       const errorMessage = getRestrictionMessage(error);
       toast.error(errorMessage);
     } finally {

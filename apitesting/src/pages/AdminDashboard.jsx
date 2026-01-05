@@ -1934,20 +1934,29 @@ const AdminDashboard = () => {
       const currentState = currentPowerState === true || currentPowerState === 'true' || currentPowerState === 1;
       const newPowerState = !currentState;
       
-      console.log('🔌 Toggling organization power:', {
+      console.log('📤 [ADMIN] Toggling organization power:', {
         orgId,
         currentState,
-        newPowerState
+        newPowerState,
+        endpoint: `/admin/organizations/${orgId}/power`,
+        body: { powerState: newPowerState }
       });
 
       const response = await adminAPI.toggleOrganizationPower(orgId, newPowerState);
+      
+      console.log('✅ [ADMIN] Toggle organization power response:', response?.data);
+      console.log('   Response status:', response?.status);
       
       toast.success(response.data?.message || `Organization power ${newPowerState ? 'turned ON' : 'turned OFF'}`);
       
       // Reload data to reflect changes
       await loadData(false);
     } catch (error) {
-      console.error('Toggle organization power error:', error);
+      console.error('❌ [ADMIN] Toggle organization power error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
       const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to toggle organization power';
       toast.error(errorMessage);
     }
@@ -1973,20 +1982,29 @@ const AdminDashboard = () => {
         }
       }
       
-      console.log('🔌 Toggling venue power:', {
+      console.log('📤 [ADMIN] Toggling venue power:', {
         venueId,
         currentState,
-        newPowerState
+        newPowerState,
+        endpoint: `/admin/venues/${venueId}/power`,
+        body: { powerState: newPowerState }
       });
 
       const response = await adminAPI.toggleVenuePower(venueId, newPowerState);
+      
+      console.log('✅ [ADMIN] Toggle venue power response:', response?.data);
+      console.log('   Response status:', response?.status);
       
       toast.success(response.data?.message || `Venue power ${newPowerState ? 'turned ON' : 'turned OFF'}`);
       
       // Reload data to reflect changes
       await loadData(false);
     } catch (error) {
-      console.error('Toggle venue power error:', error);
+      console.error('❌ [ADMIN] Toggle venue power error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
       const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to toggle venue power';
       toast.error(errorMessage);
     }
@@ -2267,9 +2285,14 @@ const AdminDashboard = () => {
         return newState;
       });
     } catch (error) {
+      console.error('❌ [ADMIN] Temperature update error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
+      console.error('   Type:', type, 'ID:', id, 'Temperature:', temperature);
       const errorMessage = getRestrictionMessage(error);
       toast.error(errorMessage);
-      console.error('Temperature update error:', error);
       // Clear local temperature on error
       setLocalTemperatures(prev => {
         const newState = { ...prev };
@@ -2347,12 +2370,25 @@ const AdminDashboard = () => {
       });
       
       setAcPowerLoading(prev => ({ ...prev, [acId]: true }));
+      
+      console.log('📤 [ADMIN] Calling toggleAdminACPower:', {
+        acId,
+        newState,
+        endpoint: `/admin/acs/${acId}/status`,
+        body: { status: newState }
+      });
+      
       const response = await adminAPI.toggleAdminACPower(acId, newState);
       
-      console.log('✅ Toggle AC power response:', response?.data);
+      console.log('✅ [ADMIN] Toggle AC power response:', response?.data);
+      console.log('   Response status:', response?.status);
+      console.log('   Full response:', response);
       
       const updatedAC = response?.data?.ac || response?.data?.data?.ac;
       const finalState = updatedAC?.isOn !== undefined ? updatedAC.isOn : newState;
+      
+      console.log('   Updated AC:', updatedAC);
+      console.log('   Final state:', finalState);
       
       toast.success(`AC ${finalState ? 'turned on' : 'turned off'} successfully`);
       
@@ -2381,8 +2417,12 @@ const AdminDashboard = () => {
         acs: prev.acs.map(a => a.id === acId ? { ...a, isOn: finalState } : a)
       }));
     } catch (error) {
-      console.error('❌ Toggle AC power error:', error);
-      console.error('Error response:', error.response?.data);
+      console.error('❌ [ADMIN] Toggle AC power error:', error);
+      console.error('   Error message:', error.message);
+      console.error('   Error response:', error.response?.data);
+      console.error('   Error status:', error.response?.status);
+      console.error('   Error config:', error.config);
+      console.error('   Full error:', error);
       const errorMessage = getRestrictionMessage(error);
       toast.error(errorMessage);
     } finally {
