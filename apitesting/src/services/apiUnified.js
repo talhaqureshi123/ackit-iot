@@ -14,20 +14,37 @@ import { BACKEND_BASE_URL, API_BASE_URL } from "../config/api";
 // Production: Use full backend URL (Railway)
 // Development: Use Vite proxy (/api)
 const isProduction =
-  import.meta.env.PROD || 
+  import.meta.env.PROD ||
   import.meta.env.MODE === "production" ||
-  (typeof window !== "undefined" && (
-    window.location.hostname.includes("railway.app") ||
-    window.location.hostname.includes("up.railway.app")
-  ));
+  (typeof window !== "undefined" &&
+    (window.location.hostname.includes("railway.app") ||
+      window.location.hostname.includes("up.railway.app")));
 
 // Always use Railway backend URL if available, otherwise use proxy
 const UNIFIED_API_BASE = (() => {
+  // If we're on Railway frontend, ALWAYS use the production backend URL
+  const isRailwayFrontend = typeof window !== "undefined" && (
+    window.location.hostname.includes("railway.app") ||
+    window.location.hostname.includes("up.railway.app")
+  );
+  
+  if (isRailwayFrontend) {
+    // Hardcode the Railway backend URL for production
+    const railwayBackendUrl = "https://ackit-iot-production.up.railway.app";
+    const url = `${railwayBackendUrl}/api/auth`;
+    console.log("🔧 [PRODUCTION] Using Railway backend URL:", url);
+    return url;
+  }
+  
   // Check if BACKEND_BASE_URL contains railway.app (production)
-  if (BACKEND_BASE_URL && typeof BACKEND_BASE_URL === "string" && BACKEND_BASE_URL.includes("railway.app")) {
+  if (
+    BACKEND_BASE_URL &&
+    typeof BACKEND_BASE_URL === "string" &&
+    BACKEND_BASE_URL.includes("railway.app")
+  ) {
     // Production: Use Railway backend URL
     const url = `${BACKEND_BASE_URL}/api/auth`;
-    console.log("🔧 Using Railway backend URL:", url);
+    console.log("🔧 Using Railway backend URL from config:", url);
     return url;
   } else if (isProduction) {
     // Production but no Railway URL set - use full backend URL
@@ -36,7 +53,7 @@ const UNIFIED_API_BASE = (() => {
     return url;
   } else {
     // Development: Use Vite proxy
-    console.log("🔧 Using Vite proxy: /api/auth");
+    console.log("🔧 [DEVELOPMENT] Using Vite proxy: /api/auth");
     return "/api/auth";
   }
 })();
@@ -45,7 +62,10 @@ console.log("🔧 Unified API Configuration:");
 console.log("   isProduction:", isProduction);
 console.log("   BACKEND_BASE_URL:", BACKEND_BASE_URL);
 console.log("   UNIFIED_API_BASE:", UNIFIED_API_BASE);
-console.log("   window.location.hostname:", typeof window !== "undefined" ? window.location.hostname : "N/A");
+console.log(
+  "   window.location.hostname:",
+  typeof window !== "undefined" ? window.location.hostname : "N/A"
+);
 console.log("   import.meta.env.PROD:", import.meta.env.PROD);
 console.log("   import.meta.env.MODE:", import.meta.env.MODE);
 
@@ -118,24 +138,39 @@ export const unifiedLogin = async (email, password) => {
       password: password.trim(),
     });
 
-    console.log("✅ Unified Login - Success!");
+    console.log("📥 Unified Login - Response received");
     console.log("   Response status:", response.status);
     console.log("   Response headers:", response.headers);
     console.log("   Response data type:", typeof response.data);
-    console.log("   Response data:", response.data);
+    console.log("   Response data (first 200 chars):", 
+      typeof response.data === "string" 
+        ? response.data.substring(0, 200) 
+        : response.data
+    );
 
-    // Check if response is HTML (wrong endpoint)
-    if (typeof response.data === "string" && response.data.includes("<!doctype html>")) {
+    // Check if response is HTML (wrong endpoint) - MUST check BEFORE processing
+    if (
+      typeof response.data === "string" &&
+      (response.data.includes("<!doctype html>") || 
+       response.data.includes("<html") ||
+       response.data.includes("<!DOCTYPE"))
+    ) {
       console.error("❌ Unified Login - Received HTML instead of JSON!");
-      console.error("   This means the request hit the frontend server instead of backend");
-      console.error("   Backend URL should be:", UNIFIED_API_BASE);
-      throw {
-        message: "Backend connection error. Please check configuration.",
-        status: 500,
-        response: { message: "Received HTML response instead of JSON" },
-        error: new Error("HTML response received"),
-      };
+      console.error(
+        "   This means the request hit the frontend server instead of backend"
+      );
+      console.error("   Actual URL used:", UNIFIED_API_BASE);
+      console.error("   Expected: Railway backend URL");
+      console.error("   Got: HTML page (frontend server)");
+      
+      const error = new Error("Backend connection error. Received HTML instead of JSON.");
+      error.status = 500;
+      error.response = { message: "Received HTML response instead of JSON. Backend URL may be incorrect." };
+      throw error;
     }
+
+    // Only log success if we have valid JSON
+    console.log("✅ Unified Login - Success! (Valid JSON response)");
 
     // Validate response structure
     if (!response.data || typeof response.data !== "object") {
