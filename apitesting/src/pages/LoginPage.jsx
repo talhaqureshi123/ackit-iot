@@ -94,17 +94,21 @@ const LoginPage = () => {
             break; // Stop trying other roles on network errors
           }
           
+          // Get error status from multiple possible locations
+          const errorStatus = error.response?.status || error.status || (error.response ? 500 : null);
+          
           // 500 errors indicate server issues - stop trying other roles
-          if (error.response?.status === 500) {
+          if (errorStatus === 500 || errorStatus === '500') {
             console.error(`❌ [${role.toUpperCase()}] Server error (500) - stopping role detection`);
             console.error(`   Error message: ${error.response?.data?.message || error.message}`);
+            console.error(`   Error status: ${errorStatus}`);
             console.error(`   This indicates a backend issue, not a wrong role`);
             lastError = error;
             break; // Stop trying other roles on server errors
           }
           
           // 401 is expected for wrong role - continue to next
-          if (error.response?.status === 401) {
+          if (errorStatus === 401 || errorStatus === '401') {
             // Always log 401 errors with detail for debugging
             console.log(`⚠️ [${role.toUpperCase()}] Login failed with 401 (expected if wrong role)`);
             console.log(`   Error message: ${error.response?.data?.message || error.message}`);
@@ -151,15 +155,25 @@ const LoginPage = () => {
               console.log(`   → This was the last role to try`);
             }
           } else {
-            // Other errors - log but continue
+            // Other errors - check if it's a server error (500) that we might have missed
+            const otherErrorStatus = error.response?.status || error.status;
+            if (otherErrorStatus === 500 || otherErrorStatus === '500') {
+              console.error(`❌ [${role.toUpperCase()}] Server error (500) detected in else block - stopping role detection`);
+              console.error(`   Error message: ${error.message}`);
+              console.error(`   Error status: ${otherErrorStatus}`);
+              lastError = error;
+              break; // Stop trying other roles on server errors
+            }
+            
+            // Log but continue for other non-critical errors
             console.error(`❌ [${role.toUpperCase()}] Error:`, error.message);
-            console.error(`   Status: ${error.response?.status}`);
+            console.error(`   Status: ${otherErrorStatus || 'unknown'}`);
             if (error.response?.data) {
               console.error(`   Response data:`, error.response.data);
             }
             lastError = error;
             
-            // For non-401 errors, still try next role (might be network issue)
+            // For non-401/500 errors, still try next role (might be network issue or other recoverable error)
             if (i < allRoles.length - 1) {
               console.log(`   → Continuing to next role despite error...`);
             }
