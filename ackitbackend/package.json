@@ -13,9 +13,11 @@
     "pre-deploy": "node scripts/pre-deploy.js",
     "init-db": "node migrations/init-database.js",
     "migrate": "node migrations/add-missing-columns-railway.js",
-    "migrate:all": "node migrations/run-all-migrations.js",
+    "migrate:all": "node migrations/run-all-required-migrations.js",
     "migrate:complete": "node migrations/complete-schema-fix.js",
     "migrate:passwords": "node migrations/fix-email-and-passwords.js",
+    "migrate:verify": "node migrations/verify-all-event-columns.js",
+    "check-user": "node migrations/check-user-in-all-tables.js",
     "setup-users": "node making/setup-railway-users.js"
   },
   "author": "",

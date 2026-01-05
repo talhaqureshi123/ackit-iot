@@ -1,5 +1,15 @@
-// Quick Fix: Add missing columns to events table for Railway
-// Run: railway run node ackitbackend/migrations/add-missing-columns-railway.js
+/**
+ * Migration: Add missing columns to events table
+ * 
+ * This migration adds the following columns to the events table:
+ * - controlDevicePower: BOOLEAN (default: false)
+ * - deviceOnTime: TIMESTAMPTZ (nullable)
+ * - deviceOffTime: TIMESTAMPTZ (nullable)
+ * 
+ * Run via npm: npm run migrate
+ * Run directly: node migrations/add-missing-columns-railway.js
+ * Run via Railway CLI: railway run npm run migrate
+ */
 
 // Load .env file only in non-production environments (Railway uses environment variables directly)
 if (process.env.NODE_ENV !== "production") {
@@ -68,11 +78,26 @@ async function addMissingColumns() {
       console.log("✅ deviceOffTime column already exists");
     }
 
-    console.log("\n✅ All columns added successfully!");
+    console.log("\n✅ Migration completed successfully!");
     console.log("\n📝 Summary:");
     console.log("   - controlDevicePower: BOOLEAN, default: false");
     console.log("   - deviceOnTime: TIMESTAMPTZ, nullable");
     console.log("   - deviceOffTime: TIMESTAMPTZ, nullable");
+    
+    // Verify columns were added
+    const verifyColumns = await sequelize.query(
+      `SELECT column_name, data_type, is_nullable, column_default
+       FROM information_schema.columns
+       WHERE table_name = 'events' 
+       AND column_name IN ('controlDevicePower', 'deviceOnTime', 'deviceOffTime')
+       ORDER BY column_name`,
+      { type: QueryTypes.SELECT }
+    );
+    
+    console.log("\n✅ Verification - Columns in database:");
+    verifyColumns.forEach(col => {
+      console.log(`   - ${col.column_name}: ${col.data_type} (nullable: ${col.is_nullable}, default: ${col.column_default || 'none'})`);
+    });
 
     process.exit(0);
   } catch (error) {
