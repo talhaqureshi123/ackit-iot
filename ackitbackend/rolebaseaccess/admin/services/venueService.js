@@ -541,16 +541,10 @@ class VenueService {
       // Venue ON → All connected devices ON, Venue OFF → All connected devices OFF
       let acsUpdated = 0;
       
-      // Get all ACs in this venue
-      const allACs = await AC.findAll({
-        where: { venueId: venueId },
-        attributes: ["id", "serialNumber"],
-        transaction,
-      });
+      // (allACs already fetched above for validation)
       
       // Filter to only connected devices
-      const Services = require("../../../services");
-      const ESPService = Services.getESPService();
+      // (Services and ESPService already required above)
       const connectedACs = allACs.filter((ac) => {
         if (!ac.serialNumber) return false;
         return ESPService.isDeviceConnected(ac.serialNumber);
