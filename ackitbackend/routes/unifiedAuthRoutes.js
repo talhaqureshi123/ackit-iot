@@ -57,7 +57,7 @@ router.post("/login", async (req, res) => {
 
     // Search in all three tables (order: superadmin, admin, manager)
     // IMPORTANT: Check ALL tables, don't stop early
-    
+
     // 1. Check SuperAdmin
     console.log("🔍 [1/3] Checking SuperAdmin table...");
     try {
@@ -70,7 +70,9 @@ router.post("/login", async (req, res) => {
 
       if (superAdmin) {
         console.log("✅ Found in SuperAdmin table");
-        console.log(`   SuperAdmin ID: ${superAdmin.id}, Email: ${superAdmin.email}`);
+        console.log(
+          `   SuperAdmin ID: ${superAdmin.id}, Email: ${superAdmin.email}`
+        );
         user = superAdmin;
         userRole = "superadmin";
         userType = "SuperAdmin";
@@ -78,7 +80,10 @@ router.post("/login", async (req, res) => {
         console.log("   ❌ Not found in SuperAdmin table");
       }
     } catch (superAdminError) {
-      console.error("❌ Error checking SuperAdmin table:", superAdminError.message);
+      console.error(
+        "❌ Error checking SuperAdmin table:",
+        superAdminError.message
+      );
       // Continue to check other tables
     }
 
@@ -95,7 +100,9 @@ router.post("/login", async (req, res) => {
 
         if (admin) {
           console.log("✅ Found in Admin table");
-          console.log(`   Admin ID: ${admin.id}, Email: ${admin.email}, Status: ${admin.status}`);
+          console.log(
+            `   Admin ID: ${admin.id}, Email: ${admin.email}, Status: ${admin.status}`
+          );
           user = admin;
           userRole = "admin";
           userType = "Admin";
@@ -125,8 +132,10 @@ router.post("/login", async (req, res) => {
         // If found, get admin info separately if needed
         if (manager) {
           console.log("✅ Found in Manager table");
-          console.log(`   Manager ID: ${manager.id}, Email: ${manager.email}, Status: ${manager.status}`);
-          
+          console.log(
+            `   Manager ID: ${manager.id}, Email: ${manager.email}, Status: ${manager.status}`
+          );
+
           // Get admin info if needed (for status check)
           try {
             if (manager.adminId) {
@@ -135,14 +144,19 @@ router.post("/login", async (req, res) => {
               });
               if (adminInfo) {
                 manager.admin = adminInfo;
-                console.log(`   Manager's Admin: ${adminInfo.email}, Status: ${adminInfo.status}`);
+                console.log(
+                  `   Manager's Admin: ${adminInfo.email}, Status: ${adminInfo.status}`
+                );
               }
             }
           } catch (adminFetchError) {
-            console.warn("⚠️ Could not fetch admin info for manager:", adminFetchError.message);
+            console.warn(
+              "⚠️ Could not fetch admin info for manager:",
+              adminFetchError.message
+            );
             // Non-critical, continue
           }
-          
+
           user = manager;
           userRole = "manager";
           userType = "Manager";
@@ -155,7 +169,9 @@ router.post("/login", async (req, res) => {
         console.error("   Full error:", managerError);
       }
     } else {
-      console.log(`   ⏭️ Skipping Manager check (already found in ${userType})`);
+      console.log(
+        `   ⏭️ Skipping Manager check (already found in ${userType})`
+      );
     }
 
     // User not found in any table

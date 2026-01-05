@@ -52,12 +52,42 @@ const LoginPage = () => {
       try {
         result = await unifiedLogin(trimmedEmail, trimmedPassword);
         
+        console.log('📥 LoginPage - Unified login response received:');
+        console.log('   Full result:', result);
+        console.log('   Result success:', result?.success);
+        console.log('   Result role:', result?.role);
+        console.log('   Result user:', result?.user);
+        console.log('   Result user role:', result?.user?.role);
+        
         if (result && result.success) {
           // Backend has detected and returned the correct role
-          detectedRole = result.role || result.user?.role;
+          // Try multiple ways to get the role
+          detectedRole = result.role || result.user?.role || result.user?.role?.toLowerCase();
           console.log(`✅ Unified Login successful!`);
           console.log(`   Detected role: ${detectedRole}`);
           console.log(`   User data:`, result.user);
+          
+          // Validate that we have essential data
+          if (!result.user) {
+            console.error('❌ LoginPage - Response missing user data!');
+            console.error('   Full response:', result);
+            toast.error('Login response incomplete. Please try again.');
+            setLoading(false);
+            return;
+          }
+          
+          if (!detectedRole) {
+            console.warn('⚠️ LoginPage - Response missing role, attempting to infer from user data');
+            // Try to infer role from user object structure
+            if (result.user.adminId !== undefined) {
+              detectedRole = 'manager';
+            } else if (result.user.plan !== undefined) {
+              detectedRole = 'admin';
+            } else if (result.user.isActive !== undefined) {
+              detectedRole = 'superadmin';
+            }
+            console.log(`   Inferred role: ${detectedRole}`);
+          }
         } else {
           console.error('❌ Unified login returned but success=false');
           console.error('   Response:', result);
@@ -78,35 +108,57 @@ const LoginPage = () => {
         return;
       }
 
-      // Check if we got a successful login
-      if (!result || !result.success) {
-        console.error('❌ LoginPage - Unified login failed');
+      // Check if we got a successful login with valid data
+      if (!result || !result.success || !result.user) {
+        console.error('❌ LoginPage - Unified login failed or incomplete');
+        console.error('   Result:', result);
         toast.error('Login failed. Please check your credentials.');
         setLoading(false);
         return;
       }
 
-      if (result && result.success && detectedRole) {
+      // Proceed with login if we have user data (role can be inferred if missing)
+      if (result && result.success && result.user) {
         // CRITICAL: Use role from backend response (result.user.role) as PRIMARY source
         // Backend returns the correct role in the response
-        const backendRole = result.user?.role || '';
-        const roleFromBackend = backendRole.toString().toLowerCase().trim();
+        const backendRole = result.user?.role || result.role || '';
+        const roleFromBackend = backendRole ? backendRole.toString().toLowerCase().trim() : '';
         
         console.log('✅ LoginPage - Login successful!');
         console.log('   Detected role (from login attempt):', detectedRole);
         console.log('   Result user object:', result.user);
         console.log('   Result user role (from backend):', backendRole);
         console.log('   Result user role (normalized):', roleFromBackend);
+        console.log('   Result role (direct):', result.role);
         console.log('   Result user role type:', typeof backendRole);
         console.log('   Result user keys:', result.user ? Object.keys(result.user) : 'null');
         
-        // Use backend role as primary, fallback to detectedRole only if backend role is missing
-        const normalizedRole = roleFromBackend || detectedRole.toString().toLowerCase().trim();
-        console.log('   Final normalized role for storage:', normalizedRole);
-        
-        if (!roleFromBackend) {
-          console.warn('⚠️ LoginPage - Backend did not return role! Using detected role:', detectedRole);
+        // Use backend role as primary, fallback to detectedRole, then infer from user structure
+        let normalizedRole = roleFromBackend;
+        if (!normalizedRole && detectedRole) {
+          normalizedRole = detectedRole.toString().toLowerCase().trim();
+          console.warn('⚠️ LoginPage - Using detected role:', normalizedRole);
         }
+        if (!normalizedRole) {
+          // Last resort: infer from user object structure
+          if (result.user.adminId !== undefined) {
+            normalizedRole = 'manager';
+          } else if (result.user.plan !== undefined) {
+            normalizedRole = 'admin';
+          } else if (result.user.isActive !== undefined) {
+            normalizedRole = 'superadmin';
+          }
+          console.warn('⚠️ LoginPage - Inferred role from user structure:', normalizedRole);
+        }
+        
+        if (!normalizedRole) {
+          console.error('❌ LoginPage - CRITICAL: Could not determine user role!');
+          toast.error('Login error: Could not determine user role. Please contact support.');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('   Final normalized role for storage:', normalizedRole);
         
         // CRITICAL: Store data immediately and verify it persists
         try {
@@ -323,15 +375,11 @@ const LoginPage = () => {
         // Loading will be reset when page reloads after navigation
         return;
       } else {
-        // All roles failed
+        // Login failed - this shouldn't happen if unified login works correctly
         setLoading(false);
-        const errorMessage = lastError?.response?.data?.message || lastError?.message || 'Invalid email or password';
-        console.error('❌ LoginPage - All login attempts failed');
-        console.error('   Last error:', lastError);
-        console.error('   Error message:', errorMessage);
-        console.error('   Error response:', lastError?.response?.data);
-        console.error('   Error status:', lastError?.response?.status);
-        toast.error(errorMessage, { duration: 5000 }); // Show for 5 seconds
+        console.error('❌ LoginPage - Unified login failed (unexpected)');
+        console.error('   Result:', result);
+        toast.error('Login failed. Please check your credentials.', { duration: 5000 });
       }
     } catch (error) {
       setLoading(false);
