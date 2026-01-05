@@ -1035,6 +1035,118 @@ class SuperAdminController {
       });
     }
   }
+
+  // Update admin plan directly (without plan request)
+  async updateAdminPlan(req, res) {
+    try {
+      const { adminId } = req.params;
+      const { plan, reason } = req.body;
+
+      console.log("📋 Update Admin Plan - Starting...");
+      console.log("   Admin ID:", adminId);
+      console.log("   New Plan:", plan);
+      console.log("   Reason:", reason);
+
+      // Validate plan value
+      const validPlans = ["basic", "advanced", "premium", "custom"];
+      if (!plan || !validPlans.includes(plan)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid plan. Must be one of: basic, advanced, premium, custom",
+        });
+      }
+
+      // Find admin
+      const Admin = require("../../../models/Roleaccess/admin");
+      const admin = await Admin.findByPk(adminId, {
+        attributes: ["id", "name", "email", "plan", "status"],
+      });
+
+      if (!admin) {
+        return res.status(404).json({
+          success: false,
+          message: "Admin not found",
+        });
+      }
+
+      // Check if admin is active
+      if (admin.status !== "active") {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot update plan for suspended or inactive admin",
+        });
+      }
+
+      const oldPlan = admin.plan || "basic";
+
+      // Update admin plan
+      await admin.update({ plan });
+
+      console.log(`✅ Admin plan updated: ${oldPlan} → ${plan}`);
+
+      // Log activity
+      try {
+        const ActivityLog = require("../../../models/ActivityLog/activityLog");
+        await ActivityLog.create({
+          adminId: null, // Superadmin action
+          managerId: null,
+          action: "UPDATE_ADMIN_PLAN",
+          targetType: "admin",
+          targetId: admin.id,
+          details: {
+            adminId: admin.id,
+            adminName: admin.name,
+            adminEmail: admin.email,
+            oldPlan: oldPlan,
+            newPlan: plan,
+            reason: reason || "Updated by Super Admin",
+          },
+          ipAddress: req.ip || req.headers["x-forwarded-for"] || req.connection.remoteAddress,
+          userAgent: req.headers["user-agent"],
+        });
+        console.log("✅ Activity logged: UPDATE_ADMIN_PLAN");
+      } catch (logError) {
+        console.error("⚠️ Error logging plan update:", logError);
+        // Non-critical, continue
+      }
+
+      // Send notification email (optional)
+      try {
+        const notificationService = require("../../../realtimes/email/superadminNotifications");
+        await notificationService.sendPlanUpdateNotification(
+          admin.email,
+          admin.name,
+          plan,
+          reason || "Your plan has been updated by Super Admin"
+        );
+        console.log(`✅ Plan update notification sent to ${admin.email}`);
+      } catch (notifError) {
+        console.error("⚠️ Error sending plan update notification:", notifError);
+        // Non-critical, continue
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Admin plan updated successfully from ${oldPlan} to ${plan}`,
+        data: {
+          admin: {
+            id: admin.id,
+            name: admin.name,
+            email: admin.email,
+            plan: plan,
+            oldPlan: oldPlan,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Update admin plan error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating admin plan",
+        error: error.message,
+      });
+    }
+  }
 }
 
 module.exports = new SuperAdminController();

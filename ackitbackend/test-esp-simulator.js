@@ -134,6 +134,11 @@ let deviceState = {
 let ws = null;
 let reconnectInterval = null;
 let roomTempInterval = null; // Interval for automatic room temperature updates (every 5 minutes)
+let reconnectAttempts = 0;
+let maxReconnectAttempts = 10; // Maximum reconnect attempts before stopping
+let reconnectDelay = 5000; // Initial reconnect delay (5 seconds)
+let connectionStartTime = null; // Track when connection was established
+let isIntentionallyClosing = false; // Flag to prevent reconnection on intentional close
 
 // ============================================
 // CONSOLE LOGS (ONLY REQUIRED ONES)
@@ -202,6 +207,10 @@ function connect() {
   ws.on("open", async () => {
     console.log(`✅ WebSocket connection established!`);
     deviceState.isConnected = true;
+    connectionStartTime = Date.now(); // Track connection time
+    // Reset reconnect attempts on successful connection
+    reconnectAttempts = 0;
+    reconnectDelay = 5000; // Reset delay to initial value
 
     try {
       const ac = await AC.findOne({
@@ -320,22 +329,61 @@ function connect() {
   });
 
   ws.on("close", (code, reason) => {
+    const connectionDuration = connectionStartTime 
+      ? Math.round((Date.now() - connectionStartTime) / 1000) 
+      : 0;
+    
     console.log(
       `🔌 WebSocket closed. Code: ${code}, Reason: ${
         reason || "No reason provided"
-      }`
+      }${connectionDuration > 0 ? `, Connected for: ${connectionDuration}s` : ""}`
     );
+    
+    // Check if connection closed immediately (within 2 seconds) - might indicate a problem
+    if (connectionDuration > 0 && connectionDuration < 2) {
+      console.warn(
+        `⚠️ Connection closed very quickly (${connectionDuration}s). This might indicate a connection issue.`
+      );
+    }
+    
     deviceState.isConnected = false;
+    connectionStartTime = null;
 
     // Stop room temperature auto-update when disconnected
     stopRoomTemperatureAutoUpdate();
 
+    // Don't reconnect if intentionally closing
+    if (isIntentionallyClosing) {
+      console.log(`🛑 Intentional close - not reconnecting.`);
+      return;
+    }
+
+    // Check if we should attempt reconnection
+    if (reconnectAttempts >= maxReconnectAttempts) {
+      console.error(
+        `❌ Maximum reconnect attempts (${maxReconnectAttempts}) reached. Stopping reconnection.`
+      );
+      console.error(
+        `   Please check your connection and restart the simulator manually.`
+      );
+      console.error(
+        `   Or type 'reset' to reset reconnect attempts and try again.`
+      );
+      return;
+    }
+
     if (!reconnectInterval) {
-      console.log(`⏳ Reconnecting in 5 seconds...`);
+      reconnectAttempts++;
+      // Exponential backoff: increase delay with each attempt (max 60 seconds)
+      reconnectDelay = Math.min(reconnectDelay * 1.5, 60000);
+      
+      console.log(
+        `⏳ Reconnecting in ${Math.round(reconnectDelay / 1000)} seconds... (Attempt ${reconnectAttempts}/${maxReconnectAttempts})`
+      );
       reconnectInterval = setTimeout(() => {
         reconnectInterval = null;
         connect();
-      }, 5000);
+      }, reconnectDelay);
     }
   });
 }
@@ -843,8 +891,23 @@ function handleUserInput(input) {
       }
       break;
 
+    case "reset":
+      // Reset reconnect attempts
+      reconnectAttempts = 0;
+      reconnectDelay = 5000;
+      console.log(`🔄 Reconnect attempts reset. Next reconnect will be immediate.`);
+      break;
+
     case "exit":
-      if (ws) ws.close();
+      isIntentionallyClosing = true;
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectInterval) {
+        clearTimeout(reconnectInterval);
+        reconnectInterval = null;
+      }
+      stopRoomTemperatureAutoUpdate();
       rl.close();
       process.exit(0);
       break;

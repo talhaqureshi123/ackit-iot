@@ -58,4 +58,9 @@ router.post("/plan-requests/:requestId/approve", superAdminController.approvePla
 // Reject plan request
 router.post("/plan-requests/:requestId/reject", superAdminController.rejectPlanRequest);
 
+// ==================== DIRECT PLAN UPDATE ROUTE ====================
+// Update admin plan directly (without plan request)
+router.put("/admins/:adminId/plan", superAdminController.updateAdminPlan);
+router.patch("/admins/:adminId/plan", superAdminController.updateAdminPlan);
+
 module.exports = router;

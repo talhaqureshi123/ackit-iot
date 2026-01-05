@@ -292,20 +292,40 @@ const AdminDashboard = () => {
         console.log('📨 WebSocket message received:', message);
         
         // Handle device connection status
-        if (message.type === 'DEVICE_CONNECTED' && (message.serial || message.serialNumber)) {
+        // Support both DEVICE_CONNECTED (new) and CONNECTED (backward compatibility)
+        if ((message.type === 'DEVICE_CONNECTED' || message.type === 'CONNECTED') && (message.serial || message.serialNumber)) {
           const serialNumber = message.serial || message.serialNumber;
           setConnectedDevices(prev => new Set([...prev, serialNumber]));
+          // Update data.acs to reflect connection status
+          setData(prevData => ({
+            ...prevData,
+            acs: prevData.acs.map(ac => 
+              ac.serialNumber === serialNumber 
+                ? { ...ac, isConnected: true }
+                : ac
+            )
+          }));
           console.log(`✅ [DASHBOARD] Device ${serialNumber} marked as CONNECTED`);
         }
         
         // Handle device disconnection
-        if (message.type === 'DEVICE_DISCONNECTED' && (message.serial || message.serialNumber)) {
+        // Support both DEVICE_DISCONNECTED (new) and DISCONNECTED (backward compatibility)
+        if ((message.type === 'DEVICE_DISCONNECTED' || message.type === 'DISCONNECTED') && (message.serial || message.serialNumber)) {
           const serialNumber = message.serial || message.serialNumber;
           setConnectedDevices(prev => {
             const newSet = new Set(prev);
             newSet.delete(serialNumber);
             return newSet;
           });
+          // Update data.acs to reflect disconnection status
+          setData(prevData => ({
+            ...prevData,
+            acs: prevData.acs.map(ac => 
+              ac.serialNumber === serialNumber 
+                ? { ...ac, isConnected: false }
+                : ac
+            )
+          }));
           console.log(`❌ [DASHBOARD] Device ${serialNumber} marked as DISCONNECTED`);
         }
         

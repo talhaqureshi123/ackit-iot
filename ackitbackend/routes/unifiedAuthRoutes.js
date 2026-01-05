@@ -286,6 +286,20 @@ router.post("/login", async (req, res) => {
     } else if (userRole === "manager") {
       token = ManagerAuth.generateToken(user);
       await ManagerAuth.createSession(req, user);
+      
+      // Ensure session is saved before setting cookie
+      await new Promise((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error("❌ Manager session save error in unified login:", err);
+            reject(err);
+          } else {
+            console.log("✅ Manager session saved in unified login");
+            resolve();
+          }
+        });
+      });
+      
       userData = {
         id: user.id,
         name: user.name,

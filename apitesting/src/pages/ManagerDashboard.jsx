@@ -65,6 +65,28 @@ const ManagerDashboard = () => {
   const [contentMarginLeft, setContentMarginLeft] = useState('0px');
   const [contentWidth, setContentWidth] = useState('100%');
   
+  // Close sidebar by default when on dashboard tab, keep it closed and disable expand
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      setSidebarOpen(false);
+    }
+    // Keep sidebar state as is for other tabs (user can toggle)
+  }, [activeTab]);
+  
+  // Prevent sidebar from opening on dashboard tab (even if user tries to toggle)
+  // Only force close if we're on dashboard tab - allow expansion on all other tabs
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      // Force close sidebar on dashboard tab - no exceptions
+      if (sidebarOpen) {
+        console.log("🚫 Dashboard tab: Forcing sidebar to close");
+        setSidebarOpen(false);
+      }
+    }
+    // On other tabs, allow sidebar to be toggled freely
+    // Don't force any state - let user control it
+  }, [activeTab, sidebarOpen]);
+  
   useEffect(() => {
     const calculateContentLayout = () => {
       if (typeof window === 'undefined') return;
@@ -75,12 +97,12 @@ const ManagerDashboard = () => {
       
       if (width >= 1280) {
         // xl breakpoint
-        marginLeft = sidebarOpen ? '240px' : '64px';
-        contentWidth = sidebarOpen ? 'calc(100% - 240px)' : 'calc(100% - 64px)';
+        marginLeft = sidebarOpen ? '208px' : '64px';
+        contentWidth = sidebarOpen ? 'calc(100% - 208px)' : 'calc(100% - 64px)';
       } else if (width >= 1024) {
         // lg breakpoint
-        marginLeft = sidebarOpen ? '208px' : '56px';
-        contentWidth = sidebarOpen ? 'calc(100% - 208px)' : 'calc(100% - 56px)';
+        marginLeft = sidebarOpen ? '192px' : '56px';
+        contentWidth = sidebarOpen ? 'calc(100% - 192px)' : 'calc(100% - 56px)';
       } else {
         // Mobile - no sidebar margin
         marginLeft = '0px';
@@ -254,14 +276,16 @@ const ManagerDashboard = () => {
         console.log('📨 WebSocket message received:', message);
         
         // Handle device connection status
-        if (message.type === 'CONNECTED' && (message.serial || message.serialNumber)) {
+        // Support both DEVICE_CONNECTED (new) and CONNECTED (backward compatibility)
+        if ((message.type === 'DEVICE_CONNECTED' || message.type === 'CONNECTED') && (message.serial || message.serialNumber)) {
           const serialNumber = message.serial || message.serialNumber;
           setConnectedDevices(prev => new Set([...prev, serialNumber]));
           console.log(`✅ [DASHBOARD] Device ${serialNumber} marked as CONNECTED`);
         }
         
         // Handle device disconnection
-        if (message.type === 'DISCONNECTED' && (message.serial || message.serialNumber)) {
+        // Support both DEVICE_DISCONNECTED (new) and DISCONNECTED (backward compatibility)
+        if ((message.type === 'DEVICE_DISCONNECTED' || message.type === 'DISCONNECTED') && (message.serial || message.serialNumber)) {
           const serialNumber = message.serial || message.serialNumber;
           setConnectedDevices(prev => {
             const newSet = new Set(prev);
@@ -3459,7 +3483,7 @@ const ManagerDashboard = () => {
                 Energy by AC Device
               </h3>
               <div className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-300 w-full max-w-full">
-                <div className="overflow-x-auto w-full" style={{ maxWidth: '100%' }}>
+                <div className="overflow-x-auto w-full" style={{ maxWidth: '100%', overflowX: 'auto', overflowY: 'visible' }}>
                   <table className="min-w-full divide-y divide-gray-200 border-collapse" style={{ minWidth: '1200px', width: '100%', tableLayout: 'auto' }}>
                     <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-300">
                       <tr>
@@ -3860,7 +3884,7 @@ const ManagerDashboard = () => {
       )}
       
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-56 sm:w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
+      <aside className={`${sidebarOpen ? 'w-48 sm:w-52 translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-14 xl:w-16'} bg-gradient-to-b from-blue-900 to-blue-800 text-white transition-all duration-300 ease-in-out flex flex-col fixed h-screen z-30`}>
         {/* Sidebar Header */}
         <div className={`p-3 sm:p-4 border-b border-blue-700 flex items-center ${sidebarOpen ? 'justify-between' : 'justify-center lg:flex-col lg:space-y-4'}`}>
           {sidebarOpen ? (
@@ -3878,24 +3902,37 @@ const ManagerDashboard = () => {
               <img src="/assets/logo.png" alt="IOTFIY Logo" className="w-6 h-6 object-contain" />
             </div>
           )}
-          {/* Collapse button - only show when sidebar is open */}
+          {/* Collapse button - only show when sidebar is open, hide expand button on dashboard */}
           {sidebarOpen ? (
             <button
-              onClick={() => setSidebarOpen(false)}
-              className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
-              title="Collapse sidebar"
+              onClick={() => {
+                // Allow collapse on all tabs except dashboard (dashboard sidebar always collapsed)
+                if (activeTab !== 'dashboard') {
+                  setSidebarOpen(false);
+                }
+              }}
+              className={`p-2 hover:bg-blue-700 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={activeTab === 'dashboard' ? 'Sidebar cannot be collapsed on dashboard' : 'Collapse sidebar'}
+              disabled={activeTab === 'dashboard'}
             >
               <Menu className="w-5 h-5" />
             </button>
           ) : (
-            // Show expand button when sidebar is collapsed
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
-              title="Expand sidebar"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+            // Show expand button only if NOT on dashboard tab
+            activeTab !== 'dashboard' && (
+              <button
+                onClick={() => {
+                  // Double-check: don't allow expansion on dashboard
+                  if (activeTab !== 'dashboard') {
+                    setSidebarOpen(true);
+                  }
+                }}
+                className="p-2 hover:bg-blue-700 rounded-lg transition-colors"
+                title="Expand sidebar"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )
           )}
         </div>
 
@@ -3910,9 +3947,15 @@ const ManagerDashboard = () => {
                   key={tab.id}
                   onClick={() => {
                     setActiveTab(tab.id);
-                    // Close sidebar on mobile after selection
-                    if (window.innerWidth < 1024) {
+                    // Force close sidebar ALWAYS when switching to dashboard tab
+                    if (tab.id === 'dashboard') {
                       setSidebarOpen(false);
+                    } else {
+                      // Close sidebar on mobile after selection (for non-dashboard tabs)
+                      if (window.innerWidth < 1024) {
+                        setSidebarOpen(false);
+                      }
+                      // For desktop, preserve sidebar state on other tabs (user can expand/collapse freely)
                     }
                   }}
                   className={`w-full flex items-center ${sidebarOpen ? 'justify-start px-2' : 'justify-center px-2'} py-1.5 rounded-lg transition-all duration-200 touch-manipulation focus:outline-none focus:ring-0 ${
@@ -3988,8 +4031,14 @@ const ManagerDashboard = () => {
             <div className="flex justify-between items-center">
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  onClick={() => {
+                    // Don't allow toggle on dashboard tab
+                    if (activeTab !== 'dashboard') {
+                      setSidebarOpen(!sidebarOpen);
+                    }
+                  }}
                   className="lg:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  disabled={activeTab === 'dashboard'}
                 >
                   <Menu className="w-6 h-6" />
                 </button>

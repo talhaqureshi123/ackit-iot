@@ -283,6 +283,65 @@ class SuperAdminNotificationService {
       throw error;
     }
   }
+
+  // Send plan update notification to admin (direct update without request)
+  async sendPlanUpdateNotification(adminEmail, adminName, newPlan, reason) {
+    try {
+      if (!adminEmail || !adminName || !newPlan) {
+        throw new Error("All parameters are required for plan update notification");
+      }
+      
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(adminEmail)) {
+        throw new Error("Invalid email format");
+      }
+
+      const mailOptions = {
+        from: process.env.EMAIL_FROM || "noreply@ackit.com",
+        to: adminEmail,
+        subject: "Plan Updated - ACKit System",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #007bff;">Plan Updated</h2>
+            
+            <p>Dear ${adminName},</p>
+            
+            <p>Your account plan has been updated by the Super Admin.</p>
+            
+            <div style="background-color: #e7f3ff; padding: 15px; border-left: 4px solid #007bff; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #0056b3;">Plan Details:</h3>
+              <ul>
+                <li><strong>New Plan:</strong> ${newPlan.charAt(0).toUpperCase() + newPlan.slice(1)}</li>
+                <li><strong>Updated By:</strong> Super Admin</li>
+                <li><strong>Date:</strong> ${new Date().toLocaleString()}</li>
+                ${reason ? `<li><strong>Reason:</strong> ${reason}</li>` : ''}
+              </ul>
+            </div>
+            
+            <p><strong>What this means:</strong></p>
+            <ul>
+              <li>Your account plan has been changed to ${newPlan.charAt(0).toUpperCase() + newPlan.slice(1)}</li>
+              <li>You now have access to all features available in your new plan</li>
+              <li>If you have any questions, please contact the IOTFIY team</li>
+            </ul>
+            
+            <p>Thank you for using ACKit!</p>
+            
+            <hr style="margin: 30px 0;">
+            <p style="color: #6c757d; font-size: 12px;">
+              This is an automated message from the ACKit IoT Management System.
+            </p>
+          </div>
+        `,
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      console.log(`Plan update notification sent to ${adminEmail}`);
+    } catch (error) {
+      console.error("Error sending plan update notification:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new SuperAdminNotificationService();
