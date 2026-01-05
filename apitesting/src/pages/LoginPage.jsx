@@ -135,11 +135,11 @@ const LoginPage = () => {
               if (isNotFound) {
                 console.log(`   → Email not found in ${role} table, continuing to next role...`);
                 continue;
-              } else if (role === 'admin' && (emailExists || debugMessage.toLowerCase().includes('password is incorrect'))) {
-                // Admin login failed but email EXISTS (wrong password/suspended)
-                // Don't try other roles - email is registered as admin
-                console.log(`   → Admin login failed (email exists but password/status issue), stopping role detection`);
-                console.log(`   → Email is registered as ADMIN, not trying other roles`);
+              } else if ((role === 'admin' || role === 'manager') && (emailExists || debugMessage.toLowerCase().includes('password is incorrect'))) {
+                // Admin/Manager login failed but email EXISTS (wrong password/suspended)
+                // Don't try other roles - email is registered as admin/manager
+                console.log(`   → ${role.toUpperCase()} login failed (email exists but password/status issue), stopping role detection`);
+                console.log(`   → Email is registered as ${role.toUpperCase()}, not trying other roles`);
                 console.log(`   → Debug info:`, debugInfo);
                 break; // Stop trying other roles
               } else {

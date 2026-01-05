@@ -512,10 +512,34 @@ class ManagerAuth {
 
       if (!isPasswordValid) {
         console.log("❌ Password validation failed for manager:", email);
-        return res.status(401).json({
+        console.log("❌ Manager found but password doesn't match");
+        console.log("❌ Manager ID:", manager.id, "Name:", manager.name, "Status:", manager.status);
+        
+        const errorResponse = {
           success: false,
           message: "Invalid email or password.",
-        });
+        };
+        
+        // Always include debug info to help frontend distinguish between "not found" and "wrong password"
+        try {
+          errorResponse.debug = {
+            message: "Email found but password is incorrect.",
+            managerEmail: manager?.email || email,
+            managerStatus: manager?.status || 'unknown',
+            managerId: manager?.id || 'unknown',
+            emailExists: true, // Key flag: email exists in manager table
+            hint: "Email is registered as MANAGER. Check if you're using the correct password."
+          };
+        } catch (debugError) {
+          console.error("❌ Error creating debug info:", debugError);
+          errorResponse.debug = {
+            message: "Email found but password is incorrect.",
+            emailExists: true,
+            hint: "Email is registered as MANAGER. Check if you're using the correct password."
+          };
+        }
+        
+        return res.status(401).json(errorResponse);
       }
 
       console.log("✅ Password validated successfully for manager:", email);
