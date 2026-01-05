@@ -14,10 +14,40 @@ import { BACKEND_BASE_URL, API_BASE_URL } from "../config/api";
 // Production: Use full backend URL (Railway)
 // Development: Use Vite proxy (/api)
 const isProduction =
-  import.meta.env.PROD || import.meta.env.MODE === "production";
-const UNIFIED_API_BASE = isProduction
-  ? `${BACKEND_BASE_URL}/api/auth` // Production: Full backend URL
-  : "/api/auth"; // Development: Vite proxy
+  import.meta.env.PROD || 
+  import.meta.env.MODE === "production" ||
+  (typeof window !== "undefined" && (
+    window.location.hostname.includes("railway.app") ||
+    window.location.hostname.includes("up.railway.app")
+  ));
+
+// Always use Railway backend URL if available, otherwise use proxy
+const UNIFIED_API_BASE = (() => {
+  // Check if BACKEND_BASE_URL contains railway.app (production)
+  if (BACKEND_BASE_URL && typeof BACKEND_BASE_URL === "string" && BACKEND_BASE_URL.includes("railway.app")) {
+    // Production: Use Railway backend URL
+    const url = `${BACKEND_BASE_URL}/api/auth`;
+    console.log("🔧 Using Railway backend URL:", url);
+    return url;
+  } else if (isProduction) {
+    // Production but no Railway URL set - use full backend URL
+    const url = `${BACKEND_BASE_URL}/api/auth`;
+    console.log("🔧 Using production backend URL:", url);
+    return url;
+  } else {
+    // Development: Use Vite proxy
+    console.log("🔧 Using Vite proxy: /api/auth");
+    return "/api/auth";
+  }
+})();
+
+console.log("🔧 Unified API Configuration:");
+console.log("   isProduction:", isProduction);
+console.log("   BACKEND_BASE_URL:", BACKEND_BASE_URL);
+console.log("   UNIFIED_API_BASE:", UNIFIED_API_BASE);
+console.log("   window.location.hostname:", typeof window !== "undefined" ? window.location.hostname : "N/A");
+console.log("   import.meta.env.PROD:", import.meta.env.PROD);
+console.log("   import.meta.env.MODE:", import.meta.env.MODE);
 
 // Create axios instance for unified auth
 const apiUnified = axios.create({
@@ -89,8 +119,38 @@ export const unifiedLogin = async (email, password) => {
     });
 
     console.log("✅ Unified Login - Success!");
-    console.log("   Response:", response.data);
+    console.log("   Response status:", response.status);
+    console.log("   Response headers:", response.headers);
+    console.log("   Response data type:", typeof response.data);
+    console.log("   Response data:", response.data);
+
+    // Check if response is HTML (wrong endpoint)
+    if (typeof response.data === "string" && response.data.includes("<!doctype html>")) {
+      console.error("❌ Unified Login - Received HTML instead of JSON!");
+      console.error("   This means the request hit the frontend server instead of backend");
+      console.error("   Backend URL should be:", UNIFIED_API_BASE);
+      throw {
+        message: "Backend connection error. Please check configuration.",
+        status: 500,
+        response: { message: "Received HTML response instead of JSON" },
+        error: new Error("HTML response received"),
+      };
+    }
+
+    // Validate response structure
+    if (!response.data || typeof response.data !== "object") {
+      console.error("❌ Unified Login - Invalid response format!");
+      console.error("   Response data:", response.data);
+      throw {
+        message: "Invalid response from server. Please try again.",
+        status: 500,
+        response: response.data,
+        error: new Error("Invalid response format"),
+      };
+    }
+
     console.log("   User role:", response.data.user?.role);
+    console.log("   Response role:", response.data.role);
 
     return {
       success: true,
