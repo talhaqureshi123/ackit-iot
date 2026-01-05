@@ -2196,9 +2196,12 @@ class AdminController {
         );
       }
 
-      // Filter devices to only update CONNECTED devices
+      // For Organization level: Update ALL devices (connected + disconnected) - EXCEPT devices with active events
+      // Organization temperature affects all devices regardless of connection status
       const Services = require("../../../services");
       const ESPService = Services.getESPService();
+      
+      // Separate connected and disconnected devices for logging
       const connectedDevicesToUpdate = devicesToUpdate.filter((ac) => {
         if (!ac.serialNumber) return false;
         return ESPService.isDeviceConnected(ac.serialNumber);
@@ -2209,14 +2212,14 @@ class AdminController {
       });
 
       if (offlineDevices.length > 0) {
-        console.warn(
-          `⚠️ [ADMIN-ORG-TEMP] Skipping ${offlineDevices.length} offline device(s): ${offlineDevices.map((ac) => ac.serialNumber || ac.name).join(", ")}`
+        console.log(
+          `ℹ️ [ADMIN-ORG-TEMP] Will update ${offlineDevices.length} offline device(s) in database: ${offlineDevices.map((ac) => ac.serialNumber || ac.name).join(", ")}`
         );
       }
 
-      // Update ONLY CONNECTED AC temperatures (ON and OFF both) - EXCEPT devices with active events
-      if (connectedDevicesToUpdate.length > 0 && venueIds.length > 0) {
-        const deviceIdsToUpdate = connectedDevicesToUpdate.map((ac) => ac.id);
+      // Update ALL AC temperatures (connected + disconnected) - EXCEPT devices with active events
+      if (devicesToUpdate.length > 0 && venueIds.length > 0) {
+        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
         await AC.update(
           {
             temperature: finalTemperature,
@@ -2227,17 +2230,17 @@ class AdminController {
             where: {
               venueId: { [Op.in]: venueIds },
               id: { [Op.in]: deviceIdsToUpdate },
-              // Removed isOn: true - Update ALL devices (ON/OFF both) except those with active events
+              // Update ALL devices (ON/OFF both, connected/disconnected both) except those with active events
             },
           }
         );
         console.log(
           `✅ [ADMIN-ORG-TEMP] Updated ${
-            connectedDevicesToUpdate.length
-          } connected AC temperatures (${
-            connectedDevicesToUpdate.filter((ac) => ac.isOn).length
+            devicesToUpdate.length
+          } AC temperatures (${connectedDevicesToUpdate.length} connected, ${offlineDevices.length} offline, ${
+            devicesToUpdate.filter((ac) => ac.isOn).length
           } ON, ${
-            connectedDevicesToUpdate.filter((ac) => !ac.isOn).length
+            devicesToUpdate.filter((ac) => !ac.isOn).length
           } OFF): ${oldOrgTemp}°C → ${finalTemperature}°C`
         );
       }

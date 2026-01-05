@@ -1152,7 +1152,7 @@ class OrganizationService {
           venuesUpdated = venueUpdateCount;
         }
 
-        // Turn off all CONNECTED ACs in organization and all venues when organization is OFF
+        // Turn off ALL ACs in organization and all venues when organization is OFF (connected + disconnected)
         const allVenueIds = [orgVenueId, ...allVenues.map((v) => v.id)];
         const allACs = await AC.findAll({
           where: {
@@ -1162,16 +1162,9 @@ class OrganizationService {
           transaction,
         });
         
-        // Filter to only connected devices
-        const Services = require("../../../services");
-        const ESPService = Services.getESPService();
-        const connectedACs = allACs.filter((ac) => {
-          if (!ac.serialNumber) return false;
-          return ESPService.isDeviceConnected(ac.serialNumber);
-        });
-        
-        if (connectedACs.length > 0) {
-          const connectedACIds = connectedACs.map((ac) => ac.id);
+        // Update ALL devices (connected + disconnected) for organization level
+        if (allACs.length > 0) {
+          const allACIds = allACs.map((ac) => ac.id);
           const [acUpdateCount] = await AC.update(
             {
               isOn: false,
@@ -1180,7 +1173,7 @@ class OrganizationService {
             },
             {
               where: {
-                id: { [Op.in]: connectedACIds },
+                id: { [Op.in]: allACIds },
               },
               transaction,
             }
@@ -1206,7 +1199,7 @@ class OrganizationService {
           );
           venuesUpdated = venueUpdateCount;
 
-          // Turn on all CONNECTED ACs in all venues when organization is ON
+          // Turn on ALL ACs in all venues when organization is ON (connected + disconnected)
           const allVenueIds = [orgVenueId, ...allVenues.map((v) => v.id)];
           const allACs = await AC.findAll({
             where: {
@@ -1216,25 +1209,22 @@ class OrganizationService {
             transaction,
           });
           
-          // Filter to only connected devices
-          const Services = require("../../../services");
-          const ESPService = Services.getESPService();
-          const connectedACs = allACs.filter((ac) => {
-            if (!ac.serialNumber) return false;
-            return ESPService.isDeviceConnected(ac.serialNumber);
-          });
-          
-          if (connectedACs.length > 0) {
-            const connectedACIds = connectedACs.map((ac) => ac.id);
+          // Update ALL devices (connected + disconnected) for organization level
+          if (allACs.length > 0) {
+            const allACIds = allACs.map((ac) => ac.id);
             const [acUpdateCount] = await AC.update(
               {
                 isOn: true,
                 lastPowerChangeAt: new Date(),
                 lastPowerChangeBy: changedBy,
+                // When organization is turned ON, also initialize device states
+                isWorking: true,
+                alertAt: null,
+                currentMode: "high",
               },
               {
                 where: {
-                  id: { [Op.in]: connectedACIds },
+                  id: { [Op.in]: allACIds },
                 },
                 transaction,
               }
@@ -1289,8 +1279,10 @@ class OrganizationService {
           ],
         });
 
-        // Filter to only connected devices (Services already required above)
-        const updatedACs = allACs.filter((ac) => {
+        // Filter to only connected devices for WebSocket commands
+        // Note: Database is already updated for ALL devices (connected + disconnected) above
+        // But WebSocket commands are only sent to connected devices
+        const connectedACs = allACs.filter((ac) => {
           if (!ac.serialNumber) return false;
           return ESPService.isDeviceConnected(ac.serialNumber);
         });
@@ -1299,7 +1291,8 @@ class OrganizationService {
         let wsCommandsSkipped = 0;
 
         // Send WebSocket POWER command to each CONNECTED ESP32 device
-        for (const ac of updatedACs) {
+        // (Database already updated for all devices, but only connected devices receive WebSocket commands)
+        for (const ac of connectedACs) {
           if (ac.serialNumber) {
             try {
               console.log(

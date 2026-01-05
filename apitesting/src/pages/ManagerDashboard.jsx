@@ -1519,6 +1519,22 @@ const ManagerDashboard = () => {
       const currentState = currentPowerState === true || currentPowerState === 'true' || currentPowerState === 1;
       const newPowerState = !currentState;
       
+      // Check if venue has any connected devices
+      const venue = data.organizations?.flatMap(org => org.venues || []).find(v => v.id === venueId);
+      if (venue) {
+        const venueACs = data.acs.filter(ac => ac.venueId === venueId);
+        const hasConnectedDevices = venueACs.some(ac => {
+          if (!ac.serialNumber) return false;
+          return connectedDevices.has(ac.serialNumber);
+        });
+        
+        // If all devices are disconnected, disable venue controls
+        if (venueACs.length > 0 && !hasConnectedDevices) {
+          toast.error('Cannot control venue: All devices in this venue are disconnected. Please connect at least one device.');
+          return;
+        }
+      }
+      
       console.log('📤 [MANAGER] Toggling venue power:', {
         venueId,
         currentState,
@@ -1620,6 +1636,22 @@ const ManagerDashboard = () => {
         const venue = data.organizations
           .flatMap(org => org.venues || [])
           .find(v => v.id === id);
+        
+        // Check if venue has any connected devices
+        if (venue) {
+          const venueACs = data.acs.filter(ac => ac.venueId === id);
+          const hasConnectedDevices = venueACs.some(ac => {
+            if (!ac.serialNumber) return false;
+            return connectedDevices.has(ac.serialNumber);
+          });
+          
+          // If all devices are disconnected, disable venue temperature control
+          if (venueACs.length > 0 && !hasConnectedDevices) {
+            toast.error('Cannot change temperature: All devices in this venue are disconnected. Please connect at least one device.');
+            setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+            return;
+          }
+        }
         
         // Check if venue is OFF - prevent temperature change
         if (venue && !(venue.isVenueOn === true || venue.isVenueOn === 'true')) {
