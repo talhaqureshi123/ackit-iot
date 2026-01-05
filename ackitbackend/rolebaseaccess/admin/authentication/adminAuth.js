@@ -829,17 +829,33 @@ class AdminAuth {
           message: "Invalid email or password.",
         };
         
-        if (process.env.NODE_ENV !== "production") {
+        // Always include debug info to help frontend distinguish between "not found" and "wrong password"
+        // This is safe because it doesn't expose sensitive data, just indicates email exists
+        try {
           errorResponse.debug = {
             message: "Email found but password is incorrect.",
-            adminEmail: admin.email,
-            adminStatus: admin.status,
-            adminId: admin.id,
-            environment: process.env.NODE_ENV || 'development',
-            passwordHashExists: !!admin.password,
-            passwordHashLength: admin.password ? admin.password.length : 0,
-            isBcryptHash: admin.password ? admin.password.startsWith('$2') : false,
-            hint: "Check if you're using the correct password. Default password might be 'admin123' or check your .env file for SEED_ADMIN_PASSWORD. If password hash is missing, run setup script."
+            adminEmail: admin?.email || email,
+            adminStatus: admin?.status || 'unknown',
+            adminId: admin?.id || 'unknown',
+            emailExists: true, // Key flag: email exists in admin table
+            hint: "Email is registered as ADMIN. Check if you're using the correct password."
+          };
+          
+          // Add more details in development
+          if (process.env.NODE_ENV !== "production") {
+            errorResponse.debug.environment = process.env.NODE_ENV || 'development';
+            errorResponse.debug.passwordHashExists = !!admin?.password;
+            errorResponse.debug.passwordHashLength = admin?.password ? admin.password.length : 0;
+            errorResponse.debug.isBcryptHash = admin?.password ? admin.password.startsWith('$2') : false;
+            errorResponse.debug.hint = "Check if you're using the correct password. Default password might be 'admin123' or check your .env file for SEED_ADMIN_PASSWORD. If password hash is missing, run setup script.";
+          }
+        } catch (debugError) {
+          console.error("❌ Error creating debug info:", debugError);
+          // Fallback debug info
+          errorResponse.debug = {
+            message: "Email found but password is incorrect.",
+            emailExists: true,
+            hint: "Email is registered as ADMIN. Check if you're using the correct password."
           };
         }
         

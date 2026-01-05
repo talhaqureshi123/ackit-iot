@@ -84,6 +84,15 @@ const LoginPage = () => {
           
           loginAttempts.push(errorDetails);
           
+          // 500 errors indicate server issues - stop trying other roles
+          if (error.response?.status === 500) {
+            console.error(`❌ [${role.toUpperCase()}] Server error (500) - stopping role detection`);
+            console.error(`   Error message: ${error.response?.data?.message || error.message}`);
+            console.error(`   This indicates a backend issue, not a wrong role`);
+            lastError = error;
+            break; // Stop trying other roles on server errors
+          }
+          
           // 401 is expected for wrong role - continue to next
           if (error.response?.status === 401) {
             // Always log 401 errors with detail for debugging
@@ -94,13 +103,16 @@ const LoginPage = () => {
             }
             
             // Check if the error indicates "not found" vs "wrong password"
-            const debugMessage = error.response?.data?.debug?.message || '';
+            const debugInfo = error.response?.data?.debug || {};
+            const debugMessage = debugInfo.message || '';
+            const emailExists = debugInfo.emailExists === true; // Explicit flag from backend
             const isNotFound = debugMessage.toLowerCase().includes('not found') || 
                              debugMessage.toLowerCase().includes('no admins found') ||
                              debugMessage.toLowerCase().includes('no managers found') ||
-                             debugMessage.toLowerCase().includes('no superadmins found');
+                             debugMessage.toLowerCase().includes('no superadmins found') ||
+                             (!emailExists && !debugMessage.toLowerCase().includes('password is incorrect'));
             
-            // IMPORTANT: If admin login fails and it's NOT a "not found" error,
+            // IMPORTANT: If admin login fails and email EXISTS (emailExists=true or password incorrect message),
             // it means the email exists in admin table but password is wrong or account is suspended.
             // In this case, we should NOT try other roles (manager/superadmin) because
             // the email is registered as admin.
@@ -113,11 +125,12 @@ const LoginPage = () => {
               if (isNotFound) {
                 console.log(`   → Email not found in ${role} table, continuing to next role...`);
                 continue;
-              } else if (role === 'admin' && !isNotFound) {
-                // Admin login failed but email might exist (wrong password/suspended)
+              } else if (role === 'admin' && (emailExists || debugMessage.toLowerCase().includes('password is incorrect'))) {
+                // Admin login failed but email EXISTS (wrong password/suspended)
                 // Don't try other roles - email is registered as admin
                 console.log(`   → Admin login failed (email exists but password/status issue), stopping role detection`);
                 console.log(`   → Email is registered as ADMIN, not trying other roles`);
+                console.log(`   → Debug info:`, debugInfo);
                 break; // Stop trying other roles
               } else {
                 // For other roles, continue if not found
