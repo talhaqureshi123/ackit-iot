@@ -688,6 +688,9 @@ class AdminAuth {
         console.log(`❌ Admin not found with email: ${email}`);
         console.log(`❌ Searched for (trimmed): "${trimmedEmail}"`);
         console.log(`❌ Searched for (lowercase): "${trimmedEmail.toLowerCase()}"`);
+        console.log(`❌ Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`❌ Database URL: ${process.env.DATABASE_URL ? 'Set (masked)' : 'Not set'}`);
+        console.log(`❌ Database Public URL: ${process.env.DATABASE_PUBLIC_URL ? 'Set (masked)' : 'Not set'}`);
         
         // Always log available admins in development for debugging
         let availableAdminsList = [];
@@ -814,6 +817,12 @@ class AdminAuth {
         console.log(`❌ Password verification failed for email: ${email}`);
         console.log(`❌ Admin found but password doesn't match`);
         console.log(`❌ Admin ID: ${admin.id}, Name: ${admin.name}, Status: ${admin.status}`);
+        console.log(`❌ Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`❌ Password hash exists: ${!!admin.password}`);
+        console.log(`❌ Password hash length: ${admin.password ? admin.password.length : 0}`);
+        console.log(`❌ Is valid bcrypt hash: ${admin.password ? admin.password.startsWith('$2') : false}`);
+        console.log(`❌ Input password length: ${password ? password.length : 0}`);
+        console.log(`❌ Trimmed password length: ${password ? password.trim().length : 0}`);
         
         const errorResponse = {
           success: false,
@@ -825,7 +834,12 @@ class AdminAuth {
             message: "Email found but password is incorrect.",
             adminEmail: admin.email,
             adminStatus: admin.status,
-            hint: "Check if you're using the correct password. Default password might be 'admin123' or check your .env file for SEED_ADMIN_PASSWORD"
+            adminId: admin.id,
+            environment: process.env.NODE_ENV || 'development',
+            passwordHashExists: !!admin.password,
+            passwordHashLength: admin.password ? admin.password.length : 0,
+            isBcryptHash: admin.password ? admin.password.startsWith('$2') : false,
+            hint: "Check if you're using the correct password. Default password might be 'admin123' or check your .env file for SEED_ADMIN_PASSWORD. If password hash is missing, run setup script."
           };
         }
         
@@ -942,31 +956,46 @@ class AdminAuth {
       const cookieOptions = req.session.cookie;
 
       const requestOrigin = req.headers.origin || req.headers.referer || '';
-      const isLocalhost = requestOrigin.includes("localhost") || requestOrigin.includes("127.0.0.1");
-      const isRailway = requestOrigin.includes('.railway.app') || requestOrigin.includes('.up.railway.app');
+      const requestHost = req.headers.host || '';
+      const isLocalhost = requestOrigin.includes("localhost") || requestOrigin.includes("127.0.0.1") || requestHost.includes("localhost");
+      const isRailway = requestOrigin.includes('.railway.app') || requestOrigin.includes('.up.railway.app') || requestHost.includes('.railway.app');
       const isProduction = process.env.NODE_ENV === "production";
 
       console.log("🔐 Login response - Request origin:", requestOrigin);
+      console.log("🔐 Login response - Request host:", requestHost);
       console.log("🔐 Login response - Is localhost:", isLocalhost);
       console.log("🔐 Login response - Is Railway:", isRailway);
       console.log("🔐 Login response - Is production:", isProduction);
+      console.log("🔐 Login response - Environment:", process.env.NODE_ENV || 'development');
 
       // Determine cookie settings based on origin
+      // IMPORTANT: If backend is Railway (HTTPS) but frontend is localhost (HTTP),
+      // we need Secure=false and SameSite=Lax for cookies to work
       let cookieSecure = false;
       let cookieSameSite = 'lax';
       
       if (isLocalhost) {
+        // Frontend is localhost - use non-secure cookies
         cookieSecure = false;
         cookieSameSite = 'lax';
-        console.log("🔐 Login response - Setting cookie for localhost (no Secure)");
-      } else if (isRailway || isProduction) {
+        console.log("🔐 Login response - Setting cookie for localhost (no Secure, SameSite=Lax)");
+      } else if (isRailway && !isLocalhost) {
+        // Frontend is also on Railway - use secure cookies
         cookieSecure = true;
         cookieSameSite = "none";
-        console.log("🔐 Login response - Setting cookie for Railway/production (Secure, SameSite=None)");
+        console.log("🔐 Login response - Setting cookie for Railway frontend (Secure, SameSite=None)");
+      } else if (isProduction && !isLocalhost) {
+        // Production environment, both on same domain
+        cookieSecure = true;
+        cookieSameSite = "none";
+        console.log("🔐 Login response - Setting cookie for production (Secure, SameSite=None)");
       } else {
-        cookieSecure = isProduction;
-        cookieSameSite = isProduction ? "none" : "lax";
-        console.log("🔐 Login response - Setting cookie with fallback settings");
+        // Development: Backend on Railway, Frontend on localhost
+        // Use non-secure cookies so localhost can receive them
+        cookieSecure = false;
+        cookieSameSite = 'lax';
+        console.log("🔐 Login response - Setting cookie for development (local frontend, Railway backend)");
+        console.log("🔐 Login response - Using non-secure cookies for localhost compatibility");
       }
 
       res.cookie(cookieName, req.sessionID, {

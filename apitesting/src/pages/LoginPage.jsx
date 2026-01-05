@@ -92,13 +92,38 @@ const LoginPage = () => {
             if (error.response?.data?.debug) {
               console.log(`   Debug info:`, error.response.data.debug);
             }
-            // Continue to next role
+            
+            // Check if the error indicates "not found" vs "wrong password"
+            const debugMessage = error.response?.data?.debug?.message || '';
+            const isNotFound = debugMessage.toLowerCase().includes('not found') || 
+                             debugMessage.toLowerCase().includes('no admins found') ||
+                             debugMessage.toLowerCase().includes('no managers found') ||
+                             debugMessage.toLowerCase().includes('no superadmins found');
+            
+            // IMPORTANT: If admin login fails and it's NOT a "not found" error,
+            // it means the email exists in admin table but password is wrong or account is suspended.
+            // In this case, we should NOT try other roles (manager/superadmin) because
+            // the email is registered as admin.
+            // Only continue to other roles if explicitly "not found"
+            
             lastError = error;
             
-            // If this is not the last role, continue
+            // If this is not the last role, check if we should continue
             if (i < allRoles.length - 1) {
-              console.log(`   → Continuing to next role...`);
-              continue;
+              if (isNotFound) {
+                console.log(`   → Email not found in ${role} table, continuing to next role...`);
+                continue;
+              } else if (role === 'admin' && !isNotFound) {
+                // Admin login failed but email might exist (wrong password/suspended)
+                // Don't try other roles - email is registered as admin
+                console.log(`   → Admin login failed (email exists but password/status issue), stopping role detection`);
+                console.log(`   → Email is registered as ADMIN, not trying other roles`);
+                break; // Stop trying other roles
+              } else {
+                // For other roles, continue if not found
+                console.log(`   → Login failed, continuing to next role...`);
+                continue;
+              }
             } else {
               console.log(`   → This was the last role to try`);
             }
