@@ -106,26 +106,38 @@ apiUnified.interceptors.response.use(
       response.status,
       response.config.url
     );
-    
+
     // Check for HTML response in interceptor (early detection)
-    if (
-      response.data &&
-      typeof response.data === "string" &&
-      (response.data.includes("<!doctype html>") ||
-        response.data.includes("<html") ||
-        response.data.includes("<!DOCTYPE"))
-    ) {
+    // This MUST happen before any other processing
+    const responseData = response.data;
+    const isHTML = 
+      responseData &&
+      typeof responseData === "string" &&
+      (
+        responseData.trim().toLowerCase().startsWith("<!doctype html>") ||
+        responseData.trim().toLowerCase().startsWith("<!doctype") ||
+        responseData.includes("<html") ||
+        responseData.includes("<!DOCTYPE") ||
+        responseData.includes("<head>") ||
+        responseData.includes("<body>") ||
+        (responseData.includes("<title>") && responseData.includes("</title>"))
+      );
+    
+    if (isHTML) {
       console.error("❌ [INTERCEPTOR] HTML response detected!");
       console.error("   This means request hit frontend instead of backend");
       console.error("   URL used:", response.config.url);
       console.error("   Base URL:", response.config.baseURL);
+      console.error("   Full URL would be:", response.config.baseURL + response.config.url);
+      console.error("   Response data (first 500 chars):", responseData.substring(0, 500));
       
-      // Reject with clear error
+      // Reject with clear error - this will be caught by the catch block
       const error = new Error("Backend connection error. Received HTML instead of JSON.");
+      error.status = 500;
       error.response = {
         status: 500,
         data: {
-          message: "Received HTML response instead of JSON. Backend URL may be incorrect.",
+          message: "Received HTML response instead of JSON. Backend URL may be incorrect. Please check Railway frontend is using the correct backend URL.",
         },
       };
       return Promise.reject(error);
