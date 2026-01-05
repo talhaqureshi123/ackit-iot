@@ -1479,6 +1479,27 @@ const ManagerDashboard = () => {
       const currentState = currentPowerState === true || currentPowerState === 'true' || currentPowerState === 1;
       const newPowerState = !currentState;
       
+      // Check if organization has any connected devices
+      const org = data.organizations.find(o => o.id === orgId);
+      if (org) {
+        const orgVenueIds = (org.venues || []).map(v => v.id);
+        const orgACs = data.acs.filter(ac => 
+          ac.venueId === orgId || 
+          orgVenueIds.includes(ac.venueId) ||
+          ac.organizationId === orgId
+        );
+        const hasConnectedDevices = orgACs.some(ac => {
+          if (!ac.serialNumber) return false;
+          return connectedDevices.has(ac.serialNumber);
+        });
+        
+        // If all devices are disconnected, disable organization controls
+        if (orgACs.length > 0 && !hasConnectedDevices) {
+          toast.error('Cannot control organization: All devices in this organization are disconnected. Please connect at least one device.');
+          return;
+        }
+      }
+      
       console.log('📤 [MANAGER] Toggling organization power:', {
         orgId,
         currentState,
@@ -1593,6 +1614,27 @@ const ManagerDashboard = () => {
       if (type === 'organization') {
         // Check manager status only (no organization lock check for managers)
         const org = data.organizations.find(o => o.id === id);
+        
+        // Check if organization has any connected devices
+        if (org) {
+          const orgVenueIds = (org.venues || []).map(v => v.id);
+          const orgACs = data.acs.filter(ac => 
+            ac.venueId === org.id || 
+            orgVenueIds.includes(ac.venueId) ||
+            ac.organizationId === org.id
+          );
+          const hasConnectedDevices = orgACs.some(ac => {
+            if (!ac.serialNumber) return false;
+            return connectedDevices.has(ac.serialNumber);
+          });
+          
+          // If all devices are disconnected, disable organization temperature control
+          if (orgACs.length > 0 && !hasConnectedDevices) {
+            toast.error('Cannot change temperature: All devices in this organization are disconnected. Please connect at least one device.');
+            setTemperatureLoading(prev => ({ ...prev, [key]: false }));
+            return;
+          }
+        }
         
         // Check if organization is OFF - prevent temperature change
         if (org && !(org.isOrganizationOn === true || org.isOrganizationOn === 'true')) {

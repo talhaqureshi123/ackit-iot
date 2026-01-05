@@ -478,6 +478,36 @@ class VenueService {
       const oldPowerState = venue.isVenueOn || false;
       const newPowerState = powerState === true || powerState === "on";
 
+      // Check if venue has any connected devices before allowing power change
+      const allACs = await AC.findAll({
+        where: { venueId: venueId },
+        attributes: ["id", "serialNumber"],
+        transaction,
+      });
+      
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      const hasConnectedDevices = allACs.some((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      
+      // If no connected devices, prevent power change and keep venue OFF
+      if (!hasConnectedDevices && allACs.length > 0) {
+        await transaction.rollback();
+        throw new Error(
+          "Cannot change venue power: No devices are connected. Please connect at least one device first."
+        );
+      }
+      
+      // If trying to turn ON but no devices exist, prevent it
+      if (newPowerState && allACs.length === 0) {
+        await transaction.rollback();
+        throw new Error(
+          "Cannot turn ON venue: No devices found in this venue."
+        );
+      }
+
       // Check if venue belongs to an organization and if organization is ON
       if (venue.organizationId) {
         // Find organization (stored in Venue model with same name)

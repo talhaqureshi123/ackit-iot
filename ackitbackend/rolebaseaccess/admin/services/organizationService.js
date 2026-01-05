@@ -1085,16 +1085,6 @@ class OrganizationService {
       const oldPowerState = organization.isVenueOn || false;
       const newPowerState = powerState === true || powerState === "on";
 
-      // Update organization power state (stored in Venue model)
-      await organization.update(
-        {
-          isVenueOn: newPowerState,
-          venuePowerChangedAt: new Date(),
-          venuePowerChangedBy: changedBy,
-        },
-        { transaction }
-      );
-
       // Find all venues under this organization
       // Note: organizationId parameter is from Organization model
       // We need to find venues where organizationId matches either:
@@ -1129,6 +1119,49 @@ class OrganizationService {
         transaction,
       });
 
+      // Check if organization has any connected devices before allowing power change
+      const allVenueIds = [organization.id, ...allVenues.map((v) => v.id)];
+      const allACs = await AC.findAll({
+        where: {
+          venueId: { [Op.in]: allVenueIds },
+        },
+        attributes: ["id", "serialNumber"],
+        transaction,
+      });
+      
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      const hasConnectedDevices = allACs.some((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      
+      // If no connected devices, prevent power change and keep organization OFF
+      if (!hasConnectedDevices && allACs.length > 0) {
+        await transaction.rollback();
+        throw new Error(
+          "Cannot change organization power: No devices are connected. Please connect at least one device first."
+        );
+      }
+      
+      // If trying to turn ON but no devices exist, prevent it
+      if (newPowerState && allACs.length === 0) {
+        await transaction.rollback();
+        throw new Error(
+          "Cannot turn ON organization: No devices found in this organization."
+        );
+      }
+
+      // Update organization power state (stored in Venue model)
+      await organization.update(
+        {
+          isVenueOn: newPowerState,
+          venuePowerChangedAt: new Date(),
+          venuePowerChangedBy: changedBy,
+        },
+        { transaction }
+      );
+
       let venuesUpdated = 0;
       let acsUpdated = 0;
 
@@ -1152,19 +1185,18 @@ class OrganizationService {
           venuesUpdated = venueUpdateCount;
         }
 
-        // Turn off ALL ACs in organization and all venues when organization is OFF (connected + disconnected)
-        const allVenueIds = [orgVenueId, ...allVenues.map((v) => v.id)];
-        const allACs = await AC.findAll({
-          where: {
-            venueId: { [Op.in]: allVenueIds },
-          },
-          attributes: ["id", "serialNumber"],
-          transaction,
+        // Turn off only CONNECTED ACs in organization and all venues when organization is OFF
+        // (allACs already fetched above for validation)
+        
+        // Filter to only connected devices
+        const connectedACs = allACs.filter((ac) => {
+          if (!ac.serialNumber) return false;
+          return ESPService.isDeviceConnected(ac.serialNumber);
         });
         
-        // Update ALL devices (connected + disconnected) for organization level
-        if (allACs.length > 0) {
-          const allACIds = allACs.map((ac) => ac.id);
+        // Only update if there are connected devices
+        if (connectedACs.length > 0) {
+          const connectedACIds = connectedACs.map((ac) => ac.id);
           const [acUpdateCount] = await AC.update(
             {
               isOn: false,
@@ -1173,7 +1205,7 @@ class OrganizationService {
             },
             {
               where: {
-                id: { [Op.in]: allACIds },
+                id: { [Op.in]: connectedACIds },
               },
               transaction,
             }
@@ -1199,19 +1231,18 @@ class OrganizationService {
           );
           venuesUpdated = venueUpdateCount;
 
-          // Turn on ALL ACs in all venues when organization is ON (connected + disconnected)
-          const allVenueIds = [orgVenueId, ...allVenues.map((v) => v.id)];
-          const allACs = await AC.findAll({
-            where: {
-              venueId: { [Op.in]: allVenueIds },
-            },
-            attributes: ["id", "serialNumber"],
-            transaction,
+          // Turn on only CONNECTED ACs in all venues when organization is ON
+          // (allACs already fetched above for validation)
+          
+          // Filter to only connected devices
+          const connectedACs = allACs.filter((ac) => {
+            if (!ac.serialNumber) return false;
+            return ESPService.isDeviceConnected(ac.serialNumber);
           });
           
-          // Update ALL devices (connected + disconnected) for organization level
-          if (allACs.length > 0) {
-            const allACIds = allACs.map((ac) => ac.id);
+          // Only update if there are connected devices
+          if (connectedACs.length > 0) {
+            const connectedACIds = connectedACs.map((ac) => ac.id);
             const [acUpdateCount] = await AC.update(
               {
                 isOn: true,
@@ -1224,7 +1255,7 @@ class OrganizationService {
               },
               {
                 where: {
-                  id: { [Op.in]: allACIds },
+                  id: { [Op.in]: connectedACIds },
                 },
                 transaction,
               }
@@ -1280,8 +1311,8 @@ class OrganizationService {
         });
 
         // Filter to only connected devices for WebSocket commands
-        // Note: Database is already updated for ALL devices (connected + disconnected) above
-        // But WebSocket commands are only sent to connected devices
+        // Note: Database is already updated for connected devices only above
+        // WebSocket commands are sent to the same connected devices
         const connectedACs = allACs.filter((ac) => {
           if (!ac.serialNumber) return false;
           return ESPService.isDeviceConnected(ac.serialNumber);
@@ -1291,7 +1322,7 @@ class OrganizationService {
         let wsCommandsSkipped = 0;
 
         // Send WebSocket POWER command to each CONNECTED ESP32 device
-        // (Database already updated for all devices, but only connected devices receive WebSocket commands)
+        // (Database already updated for connected devices only)
         for (const ac of connectedACs) {
           if (ac.serialNumber) {
             try {

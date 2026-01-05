@@ -2196,12 +2196,12 @@ class AdminController {
         );
       }
 
-      // For Organization level: Update ALL devices (connected + disconnected) - EXCEPT devices with active events
-      // Organization temperature affects all devices regardless of connection status
+      // For Organization level: Update ONLY CONNECTED devices - EXCEPT devices with active events
+      // Organization temperature affects only connected devices
       const Services = require("../../../services");
       const ESPService = Services.getESPService();
       
-      // Separate connected and disconnected devices for logging
+      // Filter to only connected devices
       const connectedDevicesToUpdate = devicesToUpdate.filter((ac) => {
         if (!ac.serialNumber) return false;
         return ESPService.isDeviceConnected(ac.serialNumber);
@@ -2212,14 +2212,14 @@ class AdminController {
       });
 
       if (offlineDevices.length > 0) {
-        console.log(
-          `ℹ️ [ADMIN-ORG-TEMP] Will update ${offlineDevices.length} offline device(s) in database: ${offlineDevices.map((ac) => ac.serialNumber || ac.name).join(", ")}`
+        console.warn(
+          `⚠️ [ADMIN-ORG-TEMP] Skipping ${offlineDevices.length} offline device(s): ${offlineDevices.map((ac) => ac.serialNumber || ac.name).join(", ")}`
         );
       }
 
-      // Update ALL AC temperatures (connected + disconnected) - EXCEPT devices with active events
-      if (devicesToUpdate.length > 0 && venueIds.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
+      // Update ONLY CONNECTED AC temperatures - EXCEPT devices with active events
+      if (connectedDevicesToUpdate.length > 0 && venueIds.length > 0) {
+        const deviceIdsToUpdate = connectedDevicesToUpdate.map((ac) => ac.id);
         await AC.update(
           {
             temperature: finalTemperature,
@@ -2230,18 +2230,22 @@ class AdminController {
             where: {
               venueId: { [Op.in]: venueIds },
               id: { [Op.in]: deviceIdsToUpdate },
-              // Update ALL devices (ON/OFF both, connected/disconnected both) except those with active events
+              // Update ONLY connected devices (ON/OFF both) except those with active events
             },
           }
         );
         console.log(
           `✅ [ADMIN-ORG-TEMP] Updated ${
-            devicesToUpdate.length
-          } AC temperatures (${connectedDevicesToUpdate.length} connected, ${offlineDevices.length} offline, ${
-            devicesToUpdate.filter((ac) => ac.isOn).length
+            connectedDevicesToUpdate.length
+          } connected AC temperatures (${
+            connectedDevicesToUpdate.filter((ac) => ac.isOn).length
           } ON, ${
-            devicesToUpdate.filter((ac) => !ac.isOn).length
+            connectedDevicesToUpdate.filter((ac) => !ac.isOn).length
           } OFF): ${oldOrgTemp}°C → ${finalTemperature}°C`
+        );
+      } else if (devicesToUpdate.length > 0 && connectedDevicesToUpdate.length === 0) {
+        console.warn(
+          `⚠️ [ADMIN-ORG-TEMP] No connected devices to update. All ${devicesToUpdate.length} device(s) are offline.`
         );
       }
 
@@ -2584,13 +2588,7 @@ class AdminController {
         });
       }
 
-      await venue.update({
-        temperature: tempValue,
-        lastTemperatureChange: new Date(),
-        changedBy: "admin",
-      });
-
-      // Update ALL ACs in this venue (ON/OFF both) - User requirement
+      // Check if venue has any connected devices before allowing temperature change
       const acs = await AC.findAll({
         where: { venueId: venueId },
         attributes: [
@@ -2603,6 +2601,37 @@ class AdminController {
           "venueId",
         ],
       });
+      
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      const hasConnectedDevices = acs.some((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      
+      // If no connected devices, prevent temperature change
+      if (!hasConnectedDevices && acs.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot change venue temperature: No devices are connected. Please connect at least one device first.",
+        });
+      }
+      
+      // If no devices exist, prevent temperature change
+      if (acs.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot change venue temperature: No devices found in this venue.",
+        });
+      }
+
+      await venue.update({
+        temperature: tempValue,
+        lastTemperatureChange: new Date(),
+        changedBy: "admin",
+      });
+
+      // Update only CONNECTED ACs in this venue
 
       // Check for devices with active events (skip them from temperature update)
       const deviceIds = acs.map((ac) => ac.id);
@@ -2639,8 +2668,7 @@ class AdminController {
       }
 
       // Filter devices to only update CONNECTED devices
-      const Services = require("../../../services");
-      const ESPService = Services.getESPService();
+      // (Services and ESPService already required above)
       const connectedDevicesToUpdate = devicesToUpdate.filter((ac) => {
         if (!ac.serialNumber) return false;
         return ESPService.isDeviceConnected(ac.serialNumber);

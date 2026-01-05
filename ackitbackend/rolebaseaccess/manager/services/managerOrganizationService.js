@@ -855,6 +855,30 @@ class ManagerOrganizationService {
               transaction,
             })
           : [];
+      
+      // Check if organization has any connected devices before allowing temperature change
+      const Services = require("../../../services");
+      const ESPService = Services.getESPService();
+      const hasConnectedDevices = allACs.some((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      
+      // If no connected devices, prevent temperature change
+      if (!hasConnectedDevices && allACs.length > 0) {
+        await transaction.rollback();
+        throw new Error(
+          "Cannot change organization temperature: No devices are connected. Please connect at least one device first."
+        );
+      }
+      
+      // If no devices exist, prevent temperature change
+      if (allACs.length === 0) {
+        await transaction.rollback();
+        throw new Error(
+          "Cannot change organization temperature: No devices found in this organization."
+        );
+      }
 
       // Filter ACs by ON/OFF status for logging
       const acsOn = allACs.filter((ac) => ac.isOn);
@@ -912,10 +936,26 @@ class ManagerOrganizationService {
         );
       }
 
-      // Update ALL AC temperatures (ON and OFF both) - EXCEPT devices with active events
+      // Update ONLY CONNECTED AC temperatures - EXCEPT devices with active events
+      // Filter to only connected devices
+      const connectedDevicesToUpdate = devicesToUpdate.filter((ac) => {
+        if (!ac.serialNumber) return false;
+        return ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      const offlineDevices = devicesToUpdate.filter((ac) => {
+        if (!ac.serialNumber) return true;
+        return !ESPService.isDeviceConnected(ac.serialNumber);
+      });
+      
+      if (offlineDevices.length > 0) {
+        console.warn(
+          `⚠️ [MANAGER-ORG-TEMP] Skipping ${offlineDevices.length} offline device(s): ${offlineDevices.map((ac) => ac.serialNumber || ac.name).join(", ")}`
+        );
+      }
+      
       let acsUpdated = 0;
-      if (devicesToUpdate.length > 0 && venueIds.length > 0) {
-        const deviceIdsToUpdate = devicesToUpdate.map((ac) => ac.id);
+      if (connectedDevicesToUpdate.length > 0 && venueIds.length > 0) {
+        const deviceIdsToUpdate = connectedDevicesToUpdate.map((ac) => ac.id);
         const acUpdateResult = await AC.update(
           {
             temperature: temperature,
@@ -926,7 +966,7 @@ class ManagerOrganizationService {
             where: {
               venueId: { [Op.in]: venueIds },
               id: { [Op.in]: deviceIdsToUpdate },
-              // Removed isOn: true - Update ALL devices (ON/OFF both) except those with active events
+              // Update ONLY connected devices (ON/OFF both) except those with active events
             },
             transaction,
           }
@@ -934,14 +974,18 @@ class ManagerOrganizationService {
         acsUpdated = acUpdateResult[0];
         console.log(
           `✅ [MANAGER-ORG-TEMP] Updated ${
-            devicesToUpdate.length
-          } AC temperatures (${
-            devicesToUpdate.filter((ac) => ac.isOn).length
+            connectedDevicesToUpdate.length
+          } connected AC temperatures (${
+            connectedDevicesToUpdate.filter((ac) => ac.isOn).length
           } ON, ${
-            devicesToUpdate.filter((ac) => !ac.isOn).length
+            connectedDevicesToUpdate.filter((ac) => !ac.isOn).length
           } OFF): ${oldOrgTemp}°C → ${temperature}°C (${
             devicesSkipped.length
-          } skipped due to active events)`
+          } skipped due to active events, ${offlineDevices.length} skipped offline)`
+        );
+      } else if (devicesToUpdate.length > 0 && connectedDevicesToUpdate.length === 0) {
+        console.warn(
+          `⚠️ [MANAGER-ORG-TEMP] No connected devices to update. All ${devicesToUpdate.length} device(s) are offline.`
         );
       }
 
@@ -990,19 +1034,18 @@ class ManagerOrganizationService {
         `   └─ ACs updated in database: ${acsUpdated} (${acsOn.length} ON, ${acsOff.length} OFF)`
       );
 
-      // Send temperature command to all ESP devices in organization (ON and OFF both)
+      // Send temperature command to only CONNECTED ESP devices in organization
       try {
         console.log(
-          `🔌 [MANAGER-ORG] Initiating WebSocket commands for ${allACs.length} devices`
+          `🔌 [MANAGER-ORG] Initiating WebSocket commands for ${connectedDevicesToUpdate.length} connected devices`
         );
-        const servicesGateway = require("../../../services");
-        const ESPService = servicesGateway.getESPService();
+        // (ESPService already required above for validation)
 
         let sentCount = 0;
         let skippedCount = 0;
 
-        // Only send WebSocket commands to devices without active events
-        for (const ac of devicesToUpdate) {
+        // Only send WebSocket commands to CONNECTED devices without active events
+        for (const ac of connectedDevicesToUpdate) {
           if (ac.serialNumber) {
             console.log(`   └─ Processing device: ${ac.serialNumber}`);
             // Use startTemperatureSync with serial number for proper sync (same as admin)
