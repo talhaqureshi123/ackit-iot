@@ -3973,11 +3973,17 @@ const AdminDashboard = () => {
       managers: data.managers?.length || 0
     });
     
-    const totalVenues = data.organizations.reduce((sum, org) => sum + (org.venues?.length || 0), 0);
-    const activeACs = data.acs.filter(ac => ac.isOn === true || ac.isOn === 'true' || ac.isOn === 1).length;
-    const totalEvents = Array.isArray(data.events) ? data.events.length : 0;
-    const activeEvents = Array.isArray(data.events) ? data.events.filter(e => e.status === 'active').length : 0;
-    const totalManagers = data.managers?.length || 0;
+    // Safety checks for data
+    const organizations = Array.isArray(data.organizations) ? data.organizations : [];
+    const acs = Array.isArray(data.acs) ? data.acs : [];
+    const events = Array.isArray(data.events) ? data.events : [];
+    const managers = Array.isArray(data.managers) ? data.managers : [];
+    
+    const totalVenues = organizations.reduce((sum, org) => sum + (org.venues?.length || 0), 0);
+    const activeACs = acs.filter(ac => ac.isOn === true || ac.isOn === 'true' || ac.isOn === 1).length;
+    const totalEvents = events.length;
+    const activeEvents = events.filter(e => e.status === 'active').length;
+    const totalManagers = managers.length;
 
     return (
       <div className="space-y-4 sm:space-y-6 w-full px-2 sm:px-4 md:px-6 bg-gray-50 min-h-screen py-4 sm:py-6">
@@ -4000,7 +4006,7 @@ const AdminDashboard = () => {
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-6 hover:shadow-xl transition-shadow">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 sm:mb-2">{data.acs.length}</p>
+                <p className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 sm:mb-2">{acs.length}</p>
                 <p className="text-sm sm:text-base text-gray-600 font-medium">Total Appliances</p>
               </div>
               <div className="bg-blue-100 rounded-lg sm:rounded-xl p-3 sm:p-4">
@@ -4070,7 +4076,7 @@ const AdminDashboard = () => {
             <div className="space-y-3 sm:space-y-4">
               <div className="flex items-center justify-between p-2 sm:p-3 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
                 <span className="text-xs sm:text-sm font-medium text-white">Total Organizations</span>
-                <span className="text-xl sm:text-2xl font-bold">{data.organizations.length}</span>
+                <span className="text-xl sm:text-2xl font-bold">{organizations.length}</span>
               </div>
               <div className="flex items-center justify-between p-2 sm:p-3 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
                 <span className="text-xs sm:text-sm font-medium text-white">Active Events</span>
