@@ -16,7 +16,8 @@ const EnergyChartBox = ({ venue, setVenue, organizationEnergy, organizationName,
   const allDevicesOffline = devices && devices.length > 0 && devices.every(device => !device.isConnected);
   
   // Determine if we're showing organization or venue controls
-  const isOrganizationMode = organizationName && organization;
+  // Priority: If venue is valid, show venue mode (not organization mode)
+  const isOrganizationMode = !isVenueValid && organizationName && organization;
   const isOrgValid = organization && organization.id !== undefined && organization.id !== null;
 
   useEffect(() => {
