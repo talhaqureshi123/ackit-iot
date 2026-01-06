@@ -15,6 +15,10 @@ const EnergyChartBox = ({ venue, setVenue, organizationEnergy, organizationName,
   // Check if all devices are offline
   const allDevicesOffline = devices && devices.length > 0 && devices.every(device => !device.isConnected);
   
+  // Validate venue exists and has required properties (must be defined before isOrganizationMode)
+  // Accept both number and string IDs
+  const isVenueValid = venue && venue.id !== undefined && venue.id !== null && (typeof venue.id === 'number' || typeof venue.id === 'string');
+  
   // Determine if we're showing organization or venue controls
   // Priority: If venue is valid, show venue mode (not organization mode)
   const isOrganizationMode = !isVenueValid && organizationName && organization;
@@ -80,10 +84,6 @@ const EnergyChartBox = ({ venue, setVenue, organizationEnergy, organizationName,
 
   const chartData = getEnergyChartData();
 
-  // Validate venue exists and has required properties
-  // Accept both number and string IDs
-  const isVenueValid = venue && venue.id !== undefined && venue.id !== null && (typeof venue.id === 'number' || typeof venue.id === 'string');
-  
   // Debug logs
   console.log('🔍 EnergyChartBox - Venue:', venue);
   console.log('🔍 EnergyChartBox - Venue ID:', venue?.id);
