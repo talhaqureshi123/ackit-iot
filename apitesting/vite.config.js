@@ -22,11 +22,16 @@ const RAILWAY_BACKEND_URL =
        process.env.VITE_RAILWAY_BACKEND_URL ||
        null)
     : null; // Force local IP in development
+// const BACKEND_IP =
+//   rootEnv.VITE_BACKEND_IP ||
+//   configEnv.VITE_BACKEND_IP ||
+//   process.env.VITE_BACKEND_IP ||
+//   "10.39.58.140";
 const BACKEND_IP =
   rootEnv.VITE_BACKEND_IP ||
   configEnv.VITE_BACKEND_IP ||
   process.env.VITE_BACKEND_IP ||
-  "10.39.58.140";
+  "10.140.74.154" || "10.39.58.140" ;
 const BACKEND_PORT = "5050";
 
 // Backend base URL - prefer Railway URL in production, always use local IP in development
